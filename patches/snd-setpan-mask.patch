@@ -1,0 +1,11 @@
+--- /tmp/snd_channel.orig.c	2026-10-17 00:57:26.135694285 -0400
++++ native-graphics/libntr/libraries/sim7/src/snd/snd_channel.c	2026-10-17 00:57:26.135694285 -0400
+@@ -277,7 +277,7 @@
+     *((REGType8v *)(REG_SOUND0CNT_PAN_ADDR + SND_CHANNEL_REG_OFFSET(chNo))) = (u8)pan;
+     #else
+     u32 reg = s_SIM_sndcnt[chNo];
+-    reg = ~(0b1111111 << 16);
++    reg &= ~(0b1111111 << 16); /* platinum3ds run 43: was "reg = ~(...)": wiped the whole SOUNDxCNT on every pan change (format bits -> PSG on ch0-7 => voice killed; enable/repeat/volume lost) = "sounds cut off" */
+ 
+     reg |= (pan << 16);
+     s_SIM_sndcnt[chNo] = reg;

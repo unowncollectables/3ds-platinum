@@ -1,0 +1,55 @@
+--- /tmp/sas33.orig	2026-10-16 22:19:21.912282651 -0400
++++ sas_out.c	2026-10-16 23:03:27.320282651 -0400
+@@ -62,6 +62,8 @@
+ static int P3DS_MarginMode(void) { static int v = -1; if (v < 0) { v = 2; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l[64]; int x; while (fgets(l, sizeof l, f)) if (sscanf(l, "audio_margin_reset=%d", &x) == 1) v = x; fclose(f); } PSPNativeMemLog("[AUDIO] audio_margin_reset=%d (0 pin, 1 jump, 2 gradual)", v); } return v; }
+ static u32 P3DS_Latency(void) { static int v = -1; if (v < 0) { v = 24; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l[64]; int x; while (fgets(l, sizeof l, f)) if (sscanf(l, "audio_realtime=%d", &x) == 1 && !x) v = LATENCY_PUMPS; fclose(f); } PSPNativeMemLog("[AUDIO] snapshot latency %d pumps", v); } return (u32)v; }
+ static u32 st_dropSnaps, st_keyOns, st_convBytes, st_cacheHits, st_cacheMiss, st_evict, st_decimated, st_pitchClamp, st_skipped, st_underfeed;
++static u32 st_skipEvents, st_skipSnaps;
++static u32 st_type[5], st_zeroVol, st_chan, st_psgOff;
+ static u32 st_threadUs, st_grains; static int st_peak; static u32 st_pitchClamp, st_hdrLogs;
+ 
+ /* ---- converted-sample cache -------------------------------------------------------------------- */
+@@ -266,7 +268,7 @@
+ {
+     int en = (int)((c->cnt >> 31) & 1);
+     int fmt = (c->cnt >> 29) & 3, type = fmt;
+-    if (fmt == 3) { if (v >= 14) type = 4; else if (v >= 8) type = 3; else en = 0; }
++    if (fmt == 3) { if (v >= 14) type = 4; else if (v >= 8) type = 3; else { if (en) st_psgOff++; en = 0; } }
+ 
+     if (en && (c->gen != s_cur[v].gen || !s_cur[v].keyed)) {
+         SasSample *s = GetSample(type, c);
+@@ -283,6 +285,10 @@
+                 PSPNativeMemLog("[AUDIO-SAS] hdr v=%d fmt=%u loopflag=%u rate=%u timer=%u rate*timer=%u loopStart=%u loopLen=%u | chan period=%u pnt=%u len=%u", v, h[0], h[1], hrate, htimer, (u32)hrate * htimer, hls, hll, 0x10000u - c->tmr, c->pnt, c->len); st_hdrLogs++; }
+             if (st_keyOns < 12 || rp < 0 || rt < 0 || rv < 0 || rk < 0)
+                 PSPNativeMemLog("[AUDIO-SAS] keyon v=%d type=%d count=%u loop=%d pitch=%d vol=%d/%d rc pcm=%08x pitch=%08x vol=%08x key=%08x", v, type, s->count, s->loop, pitch, l, r, rp, rt, rv, rk);
++            { static int kl = -1; static u32 kn; if (kl < 0) { kl = 0; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l2[64]; int x; while (fgets(l2, sizeof l2, f)) if (sscanf(l2, "audio_keylog=%d", &x) == 1) kl = x; fclose(f); } }
++              if (kl && kn < 4000) { kn++; int pk = 0; for (u32 q = 0; q < s->count; q += 7) { int a = s->data[q] < 0 ? -s->data[q] : s->data[q]; if (a > pk) pk = a; }
++                PSPNativeMemLog("[AUDIO-KEY] t=%u v=%d type=%d n=%u loop=%d pk=%d pitch=%d vol=%d/%d cnt=%08x tmr=%04x", (unsigned)(sceKernelGetSystemTimeWide() / 1000), v, type, s->count, s->loop, pk, pitch, l, r, (unsigned)c->cnt, c->tmr); } }
++            st_type[type]++; if (!l && !r) st_zeroVol++; st_chan |= 1u << v;
+             s_cur[v].keyed = 1; s_cur[v].pitch = pitch; s_cur[v].vl = l; s_cur[v].vr = r;
+             st_keyOns++;
+         } else {
+@@ -339,6 +345,13 @@
+             /* too far behind the game (e.g. after a stall): jump to a few pumps before the newest */
+             if (((w - r) & SNAP_MASK) > 32u + P3DS_Latency()) {
+                 u32 keep = P3DS_Latency();
++                static int fold = -1; if (fold < 0) { fold = 1; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l[64]; int x; while (fgets(l, sizeof l, f)) if (sscanf(l, "audio_skipfold=%d", &x) == 1) fold = x != 0; fclose(f); } PSPNativeMemLog("[AUDIO] audio_skipfold=%d", fold); }
++                if (fold) { /* run 35: drop the backlog instead of fast-forwarding it: replaying every skipped snapshot
++                               keyed each intermediate note on for a few samples (burst of garbage after a stall).
++                               Apply only the last skipped state once. */
++                    u32 n = ((w - r) & SNAP_MASK) - keep; r += n; u32 i = (r - 1) & SNAP_MASK;
++                    for (int v = 0; v < 16; v++) ApplyChannel(v, &s_snaps[i].ch[v]); playTime = s_snaps[i].time; st_skipEvents++; st_skipSnaps += n;
++                } else
+                 while (((w - r) & SNAP_MASK) > keep) { u32 i = r & SNAP_MASK; for (int v = 0; v < 16; v++) ApplyChannel(v, &s_snaps[i].ch[v]); playTime = s_snaps[i].time; r++; }
+                 s_snapR = r;
+             }
+@@ -367,7 +380,8 @@
+           if (pk > st_peak) st_peak = pk;
+           if ((++g % 344) == 0) { int h[32]; __sceSasGetAllEnvelopeHeights(&s_core, h); int keyed = 0; for (int v = 0; v < 16; v++) keyed += s_cur[v].keyed;
+             { static u32 lastT, lastR; u32 now = sceKernelGetSystemTimeLow(); u32 snaps = s_snapR - lastR; lastR = s_snapR;
+-              PSPNativeMemLog("[AUDIO-CLK] 344 grains (1997 ms audio) took %u ms wall | game pumps consumed %u (expect ~383) | underfeed holds %u | snap backlog %u", lastT ? (now - lastT) / 1000 : 0, snaps, st_underfeed, (s_snapW - s_snapR) & SNAP_MASK); lastT = now; st_underfeed = 0; }
++              PSPNativeMemLog("[AUDIO-CLK] 344 grains (1997 ms audio) took %u ms wall | game pumps consumed %u (expect ~383) | underfeed holds %u | snap backlog %u | backlog drops %u (%u pumps)", lastT ? (now - lastT) / 1000 : 0, snaps, st_underfeed, (s_snapW - s_snapR) & SNAP_MASK, st_skipEvents, st_skipSnaps); lastT = now; st_underfeed = 0; st_skipEvents = st_skipSnaps = 0;
++              { extern unsigned P3DS_BlockFailFull, P3DS_BlockFailOom, P3DS_BlockHigh; static u32 lk, ls; PSPNativeMemLog("[AUDIO-SE] keyons %u | skipped (no sample) %u | cache %u KiB, evict %u | sample blocks high %u, alloc fail full %u oom %u | dropsnap %u | keyon types pcm8 %u pcm16 %u adpcm %u psg %u noise %u, vol0 %u, psg-on-ch0-7 %u, chans %04x", st_keyOns - lk, st_skipped - ls, s_cacheBytes >> 10, st_evict, P3DS_BlockHigh, P3DS_BlockFailFull, P3DS_BlockFailOom, st_dropSnaps, st_type[0], st_type[1], st_type[2], st_type[3], st_type[4], st_zeroVol, st_psgOff, st_chan); for (int q = 0; q < 5; q++) st_type[q] = 0; st_zeroVol = st_psgOff = st_chan = 0; lk = st_keyOns; ls = st_skipped; } }
+             PSPNativeMemLog("[AUDIO-SAS] grain %u peak %d keyed %d env0 %08x env1 %08x env2 %08x env3 %08x", g, st_peak, keyed, h[0], h[1], h[2], h[3]); st_peak = 0; } }
+         { u64 step = grainNum; if (started && P3DS_MarginMode() == 2 && ((s_snapW - s_snapR) & SNAP_MASK) < P3DS_Latency() / 2) step -= step >> 4;
+           frac += step; playTime += frac / SAS_RATE; frac %= SAS_RATE; }

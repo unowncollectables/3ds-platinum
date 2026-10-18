@@ -1,0 +1,24 @@
+--- a/include/struct_defs/pokemon.h
++++ b/include/struct_defs/pokemon.h
+@@ -73,13 +73,20 @@
+ /**
+  * @brief Block C of the BoxPokemon data structure
+  */
++/* platinum3ds: DS (mwcc) aligns 64-bit members to 4; GCC EABI uses 8, which shifted BoxPokemon inside PCBoxes/Daycare
++   and broke retail-save compatibility. Member-only typedef: function ABI unchanged. */
++#ifndef P3DS_U64_DS
++#define P3DS_U64_DS
++typedef u64 u64_ds __attribute__((aligned(4)));
++typedef s64 s64_ds __attribute__((aligned(4)));
++#endif
+ typedef struct PokemonDataBlockC {
+     /* 0x00 */ charcode_t nickname[MON_NAME_LEN + 1]; //!< The Pokemon's nickname.
+ 
+     /* 0x16 */ u8 unused;
+     /* 0x17 */ u8 originGame;
+ 
+-    /* 0x18 */ u64 ribbonsDS2; //!< A bitmask of ribbons given to the Pokemon from Sinnoh's Super Contests.
++    /* 0x18 */ u64_ds ribbonsDS2; //!< A bitmask of ribbons given to the Pokemon from Sinnoh's Super Contests.
+ } PokemonDataBlockC;
+ 
+ /**

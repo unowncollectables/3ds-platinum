@@ -1,0 +1,13 @@
+; platinum3ds: G3 passthrough (pos already in clip space, uv normalised, colour 0..1)
+.out outpos position
+.out outtc0 texcoord0
+.out outclr color
+.alias inpos v0
+.alias intc v1
+.alias inclr v2
+.proc main
+	mov outpos, inpos
+	mov outtc0, intc
+	mov outclr, inclr
+	end
+.end

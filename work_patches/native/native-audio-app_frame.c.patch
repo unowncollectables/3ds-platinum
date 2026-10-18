@@ -1,0 +1,11 @@
+--- a/native-audio-app/frame.c
++++ b/native-audio-app/frame.c
+@@ -63,7 +63,7 @@
+ #ifdef PSP_NATIVE_AUDIO_FIXEDCLOCK
+  PSPNativeSoundAdvance(33333);   /* verification builds only: deterministic dumps */
+ #else
+- {unsigned long long d=last?now-last:33333ULL;if(d<4000ULL)d=4000ULL;else if(d>66666ULL)d=66666ULL;PSPNativeSoundAdvance((unsigned)d);}
++ {static unsigned long long prevSnd;unsigned long long d=prevSnd?now-prevSnd:33333ULL;prevSnd=now; /* P3DS: full frame period (render+present included), not just game time */if(d<4000ULL)d=4000ULL;else if(d>66666ULL)d=66666ULL;PSPNativeSoundAdvance((unsigned)d);}
+ #endif
+  unsigned long long a=sceKernelGetSystemTimeWide();audioUs+=a-now;
+  unsigned keys;int mode,down,x,y;PSPNativeInputGetRenderState(&keys,&mode,&down,&x,&y);PSPNativeRenderSetInput(keys,mode,down,x,y);

@@ -1,0 +1,20 @@
+--- /tmp/plat.orig	2026-10-16 18:42:13.828905433 -0400
++++ pspoke/.work/tree/test_out/native-audio-app/platform.c	2026-10-16 18:42:13.840905433 -0400
+@@ -89,3 +89,5 @@
+ extern void G3SIM_EnsureClipMatrix(void);
+ extern int __real_G3X_GetClipMtx(void *m);
+ int __wrap_G3X_GetClipMtx(void *m){G3SIM_EnsureClipMatrix();return __real_G3X_GetClipMtx(m);}
++extern void G3SIM_GetVectorMtx33(fx32 *o);
++int __wrap_G3X_GetVectorMtx(void *m){G3SIM_GetVectorMtx33((fx32 *)m);return 0;}
+--- /tmp/g3h4.orig	2026-10-16 18:42:13.828905433 -0400
++++ pspoke/.work/tree/test_out/native-stack-render/g3_handler.cpp	2026-10-16 18:42:13.840905433 -0400
+@@ -336,6 +336,9 @@
+ static bool clipDirty=false;
+ static inline void EnsureClipMatrix(){if(clipDirty){clipDirty=false;computeClipMatrixNow();OMP_N(1);}}
+ extern "C" void G3SIM_EnsureClipMatrix(){EnsureClipMatrix();}
++/* P3DS run 27: VECMTX_RESULT was never written, so G3X_GetVectorMtx returned zeros. NNS envelope (weighted skin)
++   normals = 0 -> unlit/dark skinned meshes (Giratina's body). */
++extern "C" void G3SIM_GetVectorMtx33(fx32*o){for(int i=0;i<3;i++)for(int j=0;j<3;j++)o[i*3+j]=currentVectorMatrix.nums[i][j];}
+ static void calculateClipMatrix()
+ {
+ #ifdef OPT_MATH_LAZYFIN

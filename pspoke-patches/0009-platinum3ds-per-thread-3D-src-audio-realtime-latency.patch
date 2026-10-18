@@ -1,0 +1,60 @@
+From 76ed93cf6de80689ecc399650d8dd5d93406c27f Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Fri, 16 Oct 2026 17:26:36 -0400
+Subject: [PATCH 09/11] platinum3ds: per-thread 3D src, audio realtime latency
+
+---
+ port/native-audio-sound/sas_out.c     | 10 +++++++---
+ port/native-render-opt/native_gpu.cpp |  3 ++-
+ 2 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/port/native-audio-sound/sas_out.c b/port/native-audio-sound/sas_out.c
+index e2ca390..3252071 100644
+--- a/port/native-audio-sound/sas_out.c
++++ b/port/native-audio-sound/sas_out.c
+@@ -56,6 +56,10 @@ static SceUID s_thread = -1;
+ static int s_audioCh = -1;
+ 
+ /* stats for the card log */
++/* platinum3ds: audio_realtime=1 (default) starts playback 24 pumps (125 ms) behind the game so a 25-40 fps
++   frame (5-8 pumps per frame, bursty) never runs the snapshot queue dry; dry = held clock = slow, choppy music. */
++#include <stdio.h>
++static u32 P3DS_Latency(void) { static int v = -1; if (v < 0) { v = 24; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l[64]; int x; while (fgets(l, sizeof l, f)) if (sscanf(l, "audio_realtime=%d", &x) == 1 && !x) v = LATENCY_PUMPS; fclose(f); } PSPNativeMemLog("[AUDIO] snapshot latency %d pumps", v); } return (u32)v; }
+ static u32 st_dropSnaps, st_keyOns, st_convBytes, st_cacheHits, st_cacheMiss, st_evict, st_decimated, st_pitchClamp, st_skipped, st_underfeed;
+ static u32 st_threadUs, st_grains; static int st_peak; static u32 st_pitchClamp, st_hdrLogs;
+ 
+@@ -326,14 +330,14 @@ static int SasThread(SceSize args, void *argp)
+         u32 w = s_snapW, r = s_snapR;
+         if (!started && w != r) {
+             u32 newest = (w - 1) & SNAP_MASK;
+-            u64 lat = (u64)LATENCY_PUMPS * 174592u;
++            u64 lat = (u64)P3DS_Latency() * 174592u;
+             playTime = s_snaps[newest].time > lat ? s_snaps[newest].time - lat : 0;
+             started = 1;
+         }
+         if (started) {
+             /* too far behind the game (e.g. after a stall): jump to a few pumps before the newest */
+-            if (((w - r) & SNAP_MASK) > 32) {
+-                u32 keep = LATENCY_PUMPS;
++            if (((w - r) & SNAP_MASK) > 32u + P3DS_Latency()) {
++                u32 keep = P3DS_Latency();
+                 while (((w - r) & SNAP_MASK) > keep) { u32 i = r & SNAP_MASK; for (int v = 0; v < 16; v++) ApplyChannel(v, &s_snaps[i].ch[v]); playTime = s_snaps[i].time; r++; }
+                 s_snapR = r;
+             }
+diff --git a/port/native-render-opt/native_gpu.cpp b/port/native-render-opt/native_gpu.cpp
+index 328932b..0dd4b09 100644
+--- a/port/native-render-opt/native_gpu.cpp
++++ b/port/native-render-opt/native_gpu.cpp
+@@ -12,7 +12,8 @@ Tracking VRAMDirty_BBGExtPal;u32 VRAMMap_BBGExtPal[32];
+ Tracking VRAMDirty_AOBJExtPal;u32 VRAMMap_AOBJExtPal;
+ Tracking VRAMDirty_BOBJExtPal;u32 VRAMMap_BOBJExtPal;
+ }
+-namespace GPU3D {R renderer;R*CurrentRenderer=&renderer;u32 RenderXPos;alignas(16) u32 NativeFrame[256*192]={};u32*GetLine(unsigned n){return NativeFrame+(n%192)*256;}}
++__thread u32*P3DS_3DSrc; /* platinum3ds: per-thread 3D layer source (right-eye composite on core 2) */
++namespace GPU3D {R renderer;R*CurrentRenderer=&renderer;u32 RenderXPos;alignas(16) u32 NativeFrame[256*192]={};u32*GetLine(unsigned n){return (P3DS_3DSrc?P3DS_3DSrc:NativeFrame)+(n%192)*256;}}
+ namespace GPU2D {
+ Unit::Unit(u32 num)
+ {
+-- 
+2.47.3
+

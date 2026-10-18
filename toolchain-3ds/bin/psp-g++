@@ -1,0 +1,4 @@
+#!/bin/bash
+# platinum3ds: psp-gcc -> devkitARM (ARM11 MPCore, hard-float, libctru ABI). Drops MIPS-only flags.
+INC=(-include errno.h); A=(); for x in "$@"; do case "$x" in *.S|*.s|assembler*) INC=();; esac; case "$x" in -G0|-G*|-mno-gpopt|-mabi=*|-march=allegrex|-mips*) ;; *) A+=("$x");; esac; done
+exec /opt/devkitpro/devkitARM/bin/arm-none-eabi-g++ -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -mword-relocations -fno-strict-aliasing -fno-short-enums -D__3DS__ -DPLATINUM3DS "${INC[@]}" -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Wno-error=return-mismatch -fpermissive -I/opt/devkitpro/libctru/include -I/opt/devkitpro/portlibs/3ds/include -I/workspace/platinum3ds/toolchain-3ds/pspshim "${A[@]}"

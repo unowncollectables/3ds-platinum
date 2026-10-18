@@ -1,0 +1,11 @@
+--- /tmp/backup.run43.c	2026-10-17 01:19:33.611694285 -0400
++++ backup.c	2026-10-17 01:19:33.619694285 -0400
+@@ -56,5 +56,7 @@
+   if(mode!=CARD_REQUEST_MODE_SEND||(!src&&length))result=CARD_RESULT_INVALID_PARAM;
+   else if(!Verify(offset,(const u8*)(uintptr_t)src,length))result=CARD_RESULT_FAILURE;
+  }else result=CARD_RESULT_UNSUPPORTED;
+- BOOL ok=result==CARD_RESULT_SUCCESS;if(callback)callback(arg);return ok;
++ BOOL ok=result==CARD_RESULT_SUCCESS;
++ if(ok&&request==CARD_REQ_WRITE_BACKUP){extern void P3DS_SaveWriteNotify(unsigned);P3DS_SaveWriteNotify(length);} /* run 44: port save indicator */
++ if(callback)callback(arg);return ok;
+ }

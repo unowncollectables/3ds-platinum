@@ -1,0 +1,31 @@
+--- /tmp/g3h6.orig	2026-10-16 19:17:22.607578312 -0400
++++ pspoke/.work/tree/test_out/native-stack-render/g3_handler.cpp	2026-10-16 19:19:12.595578312 -0400
+@@ -1004,6 +1004,9 @@
+     s_G3LightColor[lightNum][2] = lightBlue << 3;
+ }
+ 
++static float s_lightVecFixed[4][3];
++extern "C" void PSPNativeMemLog(const char*,...);
++static int P3DS_LightFix(){static int v=-1;if(v<0){v=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"g3_lightfix=%d",&x)==1)v=x!=0;fclose(f);}PSPNativeMemLog("[G3] g3_lightfix=%d",v);}return v;}
+ static float DecodeSignedFx10(unsigned bits){int v=bits&1023;if(v&512)v-=1024;return v*(1.0f/512.0f);}
+ void G3SIM_LightVector(u32 data)
+ {
+@@ -1012,6 +1015,10 @@
+     s_G3LightVector[lightNum][0]=DecodeSignedFx10(data);
+     s_G3LightVector[lightNum][1]=DecodeSignedFx10(data>>10);
+     s_G3LightVector[lightNum][2]=DecodeSignedFx10(data>>20);
++    /* P3DS: DS multiplies the light vector by the directional (vector) matrix when LIGHT_VECTOR runs (GBATEK).
++       The old code re-transformed it by whatever vector matrix was current at each NORMAL, so lights rotated
++       with every joint of an animated model (title Giratina body mostly unlit). g3_lightfix=0 restores it. */
++    for(int j=0;j<3;j++){float a=0;for(int i=0;i<3;i++)a+=s_G3LightVector[lightNum][i]*FX_FX32_TO_F32(currentVectorMatrix.nums[i][j]);s_lightVecFixed[lightNum][j]=a;}
+ }
+ 
+ //Load Matrix
+@@ -1518,6 +1525,7 @@
+             s_lightVecT[l][0] = (s_G3LightVector[l][0] * s_fVecMtx[0][0]) + (s_G3LightVector[l][1] * s_fVecMtx[1][0]) + (s_G3LightVector[l][2] * s_fVecMtx[2][0]);
+             s_lightVecT[l][1] = (s_G3LightVector[l][0] * s_fVecMtx[0][1]) + (s_G3LightVector[l][1] * s_fVecMtx[1][1]) + (s_G3LightVector[l][2] * s_fVecMtx[2][1]);
+             s_lightVecT[l][2] = (s_G3LightVector[l][0] * s_fVecMtx[0][2]) + (s_G3LightVector[l][1] * s_fVecMtx[1][2]) + (s_G3LightVector[l][2] * s_fVecMtx[2][2]);
++            if(P3DS_LightFix()){s_lightVecT[l][0]=s_lightVecFixed[l][0];s_lightVecT[l][1]=s_lightVecFixed[l][1];s_lightVecT[l][2]=s_lightVecFixed[l][2];}
+         }
+     }
+     if(s_lightCacheGen != s_lightGen) {

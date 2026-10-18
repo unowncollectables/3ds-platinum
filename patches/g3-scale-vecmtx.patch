@@ -1,0 +1,21 @@
+--- /tmp/g3h7.orig	2026-10-16 19:24:13.615578312 -0400
++++ g3_handler.cpp	2026-10-16 19:24:13.623578312 -0400
+@@ -1388,6 +1388,7 @@
+     return;
+ }
+ 
++static int P3DS_ScaleFix(){static int v=-1;if(v<0){v=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"g3_scalefix=%d",&x)==1)v=x!=0;fclose(f);}PSPNativeMemLog("[G3] g3_scalefix=%d",v);}return v;}
+ void G3SIM_MtxScale(fx32 * scale)
+ {
+     fx32 s[3];
+@@ -1408,7 +1409,9 @@
+         for(int i=0;i<3;i++){
+             fx32 f=s[i];if(f==FX32_ONE)continue;
+             fx32*r=currentMatrix->nums[i];
+-            r[0]=FX_Mul(f,r[0]);r[1]=FX_Mul(f,r[1]);r[2]=FX_Mul(f,r[2]);
++            /* P3DS: DS MTX_SCALE in mode 2 scales only the position matrix (GBATEK); scaling the vector matrix too
++               scaled every normal of scaled joints (NNS envelope/scaled models: dark or blown-out lighting). */
++            if(!(pv&&P3DS_ScaleFix())){r[0]=FX_Mul(f,r[0]);r[1]=FX_Mul(f,r[1]);r[2]=FX_Mul(f,r[2]);}
+             if(pv){fx32*q=currentPositionMatrix.nums[i];q[0]=FX_Mul(f,q[0]);q[1]=FX_Mul(f,q[1]);q[2]=FX_Mul(f,q[2]);}
+         }
+ #ifdef OPT_MATH_ORACLE

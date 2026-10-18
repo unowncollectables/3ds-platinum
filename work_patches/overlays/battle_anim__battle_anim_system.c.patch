@@ -1,0 +1,45 @@
+--- a/battle_anim__battle_anim_system.c	2026-10-18 16:29:45.424423507 -0400
++++ b/battle_anim__battle_anim_system.c	2026-10-18 16:29:45.428423507 -0400
+@@ -3966,10 +3966,42 @@
+     return btlMonObjData;
+ }
+ 
++#ifdef PLATINUM3DS
++void BattleMonOBJData_P3DSHideCopies(BattleMonOBJData *btlMonObjData);
++#endif
+ BattleMonOBJData *BattleMonOBJData_NewAll(BattleSystem *battleSys, enum HeapID heapID)
+ {
++#ifdef PLATINUM3DS
++    /* run 55: all three NewAll users (send-out, encounter start, ball effect) only use the copies for layering */
++    BattleMonOBJData *d = BattleMonOBJData_New(battleSys, heapID, 0xFF);
++    BattleMonOBJData_P3DSHideCopies(d);
++    return d;
++#else
+     return BattleMonOBJData_New(battleSys, heapID, 0xFF);
++#endif
+ }
++#ifdef PLATINUM3DS
++/* run 55 battle_monobj_hide=1 (default): Task_ShowPokemon makes 2D OBJ copies of every visible battle Pokemon during a
++   send-out / encounter start / ball effect (layering for the ball-seal effect). On the DS they sit pixel-exactly on top of the 3D sprites; on the 3DS
++   the 3D sprite gets stereo parallax (and its own animation frame) while the 2D copy stays at screen depth -> the
++   Pokemon already on the field shows twice until the ball opens. Hide the copies (the 3D sprites stay visible). */
++extern int P3DS_CfgInt(const char *key, int def);
++void BattleMonOBJData_P3DSHideCopies(BattleMonOBJData *btlMonObjData)
++{
++    static int cfg = -1;
++    if (cfg < 0) {
++        cfg = P3DS_CfgInt("battle_monobj_hide", 1) != 0;
++    }
++    if (!cfg || btlMonObjData == NULL) {
++        return;
++    }
++    for (int i = 0; i < 4; i++) {
++        if (btlMonObjData->managedSprites[i] != NULL) {
++            ManagedSprite_SetDrawFlag(btlMonObjData->managedSprites[i], 0);
++        }
++    }
++}
++#endif
+ 
+ void BattleMonOBJData_Free(BattleMonOBJData *btlMonObjData)
+ {

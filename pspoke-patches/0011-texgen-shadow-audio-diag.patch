@@ -1,0 +1,135 @@
+From aafd9c11e6376c32ae0debe1ad9205d67376c0d3 Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Fri, 16 Oct 2026 18:14:05 -0400
+Subject: [PATCH 11/11] texgen/shadow/audio diag
+
+---
+ port/native-audio-sound/sas_out.c       |  2 ++
+ port/native-stack-render/frontend.cpp   |  8 ++++----
+ port/native-stack-render/g3_handler.cpp | 17 +++++++++++++++--
+ 3 files changed, 21 insertions(+), 6 deletions(-)
+
+diff --git a/port/native-audio-sound/sas_out.c b/port/native-audio-sound/sas_out.c
+index 3252071..61834c4 100644
+--- a/port/native-audio-sound/sas_out.c
++++ b/port/native-audio-sound/sas_out.c
+@@ -359,6 +359,8 @@ static int SasThread(SceSize args, void *argp)
+         { static u32 g; int pk = 0; for (int i = 0; i < SAS_GRAIN * 2; i++) { int a = s_grain[i] < 0 ? -s_grain[i] : s_grain[i]; if (a > pk) pk = a; }
+           if (pk > st_peak) st_peak = pk;
+           if ((++g % 344) == 0) { int h[32]; __sceSasGetAllEnvelopeHeights(&s_core, h); int keyed = 0; for (int v = 0; v < 16; v++) keyed += s_cur[v].keyed;
++            { static u32 lastT, lastR; u32 now = sceKernelGetSystemTimeLow(); u32 snaps = s_snapR - lastR; lastR = s_snapR;
++              PSPNativeMemLog("[AUDIO-CLK] 344 grains (1997 ms audio) took %u ms wall | game pumps consumed %u (expect ~383) | underfeed holds %u | snap backlog %u", lastT ? (now - lastT) / 1000 : 0, snaps, st_underfeed, (s_snapW - s_snapR) & SNAP_MASK); lastT = now; st_underfeed = 0; }
+             PSPNativeMemLog("[AUDIO-SAS] grain %u peak %d keyed %d env0 %08x env1 %08x env2 %08x env3 %08x", g, st_peak, keyed, h[0], h[1], h[2], h[3]); st_peak = 0; } }
+         frac += grainNum; playTime += frac / SAS_RATE; frac %= SAS_RATE;
+         st_threadUs += sceKernelGetSystemTimeLow() - t0; st_grains++;
+diff --git a/port/native-stack-render/frontend.cpp b/port/native-stack-render/frontend.cpp
+index cc7cb75..091c56a 100644
+--- a/port/native-stack-render/frontend.cpp
++++ b/port/native-stack-render/frontend.cpp
+@@ -831,12 +831,12 @@ static void ProcessCommandList(draw_msg_t *msg){
+           else switch(tempMsg.type){
+            case DRAW_CMD_G3_TEXCOORD:seen|=1;deps|=G3DEP_TEXCOORD;break;
+            case DRAW_CMD_G3_COLOR:seen|=2;break;
+-           case DRAW_CMD_G3_NORMAL:seen|=2;deps|=G3DEP_LIGHT;break;
++           case DRAW_CMD_G3_NORMAL:seen|=2;deps|=G3DEP_LIGHT|G3DEP_TEXCOORD;break;
+            case DRAW_CMD_G3_BEGIN:seen|=8;break;
+            case DRAW_CMD_G3_VTX:case DRAW_CMD_G3_VTX16:case DRAW_CMD_G3_VTX10:
+-            if(!(seen&1))deps|=G3DEP_TEX;if(!(seen&2))deps|=G3DEP_COLOR;if(!(seen&8))deps|=G3DEP_SLOTS;seen|=4;break;
++            deps|=G3DEP_TEXCOORD;if(!(seen&1))deps|=G3DEP_TEX;if(!(seen&2))deps|=G3DEP_COLOR;if(!(seen&8))deps|=G3DEP_SLOTS;seen|=4;break;
+            case DRAW_CMD_G3_VTXXY:case DRAW_CMD_G3_VTXXZ:case DRAW_CMD_G3_VTXYZ:case DRAW_CMD_G3_VTXDIFF:
+-            if(!(seen&1))deps|=G3DEP_TEX;if(!(seen&2))deps|=G3DEP_COLOR;if(!(seen&4))deps|=G3DEP_PREV;if(!(seen&8))deps|=G3DEP_SLOTS;seen|=4;break;
++            deps|=G3DEP_TEXCOORD;if(!(seen&1))deps|=G3DEP_TEX;if(!(seen&2))deps|=G3DEP_COLOR;if(!(seen&4))deps|=G3DEP_PREV;if(!(seen&8))deps|=G3DEP_SLOTS;seen|=4;break;
+            default:break;}
+           // These command payloads already match the native message union.
+           // Avoid widening to u64 and copying the entire matrix-sized message.
+@@ -998,7 +998,7 @@ static void ProcessCommandList(draw_msg_t *msg){
+        if(deps&G3DEP_COLOR)memcpy(m.color,entryState.color,3);
+        if(deps&G3DEP_LIGHT){m.lightFlag=entryState.lightFlag;memcpy(m.lightColor,entryState.lightColor,sizeof m.lightColor);memcpy(m.lightVector,entryState.lightVector,sizeof m.lightVector);memcpy(m.diffuse,entryState.diffuse,3);memcpy(m.ambient,entryState.ambient,3);memcpy(m.specular,entryState.specular,3);memcpy(m.emission,entryState.emission,3);memcpy(m.vec,entryState.vec,sizeof m.vec);}
+        if(deps&G3DEP_TEX){m.texS=entryState.texS;m.texT=entryState.texT;}
+-       if(deps&G3DEP_TEXCOORD){m.transform=entryState.transform;if(m.transform==1)memcpy(m.texMtx,entryState.texMtx,sizeof m.texMtx);}
++       if(deps&G3DEP_TEXCOORD){m.transform=entryState.transform;if(m.transform)memcpy(m.texMtx,entryState.texMtx,sizeof m.texMtx);}
+        entryState=m;}
+       e->size=listSize;e->nverts=n;e->polys=s_numG3DrawsThisFrame-polys0;e->entry=entryState;e->deps=deps;e->prevIn=prevIn;e->prevOut=prevXYZ;G3SIM_CaptureSlots(&e->exit);
+       e->lastUse=listFrame;e->impure=0;listRecords++;
+diff --git a/port/native-stack-render/g3_handler.cpp b/port/native-stack-render/g3_handler.cpp
+index 98b4c10..44f4c5e 100644
+--- a/port/native-stack-render/g3_handler.cpp
++++ b/port/native-stack-render/g3_handler.cpp
+@@ -62,6 +62,7 @@ u32 s_G3triStripTriNum = 0;
+ u32 s_G3quadStripTriNum = 0;
+ 
+ GLfloat s_g3NextTexCoordS;
++static float s_rawTexS0, s_rawTexT0;
+ GLfloat s_g3NextTexCoordT;
+ 
+ G3SIM_FxVtx_t s_g3PolygonVerts[4];
+@@ -1524,7 +1525,6 @@ static void RefreshLightCache()
+         }
+     }
+ }
+-static float s_rawTexS0, s_rawTexT0;
+ void G3SIM_Normal(u32 data)
+ {
+     if(!s_normTabInit) { for(int i=0;i<1024;i++) s_normTab[i] = DecodeSignedFx10(i); s_normTabInit = 1; }
+@@ -1590,6 +1590,7 @@ void G3SIM_PolygonAttr(u32 data)
+     u8 depthTest = (data & 0b100000000000000) >> 14;
+     u8 useFog = (data & 0b1000000000000000) >> 15;
+     u8 transDepth = (data >> 11) & 1;
++    { extern unsigned p3dsPolyAttrHist[4]; p3dsPolyAttrHist[polygonMode]++; }
+ 
+     if(cullMode != s_curPolygonAttr.cullMode || polygonMode != s_curPolygonAttr.polygonMode || alpha != s_curPolygonAttr.alphaInt || depthTest != s_curPolygonAttr.depthTest || useFog != s_curPolygonAttr.fogEnable || transDepth != s_SIM_transDepthWrite)
+     {
+@@ -1637,6 +1638,9 @@ void G3SIM_PolygonAttr(u32 data)
+             glDisable( GL_CULL_FACE );
+             break;
+     }
++    /* P3DS: shadow polygons (mode 3) only write the DS stencil; they must never draw colour/depth.
++       Drawing them as solid polys hides whatever is inside the shadow volume. */
++    if(polygonMode == 3) { glEnable( GL_CULL_FACE ); glCullFace(GL_FRONT_AND_BACK); }
+ 
+ 
+     return;
+@@ -1663,8 +1667,11 @@ void G3SIM_SpecEmi(u32 data)
+ }
+ 
+ //SwapBuffers
++unsigned p3dsTexgenHist[4], p3dsFmtHist[8], p3dsPolyAttrHist[4];
+ void G3SIM_SwapBuffers(u8 depthBufferMode)
+ {
++    { static unsigned n; if (++n % 300 == 0) { printf("[G3MAT] texgen %u %u %u %u | fmt %u %u %u %u %u %u %u %u | pmode %u %u %u %u\n", p3dsTexgenHist[0], p3dsTexgenHist[1], p3dsTexgenHist[2], p3dsTexgenHist[3], p3dsFmtHist[0], p3dsFmtHist[1], p3dsFmtHist[2], p3dsFmtHist[3], p3dsFmtHist[4], p3dsFmtHist[5], p3dsFmtHist[6], p3dsFmtHist[7], p3dsPolyAttrHist[0], p3dsPolyAttrHist[1], p3dsPolyAttrHist[2], p3dsPolyAttrHist[3]); }
++      memset(p3dsTexgenHist, 0, sizeof p3dsTexgenHist); memset(p3dsFmtHist, 0, sizeof p3dsFmtHist); memset(p3dsPolyAttrHist, 0, sizeof p3dsPolyAttrHist); }
+     s_SIM_useWBuffer = depthBufferMode;
+ #ifdef OPT_MATH_ORACLE
+     {static unsigned of;if(++of%300==0)printf("[OPT-ORACLE] frame=%u clip=%u/%u scale=%u/%u mul43=%u/%u box=%u/%u boxfallback=%u corners=%u/%u lazyfin=%u/%u\n",of,omMis[0],omChecks[0],omMis[1],omChecks[1],omMis[2],omChecks[2],omMis[3],omChecks[3],omChecks[4],omMis[5],omChecks[5],omMis[6],omChecks[6]);}
+@@ -1734,6 +1741,7 @@ void G3SIM_TexImageParam(u32 data)
+     s_texImageParam.textureFormat = (data & 0b11100000000000000000000000000) >> 26;
+     s_texImageParam.color0 = (data & 0b100000000000000000000000000000) >> 29;
+     s_texImageParam.texCordTransform = (data & 0b11000000000000000000000000000000) >> 30;
++    { extern unsigned p3dsTexgenHist[4], p3dsFmtHist[8]; p3dsTexgenHist[data >> 30]++; p3dsFmtHist[(data >> 26) & 7]++; }
+     return;
+ }
+ 
+@@ -1804,6 +1812,11 @@ static void NativeRawVtx(s16 x, s16 y, s16 z)
+ {
+     if(!s_chanTabInit) { for(int i=0;i<256;i++){s_rgbTab[i]=(float)i/255.0f;s_chanTab[i]=G3SIM_Channel(s_rgbTab[i]);} s_chanTabInit = 1; }
+     fx32 fxX = x, fxY = y, fxZ = z, fxW = FX32_ONE;
++    if(s_texImageParam.texCordTransform == 3) { /* P3DS: TexGen=vertex, melonDS: ST = V*TexMtx(3x2)/16 + ST0 (V in 4.12) */
++        const G3SIM_Matrix_t *m = &currentTextureMatrix; float vx = x / 4096.0f, vy = y / 4096.0f, vz = z / 4096.0f;
++        s_g3NextTexCoordS = (vx * FX_FX32_TO_F32(m->nums[0][0]) + vy * FX_FX32_TO_F32(m->nums[1][0]) + vz * FX_FX32_TO_F32(m->nums[2][0])) / 16.0f + s_rawTexS0;
++        s_g3NextTexCoordT = (vx * FX_FX32_TO_F32(m->nums[0][1]) + vy * FX_FX32_TO_F32(m->nums[1][1]) + vz * FX_FX32_TO_F32(m->nums[2][1])) / 16.0f + s_rawTexT0;
++    }
+     // Render-only raw geometry; integer Box/Pos paths retain calculateVtxFx.
+ 
+ 
+@@ -2141,7 +2154,7 @@ extern "C" void G3SIM_CaptureEntryState(G3GeomEntryState*s,unsigned deps){
+   for(int i=0;i<3;i++)for(int j=0;j<3;j++)s->vec[i][j]=currentVectorMatrix.nums[i][j];}
+  if(deps&G3DEP_TEX){s->texS=s_g3NextTexCoordS;s->texT=s_g3NextTexCoordT;}
+  if(deps&G3DEP_TEXCOORD){s->transform=s_texImageParam.texCordTransform;
+-  if(s->transform==1)for(int i=0;i<4;i++){s->texMtx[i][0]=currentTextureMatrix.nums[i][0];s->texMtx[i][1]=currentTextureMatrix.nums[i][1];}}
++  if(s->transform)for(int i=0;i<4;i++){s->texMtx[i][0]=currentTextureMatrix.nums[i][0];s->texMtx[i][1]=currentTextureMatrix.nums[i][1];}}
+ }
+ extern "C" int G3SIM_EntryStateMatches(const G3GeomEntryState*s,unsigned deps){G3GeomEntryState c;G3SIM_CaptureEntryState(&c,deps);return memcmp(&c,s,sizeof c)==0;}
+ extern "C" void G3SIM_CaptureSlots(G3SlotState*s){
+-- 
+2.47.3
+

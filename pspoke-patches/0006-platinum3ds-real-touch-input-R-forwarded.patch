@@ -1,0 +1,40 @@
+From fcfa07cd4bfbce2df643c8a3f64369cfa8b83627 Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Fri, 16 Oct 2026 13:18:35 -0400
+Subject: [PATCH 06/11] platinum3ds: real touch input, R forwarded
+
+---
+ port/native-audio-app/input.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/port/native-audio-app/input.c b/port/native-audio-app/input.c
+index 88663d1..3c8b6c1 100644
+--- a/port/native-audio-app/input.c
++++ b/port/native-audio-app/input.c
+@@ -17,9 +17,13 @@ void PSPNativeInputStep(unsigned bits,unsigned ax,unsigned ay){
+  unsigned combo=PSP_CTRL_SELECT|PSP_CTRL_CROSS,keys=0;
+  /* R toggles stylus mode (user request). SELECT+CROSS still works. R is therefore not
+     forwarded to the game as the DS R button; L still is. */
++#ifdef PLATINUM3DS
++ (void)combo;previous=bits;touchMode=0; /* 3DS has a real touch screen: R is the DS R button */
++#else
+  if((bits&PSP_CTRL_RTRIGGER)&&!(previous&PSP_CTRL_RTRIGGER))touchMode=!touchMode;
+  if((bits&combo)==combo&&(previous&combo)!=combo)touchMode=!touchMode;previous=bits;
+  bits&=~PSP_CTRL_RTRIGGER;
++#endif
+  for(unsigned i=0;i<12;i++)if(bits&buttons[i])keys|=1u<<i;
+  int x=point.x,y=point.y;
+  /* Stylus mode (user request): only the analog stick moves the cursor, so the D-pad and face
+@@ -30,6 +34,9 @@ void PSPNativeInputStep(unsigned bits,unsigned ax,unsigned ay){
+   fx+=dx*5*256/104;fy+=dy*5*256/104;x+=fx/256;y+=fy/256;fx%=256;fy%=256;}
+  point.x=x<0?0:x>255?255:x;point.y=y<0?0:y>191?191:y;
+  point.touch=touchMode&&(bits&PSP_CTRL_LTRIGGER)?1:0;point.validity=TP_VALIDITY_VALID;
++#ifdef PLATINUM3DS
++ {extern int P3DS_TouchRead(int*,int*);int tx,ty;if(P3DS_TouchRead(&tx,&ty)){point.x=tx;point.y=ty;point.touch=1;}else point.touch=0;}
++#endif
+  s_reg_PAD_KEYINPUT=(~keys)&PAD_KEYPORT_MASK;
+  *(vu16*)(uintptr_t)HW_BUTTON_XY_BUF=(~keys)&PAD_RCNTPORT_MASK; // PSP has no closing DS lid.
+ }
+-- 
+2.47.3
+

@@ -1,0 +1,11 @@
+--- /tmp/g3h3.orig	2026-10-16 18:26:42.252905433 -0400
++++ pspoke/.work/tree/test_out/native-stack-render/g3_handler.cpp	2026-10-16 18:26:42.264905433 -0400
+@@ -2180,5 +2180,7 @@
+  for(int i=0;i<4;i++)s_slotSnap[i]=-1;
+ #endif
+ }
+-extern "C" int G3SIM_ReplayEligible(){return PSP_NATIVE_GE_TRANSFORM;}
++extern "C" void PSPNativeMemLog(const char*,...);
++extern "C" int P3DS_G3CacheOff(){static int v=-1;if(v<0){v=0;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"g3cache=%d",&x)==1)v=!x;fclose(f);}PSPNativeMemLog("[G3] display-list cache %s (g3cache=0 disables)",v?"OFF":"on");}return v;}
++extern "C" int G3SIM_ReplayEligible(){return PSP_NATIVE_GE_TRANSFORM&&!P3DS_G3CacheOff();}
+ extern "C" void G3SIM_ReplayRawBegin(){EnsureClipMatrix();PSPNativeRawMatrix(&currentClipMatrix.nums[0][0],nativeMatrixGen);}

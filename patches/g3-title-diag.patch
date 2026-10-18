@@ -1,0 +1,36 @@
+--- /tmp/g3h5.orig	2026-10-16 18:53:30.260905433 -0400
++++ pspoke/.work/tree/test_out/native-stack-render/g3_handler.cpp	2026-10-16 18:53:30.268905433 -0400
+@@ -1352,8 +1352,10 @@
+     return;
+ }
+ 
++unsigned p3dsRestoreHist[32], p3dsLightHist[16], p3dsAlpha0, p3dsBoxVis, p3dsBoxHid, p3dsPolyIdHist[64];
+ void G3SIM_MtxRestore(u8 idx)
+ {
++    p3dsRestoreHist[idx & 31]++;
+     G3SIM_MatrixStack_t * curMtxStack = getCurrentMatrixStack();
+     G3SIM_Matrix_t * currentMatrix = getCurrentMatrix();
+     if( s_curMtxMode == GX_MTXMODE_POSITION_VECTOR
+@@ -1593,7 +1595,7 @@
+     u8 depthTest = (data & 0b100000000000000) >> 14;
+     u8 useFog = (data & 0b1000000000000000) >> 15;
+     u8 transDepth = (data >> 11) & 1;
+-    { extern unsigned p3dsPolyAttrHist[4]; p3dsPolyAttrHist[polygonMode]++; }
++    { extern unsigned p3dsPolyAttrHist[4]; p3dsPolyAttrHist[polygonMode]++; p3dsLightHist[lightFlag]++; if(!alpha) p3dsAlpha0++; p3dsPolyIdHist[(data >> 24) & 63]++; }
+ 
+     if(cullMode != s_curPolygonAttr.cullMode || polygonMode != s_curPolygonAttr.polygonMode || alpha != s_curPolygonAttr.alphaInt || depthTest != s_curPolygonAttr.depthTest || useFog != s_curPolygonAttr.fogEnable || transDepth != s_SIM_transDepthWrite)
+     {
+@@ -1673,7 +1675,12 @@
+ unsigned p3dsTexgenHist[4], p3dsFmtHist[8], p3dsPolyAttrHist[4];
+ void G3SIM_SwapBuffers(u8 depthBufferMode)
+ {
+-    { static unsigned n; if (++n % 300 == 0) { printf("[G3MAT] texgen %u %u %u %u | fmt %u %u %u %u %u %u %u %u | pmode %u %u %u %u\n", p3dsTexgenHist[0], p3dsTexgenHist[1], p3dsTexgenHist[2], p3dsTexgenHist[3], p3dsFmtHist[0], p3dsFmtHist[1], p3dsFmtHist[2], p3dsFmtHist[3], p3dsFmtHist[4], p3dsFmtHist[5], p3dsFmtHist[6], p3dsFmtHist[7], p3dsPolyAttrHist[0], p3dsPolyAttrHist[1], p3dsPolyAttrHist[2], p3dsPolyAttrHist[3]); }
++    { static unsigned n; int n0print = (++n % 300 == 0); if (n0print) { printf("[G3MAT] texgen %u %u %u %u | fmt %u %u %u %u %u %u %u %u | pmode %u %u %u %u\n", p3dsTexgenHist[0], p3dsTexgenHist[1], p3dsTexgenHist[2], p3dsTexgenHist[3], p3dsFmtHist[0], p3dsFmtHist[1], p3dsFmtHist[2], p3dsFmtHist[3], p3dsFmtHist[4], p3dsFmtHist[5], p3dsFmtHist[6], p3dsFmtHist[7], p3dsPolyAttrHist[0], p3dsPolyAttrHist[1], p3dsPolyAttrHist[2], p3dsPolyAttrHist[3]); }
++      { char b[600]; int n = snprintf(b, sizeof b, "[G3DIAG-TITLE] restore idx:"); for (int i = 0; i < 32; i++) if (p3dsRestoreHist[i]) n += snprintf(b + n, sizeof b - n, " %d=%u", i, p3dsRestoreHist[i]);
++        n += snprintf(b + n, sizeof b - n, " | lightmask:"); for (int i = 0; i < 16; i++) if (p3dsLightHist[i]) n += snprintf(b + n, sizeof b - n, " %x=%u", i, p3dsLightHist[i]);
++        n += snprintf(b + n, sizeof b - n, " | polyid:"); for (int i = 0; i < 64; i++) if (p3dsPolyIdHist[i]) n += snprintf(b + n, sizeof b - n, " %d=%u", i, p3dsPolyIdHist[i]);
++        extern unsigned p3dsBoxVisW, p3dsBoxHidW; snprintf(b + n, sizeof b - n, " | alpha0 attrs %u | boxtest vis %u hidden %u", p3dsAlpha0, p3dsBoxVisW, p3dsBoxHidW);
++        if (n0print) printf("%s\n", b); memset(p3dsRestoreHist, 0, sizeof p3dsRestoreHist); memset(p3dsLightHist, 0, sizeof p3dsLightHist); memset(p3dsPolyIdHist, 0, sizeof p3dsPolyIdHist); p3dsAlpha0 = 0; p3dsBoxVisW = p3dsBoxHidW = 0; }
+       memset(p3dsTexgenHist, 0, sizeof p3dsTexgenHist); memset(p3dsFmtHist, 0, sizeof p3dsFmtHist); memset(p3dsPolyAttrHist, 0, sizeof p3dsPolyAttrHist); }
+     s_SIM_useWBuffer = depthBufferMode;
+ #ifdef OPT_MATH_ORACLE

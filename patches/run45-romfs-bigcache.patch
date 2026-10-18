@@ -1,0 +1,13 @@
+--- /tmp/romfs.run44.c	2026-10-17 01:29:55.687694285 -0400
++++ services/romfs.c	2026-10-17 01:29:55.695694285 -0400
+@@ -53,6 +53,10 @@
+ static s32 RomCachedRead(u32 pos,void*dst,u32 len){
+  if(!romCacheInit){for(int i=0;i<ROM_CACHE_BLOCKS;i++)romCacheTag[i]=CACHE_EMPTY;romCacheInit=1;}
+  unsigned char*out=dst;u32 done=0;
++ /* run 45: big 64 KiB-block cache with sequential read-ahead (platform/romcache3ds.c, rom_cache_mb, default 16) */
++ {extern int P3DS_RomCacheRead(FILE*,u32,u32,void*,u32);
++  {static unsigned seen;extern int PSPNativeResumedSince(unsigned*);if(PSPNativeResumedSince(&seen)){FILE*s2=fopen(romPath,"rb");if(s2){fclose(romStream);romStream=s2;}}}
++  s32 r=P3DS_RomCacheRead(romStream,romSize,pos,dst,len);if(r>=0)return r;}
+  /* run 44 rom_fastread=1 (default): run 43 [SPIKE] lines showed the load freezes are ROM reads (e.g. 92 misses x 16 KiB
+     = 532 ms, ~5.8 ms per 16 KiB sdmc read). (a) a request of >= 64 KiB is read straight into the caller's buffer with
+     ONE fread (bulk loads: map/texture/overlay data); (b) a cache miss reads 64 KiB ahead in one fread and fills 4 cache

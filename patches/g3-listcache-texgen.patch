@@ -1,0 +1,27 @@
+--- /tmp/fe.orig	2026-10-16 18:11:06.642969327 -0400
++++ pspoke/.work/tree/test_out/native-stack-render/frontend.cpp	2026-10-16 18:11:14.098969327 -0400
+@@ -831,12 +831,12 @@
+           else switch(tempMsg.type){
+            case DRAW_CMD_G3_TEXCOORD:seen|=1;deps|=G3DEP_TEXCOORD;break;
+            case DRAW_CMD_G3_COLOR:seen|=2;break;
+-           case DRAW_CMD_G3_NORMAL:seen|=2;deps|=G3DEP_LIGHT;break;
++           case DRAW_CMD_G3_NORMAL:seen|=2;deps|=G3DEP_LIGHT|G3DEP_TEXCOORD;break;
+            case DRAW_CMD_G3_BEGIN:seen|=8;break;
+            case DRAW_CMD_G3_VTX:case DRAW_CMD_G3_VTX16:case DRAW_CMD_G3_VTX10:
+-            if(!(seen&1))deps|=G3DEP_TEX;if(!(seen&2))deps|=G3DEP_COLOR;if(!(seen&8))deps|=G3DEP_SLOTS;seen|=4;break;
++            deps|=G3DEP_TEXCOORD;if(!(seen&1))deps|=G3DEP_TEX;if(!(seen&2))deps|=G3DEP_COLOR;if(!(seen&8))deps|=G3DEP_SLOTS;seen|=4;break;
+            case DRAW_CMD_G3_VTXXY:case DRAW_CMD_G3_VTXXZ:case DRAW_CMD_G3_VTXYZ:case DRAW_CMD_G3_VTXDIFF:
+-            if(!(seen&1))deps|=G3DEP_TEX;if(!(seen&2))deps|=G3DEP_COLOR;if(!(seen&4))deps|=G3DEP_PREV;if(!(seen&8))deps|=G3DEP_SLOTS;seen|=4;break;
++            deps|=G3DEP_TEXCOORD;if(!(seen&1))deps|=G3DEP_TEX;if(!(seen&2))deps|=G3DEP_COLOR;if(!(seen&4))deps|=G3DEP_PREV;if(!(seen&8))deps|=G3DEP_SLOTS;seen|=4;break;
+            default:break;}
+           // These command payloads already match the native message union.
+           // Avoid widening to u64 and copying the entire matrix-sized message.
+@@ -998,7 +998,7 @@
+        if(deps&G3DEP_COLOR)memcpy(m.color,entryState.color,3);
+        if(deps&G3DEP_LIGHT){m.lightFlag=entryState.lightFlag;memcpy(m.lightColor,entryState.lightColor,sizeof m.lightColor);memcpy(m.lightVector,entryState.lightVector,sizeof m.lightVector);memcpy(m.diffuse,entryState.diffuse,3);memcpy(m.ambient,entryState.ambient,3);memcpy(m.specular,entryState.specular,3);memcpy(m.emission,entryState.emission,3);memcpy(m.vec,entryState.vec,sizeof m.vec);}
+        if(deps&G3DEP_TEX){m.texS=entryState.texS;m.texT=entryState.texT;}
+-       if(deps&G3DEP_TEXCOORD){m.transform=entryState.transform;if(m.transform==1)memcpy(m.texMtx,entryState.texMtx,sizeof m.texMtx);}
++       if(deps&G3DEP_TEXCOORD){m.transform=entryState.transform;if(m.transform)memcpy(m.texMtx,entryState.texMtx,sizeof m.texMtx);}
+        entryState=m;}
+       e->size=listSize;e->nverts=n;e->polys=s_numG3DrawsThisFrame-polys0;e->entry=entryState;e->deps=deps;e->prevIn=prevIn;e->prevOut=prevXYZ;G3SIM_CaptureSlots(&e->exit);
+       e->lastUse=listFrame;e->impure=0;listRecords++;

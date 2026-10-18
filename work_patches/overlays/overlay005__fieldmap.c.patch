@@ -1,0 +1,22 @@
+--- a/overlay005__fieldmap.c	2026-10-18 16:29:45.416423507 -0400
++++ b/overlay005__fieldmap.c	2026-10-18 16:29:45.416423507 -0400
+@@ -672,6 +672,9 @@
+     PlttTransfer_Free();
+ }
+ 
++#ifdef PLATINUM3DS
++#include "p3ds_follower.h"
++#endif
+ static void ov5_021D15F4(FieldSystem *fieldSystem)
+ {
+     MtxFx44 v0, v1;
+@@ -711,6 +714,9 @@
+ 
+     FieldEffectManager_Render(fieldSystem->fieldEffMan);
+     BillboardLists_Draw();
++#ifdef PLATINUM3DS
++    P3DS_FollowerFrame(fieldSystem);
++#endif
+ 
+     if (FieldMap_InDistortionWorld(fieldSystem) == TRUE) {
+         DistWorld_ApplyGiratinaSpritePalette(fieldSystem);

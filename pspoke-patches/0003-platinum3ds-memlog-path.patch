@@ -1,0 +1,25 @@
+From c7de3752befebc04c95e95abe04712fdc69a8588 Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Fri, 16 Oct 2026 12:54:44 -0400
+Subject: [PATCH 03/11] platinum3ds: memlog path
+
+---
+ port/native-audio-app/memprobe.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/port/native-audio-app/memprobe.c b/port/native-audio-app/memprobe.c
+index 02cb0d7..84ae951 100644
+--- a/port/native-audio-app/memprobe.c
++++ b/port/native-audio-app/memprobe.c
+@@ -36,7 +36,7 @@ extern unsigned PSPNativeRenderFrameCount(void);
+ 
+ #if PSP_NATIVE_MEMLOG
+ /* Relative path: a PSP game's working directory is the folder holding the EBOOT. */
+-static const char *const kLogPath = "native-memlog.txt";
++static const char *const kLogPath = "log.txt";
+ static int logStarted;
+ #endif
+ 
+-- 
+2.47.3
+

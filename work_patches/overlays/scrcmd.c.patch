@@ -1,0 +1,42 @@
+--- a/scrcmd.c	2026-10-18 16:29:45.408423507 -0400
++++ b/scrcmd.c	2026-10-18 16:29:45.408423507 -0400
+@@ -1767,6 +1767,7 @@
+ 
+     *menu = Menu_MakeYesNoChoice(fieldSystem->bgConfig, &sYesNoWindowTemplate, 1024 - (18 + 12) - 9, 11, 4);
+     ctx->data[0] = destVarID;
++    { extern void P3DS_SaveYesNo(int); P3DS_SaveYesNo(Menu_GetCursorPos(*menu)); } /* platinum3ds run 48 save_seq=2 (read-only) */
+ 
+     ScriptContext_Pause(ctx, ScriptContext_WaitForYesNoResult);
+ 
+@@ -1785,6 +1786,7 @@
+     u64 result = Menu_ProcessInputAndHandleExit(*menu, HEAP_ID_FIELD1);
+     #endif
+ 
++    { extern void P3DS_SaveYesNo(int); P3DS_SaveYesNo(result == MENU_NOTHING_CHOSEN ? Menu_GetCursorPos(*menu) : -1); } /* platinum3ds run 48 (read-only) */
+     if (result == MENU_NOTHING_CHOSEN) {
+         return FALSE;
+     }
+@@ -4133,6 +4135,7 @@
+     u16 *destVar = ScriptContext_GetVarPointer(ctx);
+ 
+     *destVar = FieldSystem_Save(fieldSystem);
++    { extern void P3DS_SaveSeq(int); if (*destVar == 0) P3DS_SaveSeq(2); } /* platinum3ds run 47: error -> show game text */
+     return FALSE;
+ }
+ 
+@@ -6559,6 +6562,7 @@
+         *saveInfoWin = SaveInfoWindow_New(fieldSystem, HEAP_ID_FIELD1, BG_LAYER_MAIN_3);
+         SaveInfoWindow_Draw(*saveInfoWin);
+     }
++    { extern void P3DS_SaveSeq(int); P3DS_SaveSeq(1); } /* platinum3ds run 47 save_seq */
+ 
+     return FALSE;
+ }
+@@ -6572,6 +6576,7 @@
+         SaveInfoWindow_Erase(*saveInfoWin);
+         SaveInfoWindow_Free(*saveInfoWin);
+     }
++    { extern void P3DS_SaveSeq(int); P3DS_SaveSeq(0); } /* platinum3ds run 47 save_seq */
+ 
+     return FALSE;
+ }

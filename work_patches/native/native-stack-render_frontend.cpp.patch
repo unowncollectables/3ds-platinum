@@ -1,0 +1,18 @@
+--- a/native-stack-render/frontend.cpp
++++ b/native-stack-render/frontend.cpp
+@@ -509,6 +509,7 @@
+ static inline void G3StatsSwap(){}
+ #endif
+ static void SIM_HandleG3CommandImpl(draw_msg_t *msg);
++extern "C" int P3DS_G3CacheOff();
+ static void ProcessCommandList(draw_msg_t *msg);
+ static unsigned profileDepth;
+ static unsigned profOuterN;
+@@ -744,6 +745,7 @@
+     bool rec=false,pure=true,prePure=true;(void)prePure;ListEntry*le=nullptr;G3GeomEntryState entryState;unsigned contentH=0;bool contentTry=false;xyz_s_t prevIn=prevXYZ;unsigned polys0=s_numG3DrawsThisFrame,nonRaw0=g3NonRawSubmits;
+ #if PSP_NATIVE_LIST_CACHE
+     le=ListFind(listPtr);
++    if(P3DS_G3CacheOff())le=nullptr;
+     if(le&&le->impure&&(le->impureSize!=listSize||le->impureSig!=ListSig(listPtr,listSize)))le->impure=0;
+ #ifdef PSP_NATIVE_G3_STATS
+     if(le&&!le->src&&!le->impure)listMissNoSrc++;

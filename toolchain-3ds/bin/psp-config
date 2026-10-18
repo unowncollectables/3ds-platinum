@@ -1,0 +1,2 @@
+#!/bin/sh
+echo /workspace/platinum3ds/toolchain-3ds/pspsdk

@@ -1,0 +1,43 @@
+--- a/overlay005__field_camera.c	2026-10-18 16:29:45.404423507 -0400
++++ b/overlay005__field_camera.c	2026-10-18 16:29:45.404423507 -0400
+@@ -159,6 +159,11 @@
+     },
+ };
+ 
++#ifdef PLATINUM3DS
++/* run 57 cam_zoom (-2..+2, default 0 = original): overworld camera distance x 0.86 / 0.93 / 1 / 1.08 / 1.16 when the
++   field camera is created; the settings menu re-applies it live (P3DS_SetCamZoom, main3ds.c). */
++extern int P3DS_CamZoom(void); extern int P3DS_CamZoomPct(int step); extern void *P3DS_FieldCam; extern int P3DS_FieldCamStep;
++#endif
+ void FieldCamera_Create(const VecFx32 *_target, FieldSystem *fieldSystem, const enum CameraType configID, const BOOL withHistory)
+ {
+     const VecFx32 *target = _target;
+@@ -168,7 +173,16 @@
+ 
+     fieldSystem->camera = Camera_Alloc(HEAP_ID_FIELD1);
+ 
++#ifdef PLATINUM3DS
++    {
++        const int step = P3DS_CamZoom();
++        Camera_InitWithTarget(target, (fx32)((s64)config->distance * P3DS_CamZoomPct(step) / 100), &config->cameraAngle, config->verticalFov, config->projection, TRUE, fieldSystem->camera);
++        P3DS_FieldCam = fieldSystem->camera;
++        P3DS_FieldCamStep = step;
++    }
++#else
+     Camera_InitWithTarget(target, config->distance, &config->cameraAngle, config->verticalFov, config->projection, TRUE, fieldSystem->camera);
++#endif
+     Camera_SetAsActive(fieldSystem->camera);
+     Camera_SetClipping(config->nearPlaneDist, config->farPlaneDist, fieldSystem->camera);
+ 
+@@ -179,6 +193,11 @@
+ 
+ void FieldCamera_Delete(FieldSystem *fieldSystem)
+ {
++#ifdef PLATINUM3DS
++    if (P3DS_FieldCam == fieldSystem->camera) {
++        P3DS_FieldCam = NULL;
++    }
++#endif
+     Camera_ClearActive();
+     Camera_DeleteHistory(fieldSystem->camera);
+     Camera_Delete(fieldSystem->camera);

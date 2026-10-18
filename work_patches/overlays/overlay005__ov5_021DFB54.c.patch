@@ -1,0 +1,10 @@
+--- a/overlay005__ov5_021DFB54.c	2026-10-18 16:29:45.412423507 -0400
++++ b/overlay005__ov5_021DFB54.c	2026-10-18 16:29:45.412423507 -0400
+@@ -278,6 +278,7 @@
+ 
+ static void PlayerAvatar_RequestStateCycle(PlayerAvatar *playerAvatar)
+ {
++    { extern void P3DS_BikeEvent(int); P3DS_BikeEvent(1); } /* platinum3ds run 53 diag */
+     int v0 = Player_GetSpriteFromStateAndGender(PLAYER_AVATAR_CYCLING, PlayerAvatar_GetGender(playerAvatar));
+     PlayerAvatar_Redraw(playerAvatar, v0);
+ 

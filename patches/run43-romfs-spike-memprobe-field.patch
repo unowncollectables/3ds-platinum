@@ -1,0 +1,59 @@
+--- .work.bak/tree/test_out/native-audio-app/services/romfs.c	2026-10-16 23:28:43.186493808 -0400
++++ .work/tree/test_out/native-audio-app/services/romfs.c	2026-10-17 01:01:38.743694285 -0400
+@@ -48,6 +48,8 @@
+ #define CACHE_EMPTY 0xffffffffu
+ static unsigned st_readCalls,st_blockHit,st_blockMiss;
+ static unsigned long long st_readBytes;
++/* run 43 [SPIKE] diag: ROM block misses + time spent in fseek/fread (sdmc) this frame */
++extern unsigned long long P3DS_TickNow(void);unsigned long long P3DS_SpkRomTicks;unsigned P3DS_SpkRomBlocks;
+ static s32 RomCachedRead(u32 pos,void*dst,u32 len){
+  if(!romCacheInit){for(int i=0;i<ROM_CACHE_BLOCKS;i++)romCacheTag[i]=CACHE_EMPTY;romCacheInit=1;}
+  unsigned char*out=dst;u32 done=0;
+@@ -62,9 +64,11 @@
+       per-read code cleared it; on SoulSilver dropping this silenced the sound banks). */
+    {static unsigned seen;extern int PSPNativeResumedSince(unsigned*);
+     if(PSPNativeResumedSince(&seen)){FILE*s=fopen(romPath,"rb");if(s){fclose(romStream);romStream=s;}else{romCacheTag[slot]=CACHE_EMPTY;return done?(s32)done:-1;}}}
++   unsigned long long spk0=P3DS_TickNow();
+    clearerr(romStream);
+    if(fseek(romStream,(long)base,SEEK_SET)){romCacheTag[slot]=CACHE_EMPTY;return done?(s32)done:-1;}
+    size_t got=want?fread(romCache[slot],1,want,romStream):0;
++   P3DS_SpkRomTicks+=P3DS_TickNow()-spk0;P3DS_SpkRomBlocks++;
+    /* Error OR an unexpected short read: never cache a poisoned block (want is already clamped at the
+       ROM end, so a full read always has got == want). */
+    if(want&&(ferror(romStream)||got!=want)){clearerr(romStream);romCacheTag[slot]=CACHE_EMPTY;return done?(s32)done:-1;}
+--- .work.bak/tree/test_out/native-audio-app/memprobe.c	2026-10-16 23:28:43.066493808 -0400
++++ .work/tree/test_out/native-audio-app/memprobe.c	2026-10-17 01:04:55.551694285 -0400
+@@ -47,23 +47,8 @@
+     va_start(ap, fmt);
+     vsnprintf(line, sizeof(line), fmt, ap);
+     va_end(ap);
+-#ifndef PLATINUM3DS
+-    printf("%s\n", line);
+-#endif
+-#if PSP_NATIVE_MEMLOG
+-    {
+-        SceUID fd = sceIoOpen(kLogPath,
+-                              logStarted ? (PSP_O_WRONLY | PSP_O_APPEND)
+-                                         : (PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC),
+-                              0777);
+-        if (fd >= 0) {
+-            logStarted = 1;
+-            sceIoWrite(fd, line, strlen(line));
+-            sceIoWrite(fd, "\n", 1);
+-            sceIoClose(fd);
+-        }
+-    }
+-#endif
++    /* platinum3ds run 35: non-blocking RAM ring, flushed to log.txt by a low-priority thread (logring.c). */
++    { extern void P3DS_LogLine(const char *); P3DS_LogLine(line); }
+ }
+ 
+ /* uordblks is the honest "bytes currently handed out by malloc": it covers the
+@@ -138,6 +123,7 @@
+         snprintf(tag, sizeof(tag), "enter app@%p", tmpl);
+     }
+     PSPNativeMemReport(tag);
++    { extern int P3DS_InField; P3DS_InField = name && !strcmp(name, "gFieldMapTemplate"); } /* run 43 wideview: strips only in the overworld */
+ 
+     /* The one screen that kills real hardware. Every naming context in the
+      * game - player, rival, nickname, PC box, Pal Pad, group - reaches it

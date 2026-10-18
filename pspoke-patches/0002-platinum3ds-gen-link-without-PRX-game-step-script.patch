@@ -1,0 +1,47 @@
+From 733a8958dc13e5c5b84b4c96bc01b2eabcb966e5 Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Fri, 16 Oct 2026 12:46:58 -0400
+Subject: [PATCH 02/11] platinum3ds: gen-link without PRX, game step script
+
+---
+ port/native-audio-app/overlays/gen-link.py |  2 ++
+ scripts/p3ds_game.sh                       | 14 ++++++++++++++
+ 2 files changed, 16 insertions(+)
+ create mode 100755 scripts/p3ds_game.sh
+
+diff --git a/port/native-audio-app/overlays/gen-link.py b/port/native-audio-app/overlays/gen-link.py
+index ac2678c..e7a27f8 100644
+--- a/port/native-audio-app/overlays/gen-link.py
++++ b/port/native-audio-app/overlays/gen-link.py
+@@ -10,6 +10,8 @@ for m in mods:
+ ld+=['} INSERT AFTER .data;'];(p/'overlays.ld').write_text('\n'.join(ld)+'\n')
+ (p/'ranges.h').write_text('\n'.join(decl)+'\nstatic struct Range ranges[]={\n'+',\n'.join(rows)+'\n};\n')
+ 
++import sys
++if not Path('@PSPDEV@/psp/sdk/lib/linkfile.prx').exists(): sys.exit(0)  # platinum3ds: no PSP PRX link script
+ base=Path('@PSPDEV@/psp/sdk/lib/linkfile.prx').read_text()
+ # Linker GC must retain the PSP syslib exports, including module_start.
+ base=base.replace('.lib.ent        : { *(.lib.ent) }', '.lib.ent        : { KEEP(*(.lib.ent)) }')
+diff --git a/scripts/p3ds_game.sh b/scripts/p3ds_game.sh
+new file mode 100755
+index 0000000..d1f2b54
+--- /dev/null
++++ b/scripts/p3ds_game.sh
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++# platinum3ds: platinum.sh game-compile steps only (no PSP renderer/app link).
++source "$(dirname "$0")/phases.sh"
++O="$T/native-audio-app/overlays"
++
++
++: # qol already applied
++qol_header
++
++
++step ov-link      bash -c "cd '$O' && python3 gen-link.py"
++step g3stack      bash -c "cd '$T/native-audio-app' && cp -f libsdk-filtered.a.base libsdk-filtered.a && python3 sdk-g3stack/rebuild.py && psp-objcopy --weaken-symbol=MTX_Copy33To43_ --weaken-symbol=MTX_Copy33To44_ --weaken-symbol=MTX_Copy43To44_ --weaken-symbol=MTX_Scale33_ --weaken-symbol=MTX_Scale43_ --weaken-symbol=MTX_Scale44_ --weaken-symbol=MTX_Transpose33_ --weaken-symbol=MTX_Transpose43_ --weaken-symbol=MTX_Transpose44_ libsdk-filtered.a"
++step tex-redirect bash -c "cd '$T/native-audio-app' && python3 opttex_redirect.py"
++echo GAME-DONE
+-- 
+2.47.3
+

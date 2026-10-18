@@ -1,0 +1,20 @@
+--- a/native-audio-app/platform.c
++++ b/native-audio-app/platform.c
+@@ -80,7 +80,11 @@
+ 
+ void SIM_handleAssertionFailure(const char*file,unsigned line,const char*expr){char b[256];snprintf(b,sizeof(b),"assertion %s:%u %s",file,line,expr);PSPNativeFatal(b);}
+ void OS_IrqHandler(void){PSPNativeFatal("unsupported direct DS network IRQ handler");}
++#ifdef PLATINUM3DS
++void OS_ResetSystem(u32 parameter){extern void P3DS_SoftReset(unsigned);P3DS_SoftReset(parameter);for(;;);} /* platinum3ds run 53 soft reset */
++#else
+ void OS_ResetSystem(u32 parameter){char b[96];snprintf(b,sizeof(b),"reset requested %lu; native restart unsupported",(unsigned long)parameter);PSPNativeFatal(b);}
++#endif
+ void OS_SetDPermissionsForProtectionRegion(u32 mask,u32 flags){printf("[NATIVE] unsupported DS cartridge protection %lx/%lx\n",(unsigned long)mask,(unsigned long)flags);abort();}
+ void SVC_WaitByLoop(s32 count){if(count>0){uint64_t us=((uint64_t)(u32)count*4000000u+OS_SYSTEM_CLOCK-1)/OS_SYSTEM_CLOCK;while(us){u32 part=us>1000000?1000000:(u32)us;sceKernelDelayThread(part);us-=part;}}}
+ 
+@@ -89,3 +93,5 @@
+ extern void G3SIM_EnsureClipMatrix(void);
+ extern int __real_G3X_GetClipMtx(void *m);
+ int __wrap_G3X_GetClipMtx(void *m){G3SIM_EnsureClipMatrix();return __real_G3X_GetClipMtx(m);}
++extern void G3SIM_GetVectorMtx33(fx32 *o);
++int __wrap_G3X_GetVectorMtx(void *m){G3SIM_GetVectorMtx33((fx32 *)m);return 0;}

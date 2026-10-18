@@ -1,0 +1,37 @@
+--- a/native-audio-app/memprobe.c
++++ b/native-audio-app/memprobe.c
+@@ -47,23 +47,8 @@
+     va_start(ap, fmt);
+     vsnprintf(line, sizeof(line), fmt, ap);
+     va_end(ap);
+-#ifndef PLATINUM3DS
+-    printf("%s\n", line);
+-#endif
+-#if PSP_NATIVE_MEMLOG
+-    {
+-        SceUID fd = sceIoOpen(kLogPath,
+-                              logStarted ? (PSP_O_WRONLY | PSP_O_APPEND)
+-                                         : (PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC),
+-                              0777);
+-        if (fd >= 0) {
+-            logStarted = 1;
+-            sceIoWrite(fd, line, strlen(line));
+-            sceIoWrite(fd, "\n", 1);
+-            sceIoClose(fd);
+-        }
+-    }
+-#endif
++    /* platinum3ds run 35: non-blocking RAM ring, flushed to log.txt by a low-priority thread (logring.c). */
++    { extern void P3DS_LogLine(const char *); P3DS_LogLine(line); }
+ }
+ 
+ /* uordblks is the honest "bytes currently handed out by malloc": it covers the
+@@ -138,6 +123,8 @@
+         snprintf(tag, sizeof(tag), "enter app@%p", tmpl);
+     }
+     PSPNativeMemReport(tag);
++    { extern volatile unsigned P3DS_SceneGen; P3DS_SceneGen++; } /* run 47 bottom_refresh */
++    { extern int P3DS_InField; P3DS_InField = name && !strcmp(name, "gFieldMapTemplate"); } /* run 43 wideview: strips only in the overworld */
+ 
+     /* The one screen that kills real hardware. Every naming context in the
+      * game - player, rival, nickname, PC box, Pal Pad, group - reaches it

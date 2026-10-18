@@ -1,0 +1,38 @@
+--- /tmp/romfs.run43.c	2026-10-17 01:17:02.419694285 -0400
++++ services/romfs.c	2026-10-17 01:17:02.427694285 -0400
+@@ -53,10 +53,35 @@
+ static s32 RomCachedRead(u32 pos,void*dst,u32 len){
+  if(!romCacheInit){for(int i=0;i<ROM_CACHE_BLOCKS;i++)romCacheTag[i]=CACHE_EMPTY;romCacheInit=1;}
+  unsigned char*out=dst;u32 done=0;
++ /* run 44 rom_fastread=1 (default): run 43 [SPIKE] lines showed the load freezes are ROM reads (e.g. 92 misses x 16 KiB
++    = 532 ms, ~5.8 ms per 16 KiB sdmc read). (a) a request of >= 64 KiB is read straight into the caller's buffer with
++    ONE fread (bulk loads: map/texture/overlay data); (b) a cache miss reads 64 KiB ahead in one fread and fills 4 cache
++    blocks. 0 = old 16 KiB-per-read behaviour. ROM is read-only, so bypassing the cache cannot go stale. */
++ static int fast=-1;if(fast<0){fast=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");if(f){char l[64];int x;while(fgets(l,sizeof l,f))if(sscanf(l,"rom_fastread=%d",&x)==1)fast=x!=0;fclose(f);}PSPNativeMemLog("[ROMFS] rom_fastread=%d",fast);}
++ if(fast&&len>=0x10000&&pos<romSize){u32 want=len;if((uint64_t)pos+want>romSize)want=romSize-pos;
++  unsigned long long spk0=P3DS_TickNow();
++  {static unsigned seen;extern int PSPNativeResumedSince(unsigned*);if(PSPNativeResumedSince(&seen)){FILE*s2=fopen(romPath,"rb");if(s2){fclose(romStream);romStream=s2;}}}
++  clearerr(romStream);size_t got=0;if(!fseek(romStream,(long)pos,SEEK_SET))got=fread(out,1,want,romStream);
++  P3DS_SpkRomTicks+=P3DS_TickNow()-spk0;P3DS_SpkRomBlocks+=(want+ROM_CACHE_BLOCK-1)/ROM_CACHE_BLOCK;
++  if(got==want&&!ferror(romStream))return (s32)got;
++  clearerr(romStream);/* fall back to the cached path */}
+  while(done<len){
+   u32 p=pos+done,base=p&~(ROM_CACHE_BLOCK-1);
+   int slot=-1;
+   for(int i=0;i<ROM_CACHE_BLOCKS;i++)if(romCacheTag[i]==base){slot=i;break;}
++  if(slot<0&&fast&&base+4*ROM_CACHE_BLOCK<=romSize){/* 64 KiB read-ahead into 4 blocks */
++   static unsigned char ra[4*ROM_CACHE_BLOCK] __attribute__((aligned(16)));
++   {static unsigned seen;extern int PSPNativeResumedSince(unsigned*);if(PSPNativeResumedSince(&seen)){FILE*s2=fopen(romPath,"rb");if(s2){fclose(romStream);romStream=s2;}}}
++   unsigned long long spk0=P3DS_TickNow();clearerr(romStream);size_t got=0;
++   if(!fseek(romStream,(long)base,SEEK_SET))got=fread(ra,1,sizeof ra,romStream);
++   P3DS_SpkRomTicks+=P3DS_TickNow()-spk0;P3DS_SpkRomBlocks+=4;
++   if(got==sizeof ra&&!ferror(romStream)){
++    for(int b=3;b>=0;b--){u32 bb=base+b*ROM_CACHE_BLOCK;int s3=-1;for(int i=0;i<ROM_CACHE_BLOCKS;i++)if(romCacheTag[i]==bb){s3=i;break;}
++     if(s3<0){s3=0;for(int i=1;i<ROM_CACHE_BLOCKS;i++)if(romCacheLRU[i]<romCacheLRU[s3])s3=i;}
++     memcpy(romCache[s3],ra+b*ROM_CACHE_BLOCK,ROM_CACHE_BLOCK);romCacheTag[s3]=bb;romCacheLen[s3]=ROM_CACHE_BLOCK;romCacheLRU[s3]=++romCacheClock;if(b==0)slot=s3;}
++    st_blockMiss++;
++   }else clearerr(romStream);
++  }
+   if(slot<0){
+    slot=0;for(int i=1;i<ROM_CACHE_BLOCKS;i++)if(romCacheLRU[i]<romCacheLRU[slot])slot=i;
+    u32 want=ROM_CACHE_BLOCK;if((uint64_t)base+want>romSize)want=romSize>base?romSize-base:0;

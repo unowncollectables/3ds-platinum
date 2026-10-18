@@ -1,0 +1,18 @@
+--- a/player_move.c	2026-10-18 16:29:45.420423507 -0400
++++ b/player_move.c	2026-10-18 16:29:45.420423507 -0400
+@@ -2477,11 +2477,10 @@
+  */
+ BOOL PlayerAvatar_IsRunButtonHeld(PlayerAvatar *playerAvatar, u16 pad)
+ {
+-    if (pad & PAD_BUTTON_B) {
+-        return TRUE;
+-    }
+-
+-    return FALSE;
++    /* platinum3ds run 53 zl_run: ZL toggles running; with it on, B held = walk */
++    extern volatile int P3DS_RunToggle;
++    BOOL held = (pad & PAD_BUTTON_B) ? TRUE : FALSE;
++    return P3DS_RunToggle ? !held : held;
+ }
+ 
+ /**

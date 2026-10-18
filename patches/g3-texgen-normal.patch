@@ -1,0 +1,90 @@
+--- /tmp/g3h.orig	2026-10-16 18:02:23.476580215 -0400
++++ pspoke/.work/tree/test_out/native-stack-render/g3_handler.cpp	2026-10-16 18:11:57.090969327 -0400
+@@ -62,6 +62,7 @@
+ u32 s_G3quadStripTriNum = 0;
+ 
+ GLfloat s_g3NextTexCoordS;
++static float s_rawTexS0, s_rawTexT0;
+ GLfloat s_g3NextTexCoordT;
+ 
+ G3SIM_FxVtx_t s_g3PolygonVerts[4];
+@@ -1527,6 +1528,12 @@
+ void G3SIM_Normal(u32 data)
+ {
+     if(!s_normTabInit) { for(int i=0;i<1024;i++) s_normTab[i] = DecodeSignedFx10(i); s_normTabInit = 1; }
++    if(s_texImageParam.texCordTransform == 2) { /* P3DS: TexGen=normal (env/sphere mapping), GBATEK/melonDS: ST = N*TexMtx(3x2)/2 + ST0 */
++        const G3SIM_Matrix_t *m = &currentTextureMatrix;
++        float nx = s_normTab[data & 0x3FF], ny = s_normTab[(data >> 10) & 0x3FF], nz = s_normTab[(data >> 20) & 0x3FF];
++        s_g3NextTexCoordS = 0.5f * (nx * FX_FX32_TO_F32(m->nums[0][0]) + ny * FX_FX32_TO_F32(m->nums[1][0]) + nz * FX_FX32_TO_F32(m->nums[2][0])) + s_rawTexS0;
++        s_g3NextTexCoordT = 0.5f * (nx * FX_FX32_TO_F32(m->nums[0][1]) + ny * FX_FX32_TO_F32(m->nums[1][1]) + nz * FX_FX32_TO_F32(m->nums[2][1])) + s_rawTexT0;
++    }
+     RefreshLightCache();
+ #if PSP_NATIVE_NORMAL_RESULT_CACHE
+     NormalResult&result=normalResults[(data*2654435761u)>>24];
+@@ -1583,6 +1590,7 @@
+     u8 depthTest = (data & 0b100000000000000) >> 14;
+     u8 useFog = (data & 0b1000000000000000) >> 15;
+     u8 transDepth = (data >> 11) & 1;
++    { extern unsigned p3dsPolyAttrHist[4]; p3dsPolyAttrHist[polygonMode]++; }
+ 
+     if(cullMode != s_curPolygonAttr.cullMode || polygonMode != s_curPolygonAttr.polygonMode || alpha != s_curPolygonAttr.alphaInt || depthTest != s_curPolygonAttr.depthTest || useFog != s_curPolygonAttr.fogEnable || transDepth != s_SIM_transDepthWrite)
+     {
+@@ -1630,6 +1638,9 @@
+             glDisable( GL_CULL_FACE );
+             break;
+     }
++    /* P3DS: shadow polygons (mode 3) only write the DS stencil; they must never draw colour/depth.
++       Drawing them as solid polys hides whatever is inside the shadow volume. */
++    if(polygonMode == 3) { glEnable( GL_CULL_FACE ); glCullFace(GL_FRONT_AND_BACK); }
+ 
+ 
+     return;
+@@ -1656,8 +1667,11 @@
+ }
+ 
+ //SwapBuffers
++unsigned p3dsTexgenHist[4], p3dsFmtHist[8], p3dsPolyAttrHist[4];
+ void G3SIM_SwapBuffers(u8 depthBufferMode)
+ {
++    { static unsigned n; if (++n % 300 == 0) { printf("[G3MAT] texgen %u %u %u %u | fmt %u %u %u %u %u %u %u %u | pmode %u %u %u %u\n", p3dsTexgenHist[0], p3dsTexgenHist[1], p3dsTexgenHist[2], p3dsTexgenHist[3], p3dsFmtHist[0], p3dsFmtHist[1], p3dsFmtHist[2], p3dsFmtHist[3], p3dsFmtHist[4], p3dsFmtHist[5], p3dsFmtHist[6], p3dsFmtHist[7], p3dsPolyAttrHist[0], p3dsPolyAttrHist[1], p3dsPolyAttrHist[2], p3dsPolyAttrHist[3]); }
++      memset(p3dsTexgenHist, 0, sizeof p3dsTexgenHist); memset(p3dsFmtHist, 0, sizeof p3dsFmtHist); memset(p3dsPolyAttrHist, 0, sizeof p3dsPolyAttrHist); }
+     s_SIM_useWBuffer = depthBufferMode;
+ #ifdef OPT_MATH_ORACLE
+     {static unsigned of;if(++of%300==0)printf("[OPT-ORACLE] frame=%u clip=%u/%u scale=%u/%u mul43=%u/%u box=%u/%u boxfallback=%u corners=%u/%u lazyfin=%u/%u\n",of,omMis[0],omChecks[0],omMis[1],omChecks[1],omMis[2],omChecks[2],omMis[3],omChecks[3],omChecks[4],omMis[5],omChecks[5],omMis[6],omChecks[6]);}
+@@ -1709,6 +1723,7 @@
+         s_g3NextTexCoordS = ((float)s)/16.0f;
+         s_g3NextTexCoordT = ((float)t)/16.0f;
+     }
++    s_rawTexS0 = ((float)s)/16.0f; s_rawTexT0 = ((float)t)/16.0f;
+ 
+     return;
+ }
+@@ -1726,6 +1741,7 @@
+     s_texImageParam.textureFormat = (data & 0b11100000000000000000000000000) >> 26;
+     s_texImageParam.color0 = (data & 0b100000000000000000000000000000) >> 29;
+     s_texImageParam.texCordTransform = (data & 0b11000000000000000000000000000000) >> 30;
++    { extern unsigned p3dsTexgenHist[4], p3dsFmtHist[8]; p3dsTexgenHist[data >> 30]++; p3dsFmtHist[(data >> 26) & 7]++; }
+     return;
+ }
+ 
+@@ -1796,6 +1812,11 @@
+ {
+     if(!s_chanTabInit) { for(int i=0;i<256;i++){s_rgbTab[i]=(float)i/255.0f;s_chanTab[i]=G3SIM_Channel(s_rgbTab[i]);} s_chanTabInit = 1; }
+     fx32 fxX = x, fxY = y, fxZ = z, fxW = FX32_ONE;
++    if(s_texImageParam.texCordTransform == 3) { /* P3DS: TexGen=vertex, melonDS: ST = V*TexMtx(3x2)/16 + ST0 (V in 4.12) */
++        const G3SIM_Matrix_t *m = &currentTextureMatrix; float vx = x / 4096.0f, vy = y / 4096.0f, vz = z / 4096.0f;
++        s_g3NextTexCoordS = (vx * FX_FX32_TO_F32(m->nums[0][0]) + vy * FX_FX32_TO_F32(m->nums[1][0]) + vz * FX_FX32_TO_F32(m->nums[2][0])) / 16.0f + s_rawTexS0;
++        s_g3NextTexCoordT = (vx * FX_FX32_TO_F32(m->nums[0][1]) + vy * FX_FX32_TO_F32(m->nums[1][1]) + vz * FX_FX32_TO_F32(m->nums[2][1])) / 16.0f + s_rawTexT0;
++    }
+     // Render-only raw geometry; integer Box/Pos paths retain calculateVtxFx.
+ 
+ 
+@@ -2133,7 +2154,7 @@
+   for(int i=0;i<3;i++)for(int j=0;j<3;j++)s->vec[i][j]=currentVectorMatrix.nums[i][j];}
+  if(deps&G3DEP_TEX){s->texS=s_g3NextTexCoordS;s->texT=s_g3NextTexCoordT;}
+  if(deps&G3DEP_TEXCOORD){s->transform=s_texImageParam.texCordTransform;
+-  if(s->transform==1)for(int i=0;i<4;i++){s->texMtx[i][0]=currentTextureMatrix.nums[i][0];s->texMtx[i][1]=currentTextureMatrix.nums[i][1];}}
++  if(s->transform)for(int i=0;i<4;i++){s->texMtx[i][0]=currentTextureMatrix.nums[i][0];s->texMtx[i][1]=currentTextureMatrix.nums[i][1];}}
+ }
+ extern "C" int G3SIM_EntryStateMatches(const G3GeomEntryState*s,unsigned deps){G3GeomEntryState c;G3SIM_CaptureEntryState(&c,deps);return memcmp(&c,s,sizeof c)==0;}
+ extern "C" void G3SIM_CaptureSlots(G3SlotState*s){

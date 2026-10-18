@@ -1,0 +1,35 @@
+From 9e4ee3a190313f50174ebc6e4da17ee73a226b7d Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Fri, 16 Oct 2026 13:12:14 -0400
+Subject: [PATCH 05/11] platinum3ds: 3DS address windows in MIi_NativeRangeOk
+
+---
+ port/native-audio-app/services/mi_dma.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/port/native-audio-app/services/mi_dma.c b/port/native-audio-app/services/mi_dma.c
+index 1bd3ba2..7e629b0 100644
+--- a/port/native-audio-app/services/mi_dma.c
++++ b/port/native-audio-app/services/mi_dma.c
+@@ -13,9 +13,18 @@
+    Such a copy would be a host SIGSEGV in PPSSPPHeadless (no exception handler) and a bus error on hardware. */
+ static int MIi_NativeRangeOk(const void *p, u32 size, const char *what, const char *fn, void *ra)
+ {
++#ifdef PLATINUM3DS
++    /* 3DS process map: image+heap 0x00100000-0x10000000 (main stack ~0x08000000 under HBL),
++       linear heap 0x14000000-0x1C000000 (old map) / 0x30000000-0x40000000 (New 3DS / new map), VRAM 0x1F000000-0x1F600000. */
++    u32 a = (u32)p;
++    u64 e = (u64)a + size;
++    int ok = (a >= 0x00100000u && e <= 0x10000000u) || (a >= 0x14000000u && e <= 0x1C000000u) ||
++             (a >= 0x30000000u && e <= 0x40000000u) || (a >= 0x1F000000u && e <= 0x1F600000u);
++#else
+     u32 a = (u32)p & ~0x40000000u;
+     u64 e = (u64)a + size;
+     int ok = (a >= 0x08000000u && e <= 0x0C000000u) || (a >= 0x04000000u && e <= 0x04200000u) || (a >= 0x00010000u && e <= 0x00014000u);
++#endif
+     if (!ok) {
+         printf("[MI-DMA] %s: %s=%08x size=%u ra=%08x invalid (unmapped PSP address)\n", fn, what, (u32)p, size, (u32)ra);
+         abort(); /* Never report a successful transfer after discarding it. */
+-- 
+2.47.3
+

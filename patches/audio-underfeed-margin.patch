@@ -1,0 +1,35 @@
+--- /tmp/sas.orig	2026-10-16 18:34:43.544905433 -0400
++++ pspoke/.work/tree/test_out/native-audio-sound/sas_out.c	2026-10-16 18:52:54.284905433 -0400
+@@ -59,6 +59,7 @@
+ /* platinum3ds: audio_realtime=1 (default) starts playback 24 pumps (125 ms) behind the game so a 25-40 fps
+    frame (5-8 pumps per frame, bursty) never runs the snapshot queue dry; dry = held clock = slow, choppy music. */
+ #include <stdio.h>
++static int P3DS_MarginMode(void) { static int v = -1; if (v < 0) { v = 2; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l[64]; int x; while (fgets(l, sizeof l, f)) if (sscanf(l, "audio_margin_reset=%d", &x) == 1) v = x; fclose(f); } PSPNativeMemLog("[AUDIO] audio_margin_reset=%d (0 pin, 1 jump, 2 gradual)", v); } return v; }
+ static u32 P3DS_Latency(void) { static int v = -1; if (v < 0) { v = 24; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l[64]; int x; while (fgets(l, sizeof l, f)) if (sscanf(l, "audio_realtime=%d", &x) == 1 && !x) v = LATENCY_PUMPS; fclose(f); } PSPNativeMemLog("[AUDIO] snapshot latency %d pumps", v); } return (u32)v; }
+ static u32 st_dropSnaps, st_keyOns, st_convBytes, st_cacheHits, st_cacheMiss, st_evict, st_decimated, st_pitchClamp, st_skipped, st_underfeed;
+ static u32 st_threadUs, st_grains; static int st_peak; static u32 st_pitchClamp, st_hdrLogs;
+@@ -349,7 +350,13 @@
+             if (r == w) {
+                 /* game has not produced newer sound state yet (load, stall): hold the clock */
+                 u32 newest = (w - 1) & SNAP_MASK;
+-                if (playTime > s_snaps[newest].time + 174592u) { playTime = s_snaps[newest].time + 174592u; st_underfeed++; }
++                if (playTime > s_snaps[newest].time + 174592u) {
++                    /* audio_margin_reset: 0 = pin 1 pump behind the head (original), 1 = jump back the full latency (run 26;
++                       froze all channel updates ~125 ms per hold: battle BGM/SE glitches), 2 (default) = pin, then regain the
++                       margin gradually below (playback state clock runs 6% slow until the backlog is back). */
++                    if (P3DS_MarginMode() == 1) { u64 lat = (u64)P3DS_Latency() * 174592u; playTime = s_snaps[newest].time > lat ? s_snaps[newest].time - lat : 0; }
++                    else playTime = s_snaps[newest].time + 174592u;
++                    st_underfeed++; }
+             }
+         }
+         static int gi; short *s_grain = s_grainBuf[gi ^= 1];
+@@ -362,7 +369,8 @@
+             { static u32 lastT, lastR; u32 now = sceKernelGetSystemTimeLow(); u32 snaps = s_snapR - lastR; lastR = s_snapR;
+               PSPNativeMemLog("[AUDIO-CLK] 344 grains (1997 ms audio) took %u ms wall | game pumps consumed %u (expect ~383) | underfeed holds %u | snap backlog %u", lastT ? (now - lastT) / 1000 : 0, snaps, st_underfeed, (s_snapW - s_snapR) & SNAP_MASK); lastT = now; st_underfeed = 0; }
+             PSPNativeMemLog("[AUDIO-SAS] grain %u peak %d keyed %d env0 %08x env1 %08x env2 %08x env3 %08x", g, st_peak, keyed, h[0], h[1], h[2], h[3]); st_peak = 0; } }
+-        frac += grainNum; playTime += frac / SAS_RATE; frac %= SAS_RATE;
++        { u64 step = grainNum; if (started && P3DS_MarginMode() == 2 && ((s_snapW - s_snapR) & SNAP_MASK) < P3DS_Latency() / 2) step -= step >> 4;
++          frac += step; playTime += frac / SAS_RATE; frac %= SAS_RATE; }
+         st_threadUs += sceKernelGetSystemTimeLow() - t0; st_grains++;
+         sceAudioOutputPannedBlocking(s_audioCh, PSP_AUDIO_VOLUME_MAX, PSP_AUDIO_VOLUME_MAX, s_grain);
+     }

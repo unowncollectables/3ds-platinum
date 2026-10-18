@@ -1,0 +1,18 @@
+--- a/native-audio-probe/snd_bank.c
++++ b/native-audio-probe/snd_bank.c
+@@ -446,6 +446,7 @@
+ 
+ #if defined( SDK_PORT ) || defined(SDK_ARM7)
+ 
++unsigned P3DS_NoteNoWave;
+ BOOL SND_NoteOn (SNDExChannel * ch_p, int key, int velocity, s32 length, const SNDBankData * bank, const SNDInstData * inst)
+ {
+     const SNDWaveData * wave_data;
+@@ -475,6 +476,7 @@
+         if (wave_data != NULL) {
+             result = SND_StartExChannelPcm(ch_p, &wave_data->param, wave_data->samples, length);
+         } else {
++            { extern unsigned P3DS_NoteNoWave; P3DS_NoteNoWave++; } /* platinum3ds run 53 diag */
+             result = FALSE;
+         }
+         break;

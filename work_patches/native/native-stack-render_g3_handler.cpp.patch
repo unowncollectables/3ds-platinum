@@ -1,0 +1,129 @@
+--- a/native-stack-render/g3_handler.cpp
++++ b/native-stack-render/g3_handler.cpp
+@@ -336,6 +336,9 @@
+ static bool clipDirty=false;
+ static inline void EnsureClipMatrix(){if(clipDirty){clipDirty=false;computeClipMatrixNow();OMP_N(1);}}
+ extern "C" void G3SIM_EnsureClipMatrix(){EnsureClipMatrix();}
++/* P3DS run 27: VECMTX_RESULT was never written, so G3X_GetVectorMtx returned zeros. NNS envelope (weighted skin)
++   normals = 0 -> unlit/dark skinned meshes (Giratina's body). */
++extern "C" void G3SIM_GetVectorMtx33(fx32*o){for(int i=0;i<3;i++)for(int j=0;j<3;j++)o[i*3+j]=currentVectorMatrix.nums[i][j];}
+ static void calculateClipMatrix()
+ {
+ #ifdef OPT_MATH_LAZYFIN
+@@ -486,6 +489,7 @@
+     return;
+ }
+ 
++extern "C" int P3DS_WideCull; /* platinum3ds run 45 (render3ds.cpp) */
+ #ifdef OPT_MATH_BOX
+ /* Per-face outcome of G3SIM_ClipPolygon(face,4,0,FALSE) decided without running the clipper:
+    1 = count>0, 0 = count 0, -1 = undetermined (run the real clipper). ClipSegment used to be
+@@ -521,6 +525,9 @@
+     static const u8 sel[8][3]={{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,1,1},{0,0,1},{1,0,1},{1,1,1}};
+     fx32 cube[8][4];
+     for(int c=0;c<8;c++)for(int i=0;i<4;i++)cube[c][i]=(fx32)(px[sel[c][0]][i]+py[sel[c][1]][i]+pz[sel[c][2]][i]+(u32)M.nums[3][i]);
++    /* platinum3ds run 45 wide_cull: while wideview is active, test against a 1.25x wider view (x' = 0.8x), so map props
++       (buildings) in the side strips pass the game's box test. Only the visibility answer changes. */
++    {if(P3DS_WideCull)for(int c=0;c<8;c++)cube[c][0]=(fx32)(((s64)cube[c][0]*4)/5);}
+ #ifdef OPT_MATH_ORACLE
+     {fx32 rc[8][4];s16 xs[2]={x,x1},ys[2]={y,y1},zs[2]={z,z1};
+      for(int c=0;c<8;c++){rc[c][0]=xs[sel[c][0]];rc[c][1]=ys[sel[c][1]];rc[c][2]=zs[sel[c][2]];calculateVtxFx(&rc[c][0],&rc[c][1],&rc[c][2],&rc[c][3]);}
+@@ -578,6 +585,7 @@
+     for(int i=0; i < 8; i++) {
+         calculateVtxFx(&cube[i][0], &cube[i][1], &cube[i][2], &cube[i][3]);
+     }
++    {if(P3DS_WideCull)for(int c=0;c<8;c++)cube[c][0]=(fx32)(((s64)cube[c][0]*4)/5);} /* run 45 wide_cull */
+ #endif
+ 
+     #define SetupFace(_face0,_face1,_face2,_face3) \
+@@ -1001,6 +1009,9 @@
+     s_G3LightColor[lightNum][2] = lightBlue << 3;
+ }
+ 
++static float s_lightVecFixed[4][3];
++extern "C" void PSPNativeMemLog(const char*,...);
++static int P3DS_LightFix(){static int v=-1;if(v<0){v=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"g3_lightfix=%d",&x)==1)v=x!=0;fclose(f);}PSPNativeMemLog("[G3] g3_lightfix=%d",v);}return v;}
+ static float DecodeSignedFx10(unsigned bits){int v=bits&1023;if(v&512)v-=1024;return v*(1.0f/512.0f);}
+ void G3SIM_LightVector(u32 data)
+ {
+@@ -1009,6 +1020,10 @@
+     s_G3LightVector[lightNum][0]=DecodeSignedFx10(data);
+     s_G3LightVector[lightNum][1]=DecodeSignedFx10(data>>10);
+     s_G3LightVector[lightNum][2]=DecodeSignedFx10(data>>20);
++    /* P3DS: DS multiplies the light vector by the directional (vector) matrix when LIGHT_VECTOR runs (GBATEK).
++       The old code re-transformed it by whatever vector matrix was current at each NORMAL, so lights rotated
++       with every joint of an animated model (title Giratina body mostly unlit). g3_lightfix=0 restores it. */
++    for(int j=0;j<3;j++){float a=0;for(int i=0;i<3;i++)a+=s_G3LightVector[lightNum][i]*FX_FX32_TO_F32(currentVectorMatrix.nums[i][j]);s_lightVecFixed[lightNum][j]=a;}
+ }
+ 
+ //Load Matrix
+@@ -1349,8 +1364,10 @@
+     return;
+ }
+ 
++unsigned p3dsRestoreHist[32], p3dsLightHist[16], p3dsAlpha0, p3dsBoxVis, p3dsBoxHid, p3dsPolyIdHist[64];
+ void G3SIM_MtxRestore(u8 idx)
+ {
++    p3dsRestoreHist[idx & 31]++;
+     G3SIM_MatrixStack_t * curMtxStack = getCurrentMatrixStack();
+     G3SIM_Matrix_t * currentMatrix = getCurrentMatrix();
+     if( s_curMtxMode == GX_MTXMODE_POSITION_VECTOR
+@@ -1376,6 +1393,7 @@
+     return;
+ }
+ 
++static int P3DS_ScaleFix(){static int v=-1;if(v<0){v=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"g3_scalefix=%d",&x)==1)v=x!=0;fclose(f);}PSPNativeMemLog("[G3] g3_scalefix=%d",v);}return v;}
+ void G3SIM_MtxScale(fx32 * scale)
+ {
+     fx32 s[3];
+@@ -1396,7 +1414,9 @@
+         for(int i=0;i<3;i++){
+             fx32 f=s[i];if(f==FX32_ONE)continue;
+             fx32*r=currentMatrix->nums[i];
+-            r[0]=FX_Mul(f,r[0]);r[1]=FX_Mul(f,r[1]);r[2]=FX_Mul(f,r[2]);
++            /* P3DS: DS MTX_SCALE in mode 2 scales only the position matrix (GBATEK); scaling the vector matrix too
++               scaled every normal of scaled joints (NNS envelope/scaled models: dark or blown-out lighting). */
++            if(!(pv&&P3DS_ScaleFix())){r[0]=FX_Mul(f,r[0]);r[1]=FX_Mul(f,r[1]);r[2]=FX_Mul(f,r[2]);}
+             if(pv){fx32*q=currentPositionMatrix.nums[i];q[0]=FX_Mul(f,q[0]);q[1]=FX_Mul(f,q[1]);q[2]=FX_Mul(f,q[2]);}
+         }
+ #ifdef OPT_MATH_ORACLE
+@@ -1513,6 +1533,7 @@
+             s_lightVecT[l][0] = (s_G3LightVector[l][0] * s_fVecMtx[0][0]) + (s_G3LightVector[l][1] * s_fVecMtx[1][0]) + (s_G3LightVector[l][2] * s_fVecMtx[2][0]);
+             s_lightVecT[l][1] = (s_G3LightVector[l][0] * s_fVecMtx[0][1]) + (s_G3LightVector[l][1] * s_fVecMtx[1][1]) + (s_G3LightVector[l][2] * s_fVecMtx[2][1]);
+             s_lightVecT[l][2] = (s_G3LightVector[l][0] * s_fVecMtx[0][2]) + (s_G3LightVector[l][1] * s_fVecMtx[1][2]) + (s_G3LightVector[l][2] * s_fVecMtx[2][2]);
++            if(P3DS_LightFix()){s_lightVecT[l][0]=s_lightVecFixed[l][0];s_lightVecT[l][1]=s_lightVecFixed[l][1];s_lightVecT[l][2]=s_lightVecFixed[l][2];}
+         }
+     }
+     if(s_lightCacheGen != s_lightGen) {
+@@ -1590,7 +1611,7 @@
+     u8 depthTest = (data & 0b100000000000000) >> 14;
+     u8 useFog = (data & 0b1000000000000000) >> 15;
+     u8 transDepth = (data >> 11) & 1;
+-    { extern unsigned p3dsPolyAttrHist[4]; p3dsPolyAttrHist[polygonMode]++; }
++    { extern unsigned p3dsPolyAttrHist[4]; p3dsPolyAttrHist[polygonMode]++; p3dsLightHist[lightFlag]++; if(!alpha) p3dsAlpha0++; p3dsPolyIdHist[(data >> 24) & 63]++; }
+ 
+     if(cullMode != s_curPolygonAttr.cullMode || polygonMode != s_curPolygonAttr.polygonMode || alpha != s_curPolygonAttr.alphaInt || depthTest != s_curPolygonAttr.depthTest || useFog != s_curPolygonAttr.fogEnable || transDepth != s_SIM_transDepthWrite)
+     {
+@@ -1670,7 +1691,12 @@
+ unsigned p3dsTexgenHist[4], p3dsFmtHist[8], p3dsPolyAttrHist[4];
+ void G3SIM_SwapBuffers(u8 depthBufferMode)
+ {
+-    { static unsigned n; if (++n % 300 == 0) { printf("[G3MAT] texgen %u %u %u %u | fmt %u %u %u %u %u %u %u %u | pmode %u %u %u %u\n", p3dsTexgenHist[0], p3dsTexgenHist[1], p3dsTexgenHist[2], p3dsTexgenHist[3], p3dsFmtHist[0], p3dsFmtHist[1], p3dsFmtHist[2], p3dsFmtHist[3], p3dsFmtHist[4], p3dsFmtHist[5], p3dsFmtHist[6], p3dsFmtHist[7], p3dsPolyAttrHist[0], p3dsPolyAttrHist[1], p3dsPolyAttrHist[2], p3dsPolyAttrHist[3]); }
++    { static unsigned n; int n0print = (++n % 300 == 0); if (n0print) { printf("[G3MAT] texgen %u %u %u %u | fmt %u %u %u %u %u %u %u %u | pmode %u %u %u %u\n", p3dsTexgenHist[0], p3dsTexgenHist[1], p3dsTexgenHist[2], p3dsTexgenHist[3], p3dsFmtHist[0], p3dsFmtHist[1], p3dsFmtHist[2], p3dsFmtHist[3], p3dsFmtHist[4], p3dsFmtHist[5], p3dsFmtHist[6], p3dsFmtHist[7], p3dsPolyAttrHist[0], p3dsPolyAttrHist[1], p3dsPolyAttrHist[2], p3dsPolyAttrHist[3]); }
++      { char b[600]; int n = snprintf(b, sizeof b, "[G3DIAG-TITLE] restore idx:"); for (int i = 0; i < 32; i++) if (p3dsRestoreHist[i]) n += snprintf(b + n, sizeof b - n, " %d=%u", i, p3dsRestoreHist[i]);
++        n += snprintf(b + n, sizeof b - n, " | lightmask:"); for (int i = 0; i < 16; i++) if (p3dsLightHist[i]) n += snprintf(b + n, sizeof b - n, " %x=%u", i, p3dsLightHist[i]);
++        n += snprintf(b + n, sizeof b - n, " | polyid:"); for (int i = 0; i < 64; i++) if (p3dsPolyIdHist[i]) n += snprintf(b + n, sizeof b - n, " %d=%u", i, p3dsPolyIdHist[i]);
++        extern unsigned p3dsBoxVisW, p3dsBoxHidW; snprintf(b + n, sizeof b - n, " | alpha0 attrs %u | boxtest vis %u hidden %u", p3dsAlpha0, p3dsBoxVisW, p3dsBoxHidW);
++        if (n0print) printf("%s\n", b); memset(p3dsRestoreHist, 0, sizeof p3dsRestoreHist); memset(p3dsLightHist, 0, sizeof p3dsLightHist); memset(p3dsPolyIdHist, 0, sizeof p3dsPolyIdHist); p3dsAlpha0 = 0; p3dsBoxVisW = p3dsBoxHidW = 0; }
+       memset(p3dsTexgenHist, 0, sizeof p3dsTexgenHist); memset(p3dsFmtHist, 0, sizeof p3dsFmtHist); memset(p3dsPolyAttrHist, 0, sizeof p3dsPolyAttrHist); }
+     s_SIM_useWBuffer = depthBufferMode;
+ #ifdef OPT_MATH_ORACLE
+@@ -2180,5 +2206,7 @@
+  for(int i=0;i<4;i++)s_slotSnap[i]=-1;
+ #endif
+ }
+-extern "C" int G3SIM_ReplayEligible(){return PSP_NATIVE_GE_TRANSFORM;}
++extern "C" void PSPNativeMemLog(const char*,...);
++extern "C" int P3DS_G3CacheOff(){static int v=-1;if(v<0){v=0;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"g3cache=%d",&x)==1)v=!x;fclose(f);}PSPNativeMemLog("[G3] display-list cache %s (g3cache=0 disables)",v?"OFF":"on");}return v;}
++extern "C" int G3SIM_ReplayEligible(){return PSP_NATIVE_GE_TRANSFORM&&!P3DS_G3CacheOff();}
+ extern "C" void G3SIM_ReplayRawBegin(){EnsureClipMatrix();PSPNativeRawMatrix(&currentClipMatrix.nums[0][0],nativeMatrixGen);}

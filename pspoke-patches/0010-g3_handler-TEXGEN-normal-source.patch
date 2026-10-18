@@ -1,0 +1,41 @@
+From b6416beda60a71d18de816cd61ee4ef75430d8ac Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Fri, 16 Oct 2026 18:03:44 -0400
+Subject: [PATCH 10/11] g3_handler: TEXGEN normal source
+
+---
+ port/native-stack-render/g3_handler.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/port/native-stack-render/g3_handler.cpp b/port/native-stack-render/g3_handler.cpp
+index 54eb4c6..98b4c10 100644
+--- a/port/native-stack-render/g3_handler.cpp
++++ b/port/native-stack-render/g3_handler.cpp
+@@ -1524,9 +1524,16 @@ static void RefreshLightCache()
+         }
+     }
+ }
++static float s_rawTexS0, s_rawTexT0;
+ void G3SIM_Normal(u32 data)
+ {
+     if(!s_normTabInit) { for(int i=0;i<1024;i++) s_normTab[i] = DecodeSignedFx10(i); s_normTabInit = 1; }
++    if(s_texImageParam.texCordTransform == 2) { /* P3DS: TexGen=normal (env/sphere mapping), GBATEK/melonDS: ST = N*TexMtx(3x2)/2 + ST0 */
++        const G3SIM_Matrix_t *m = &currentTextureMatrix;
++        float nx = s_normTab[data & 0x3FF], ny = s_normTab[(data >> 10) & 0x3FF], nz = s_normTab[(data >> 20) & 0x3FF];
++        s_g3NextTexCoordS = 0.5f * (nx * FX_FX32_TO_F32(m->nums[0][0]) + ny * FX_FX32_TO_F32(m->nums[1][0]) + nz * FX_FX32_TO_F32(m->nums[2][0])) + s_rawTexS0;
++        s_g3NextTexCoordT = 0.5f * (nx * FX_FX32_TO_F32(m->nums[0][1]) + ny * FX_FX32_TO_F32(m->nums[1][1]) + nz * FX_FX32_TO_F32(m->nums[2][1])) + s_rawTexT0;
++    }
+     RefreshLightCache();
+ #if PSP_NATIVE_NORMAL_RESULT_CACHE
+     NormalResult&result=normalResults[(data*2654435761u)>>24];
+@@ -1709,6 +1716,7 @@ void G3SIM_TexCoord(u32 data)
+         s_g3NextTexCoordS = ((float)s)/16.0f;
+         s_g3NextTexCoordT = ((float)t)/16.0f;
+     }
++    s_rawTexS0 = ((float)s)/16.0f; s_rawTexT0 = ((float)t)/16.0f;
+ 
+     return;
+ }
+-- 
+2.47.3
+

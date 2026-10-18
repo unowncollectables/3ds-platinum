@@ -1,0 +1,26 @@
+From 0a672474d88da24434ea20c87480c0080afe9b1e Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Fri, 16 Oct 2026 13:26:22 -0400
+Subject: [PATCH 07/11] platinum3ds: keep DS naming screen
+
+---
+ port/native-audio-app/memprobe.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/port/native-audio-app/memprobe.c b/port/native-audio-app/memprobe.c
+index 8f88465..9b4e0f3 100644
+--- a/port/native-audio-app/memprobe.c
++++ b/port/native-audio-app/memprobe.c
+@@ -143,6 +143,9 @@ void *__wrap_ApplicationManager_New(const void *tmpl, void *args, int heapID)
+      * game - player, rival, nickname, PC box, Pal Pad, group - reaches it
+      * through this call, so substituting here covers all of them at once. */
+     if ((const char *)tmpl == gNamingScreenAppTemplate) {
++#if defined(PLATINUM3DS) && !defined(PSP_NATIVE_KEEP_DS_NAMING)
++#define PSP_NATIVE_KEEP_DS_NAMING /* 3DS: real DS naming screen (touch works); PSP OSK not used */
++#endif
+ #ifndef PSP_NATIVE_KEEP_DS_NAMING
+         const void *sub = PSPNativeNamingOskTemplate(heapID);
+         PSPNativeMemLog("[OSK] substituting PSP keyboard for gNamingScreenAppTemplate");
+-- 
+2.47.3
+

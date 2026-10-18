@@ -1,0 +1,47 @@
+--- /tmp/sas_out.orig.c	2026-10-17 00:21:54.099353890 -0400
++++ sas_out.c	2026-10-17 00:51:05.071694285 -0400
+@@ -31,7 +31,14 @@
+ extern u32 PSPNativeSasStartGen[16];      /* sim_audio.cpp: bumped by SIM_Audio_StartChannel */
+ 
+ #define SAS_GRAIN        256
+-#define SAS_RATE         44100
++/* platinum3ds run 40: mix at the 3DS DSP's native 32728 Hz (= DS mixer rate) instead of 44100. ndsp resampled
++   44100 -> 32728 with linear interpolation, folding 16-22 kHz content back as inharmonic tones ("odd" high-pitched
++   SE / noise / rain). audio_rate=44100 restores the old rate. Also: no 4x pitch cap (our mixer has none), so very
++   high-rate voices are no longer point-decimated at conversion. */
++extern int P3DS_SasRate;
++#define SAS_RATE         ((u32)P3DS_SasRate)
++#undef PSP_SAS_PITCH_MAX
++#define PSP_SAS_PITCH_MAX 0x20000
+ #define DS_CLOCK         16756991u        /* DS sound channel timer clock: sample rate = DS_CLOCK / timer */
+ #define SYS_CLOCK        33514000u        /* OS_SYSTEM_CLOCK: units of the snapshot time stamps (174592 = one 5.2 ms pump) */
+ #define SNAP_RING        256              /* power of two; one snapshot per 10.4 ms pump */
+@@ -286,7 +293,7 @@
+             if (st_keyOns < 12 || rp < 0 || rt < 0 || rv < 0 || rk < 0)
+                 PSPNativeMemLog("[AUDIO-SAS] keyon v=%d type=%d count=%u loop=%d pitch=%d vol=%d/%d rc pcm=%08x pitch=%08x vol=%08x key=%08x", v, type, s->count, s->loop, pitch, l, r, rp, rt, rv, rk);
+             { static int kl = -1; static u32 kn; if (kl < 0) { kl = 0; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l2[64]; int x; while (fgets(l2, sizeof l2, f)) if (sscanf(l2, "audio_keylog=%d", &x) == 1) kl = x; fclose(f); } }
+-              if (kl && kn < 4000) { kn++; int pk = 0; for (u32 q = 0; q < s->count; q += 7) { int a = s->data[q] < 0 ? -s->data[q] : s->data[q]; if (a > pk) pk = a; }
++              if (kl && kn < 15000) { kn++; int pk = 0; for (u32 q = 0; q < s->count; q += 7) { int a = s->data[q] < 0 ? -s->data[q] : s->data[q]; if (a > pk) pk = a; }
+                 PSPNativeMemLog("[AUDIO-KEY] t=%u v=%d type=%d n=%u loop=%d pk=%d pitch=%d vol=%d/%d cnt=%08x tmr=%04x", (unsigned)(sceKernelGetSystemTimeWide() / 1000), v, type, s->count, s->loop, pk, pitch, l, r, (unsigned)c->cnt, c->tmr); } }
+             st_type[type]++; if (!l && !r) st_zeroVol++; st_chan |= 1u << v;
+             s_cur[v].keyed = 1; s_cur[v].pitch = pitch; s_cur[v].vl = l; s_cur[v].vr = r;
+@@ -295,13 +302,18 @@
+             st_skipped++;
+         }
+     } else if (!en && s_cur[v].keyed) {
++        /* run 42: audio_keylog=2 also logs key-offs (channel enable cleared by the driver) with the time the voice was keyed */
++        { static int kl2 = -1; if (kl2 < 0) { kl2 = 0; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l2[64]; int x; while (fgets(l2, sizeof l2, f)) if (sscanf(l2, "audio_keylog=%d", &x) == 1) kl2 = x; fclose(f); } }
++          if (kl2 >= 2) PSPNativeMemLog("[AUDIO-OFF] t=%u v=%d cnt=%08x vol=%d/%d tmr=%04x", (unsigned)(sceKernelGetSystemTimeWide() / 1000), v, (unsigned)c->cnt, s_cur[v].vl, s_cur[v].vr, c->tmr); }
+         __sceSasSetKeyOff(&s_core, v);
+         s_cur[v].keyed = 0;
+         s_voiceSample[v] = NULL;
+     } else if (en && s_cur[v].keyed) {
+         if (c->tmr != s_cur[v].tmr) {
+             int pitch = PitchFor(c->tmr, s_voiceSample[v] ? s_voiceSample[v]->shiftDown : 0);
+-            if (pitch != s_cur[v].pitch) { __sceSasSetPitch(&s_core, v, pitch); s_cur[v].pitch = pitch; }
++            if (pitch != s_cur[v].pitch) { __sceSasSetPitch(&s_core, v, pitch); s_cur[v].pitch = pitch;
++                { static int kl3 = -1; if (kl3 < 0) { kl3 = 0; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l2[64]; int x; while (fgets(l2, sizeof l2, f)) if (sscanf(l2, "audio_keylog=%d", &x) == 1) kl3 = x; fclose(f); } }
++                  if (kl3 >= 2) PSPNativeMemLog("[AUDIO-PIT] t=%u v=%d pitch=%d tmr=%04x", (unsigned)(sceKernelGetSystemTimeWide() / 1000), v, pitch, c->tmr); } }
+         }
+         if ((c->cnt ^ s_cur[v].cnt) & 0x007F037Fu) {
+             int l, r; VolumeFor(c->cnt, &l, &r);

@@ -1,0 +1,25 @@
+From 18ce1aec17eb78d6fd28477e79f5ee8e44881b15 Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Fri, 16 Oct 2026 17:16:12 -0400
+Subject: [PATCH 08/11] platinum3ds: GPU2D_Soft use line arg (per-core engines)
+
+---
+ port/native-render-opt/GPU2D_Soft.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/port/native-render-opt/GPU2D_Soft.cpp b/port/native-render-opt/GPU2D_Soft.cpp
+index f2e5719..0f18151 100644
+--- a/port/native-render-opt/GPU2D_Soft.cpp
++++ b/port/native-render-opt/GPU2D_Soft.cpp
+@@ -172,7 +172,7 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
+ #endif
+ 
+     int n3dline = line;
+-    line = GPU::VCount;
++    line = n3dline;  /* platinum3ds: engines A and B composite on separate cores; no shared VCount */
+ 
+     if (CurUnit->Num == 0)
+     {
+-- 
+2.47.3
+

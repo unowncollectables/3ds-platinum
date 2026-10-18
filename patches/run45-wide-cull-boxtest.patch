@@ -1,0 +1,28 @@
+--- /tmp/g3_handler.run44.cpp	2026-10-17 01:28:48.335694285 -0400
++++ ../native-stack-render/g3_handler.cpp	2026-10-17 01:28:54.559694285 -0400
+@@ -489,6 +489,7 @@
+     return;
+ }
+ 
++extern "C" int P3DS_WideCull; /* platinum3ds run 45 (render3ds.cpp) */
+ #ifdef OPT_MATH_BOX
+ /* Per-face outcome of G3SIM_ClipPolygon(face,4,0,FALSE) decided without running the clipper:
+    1 = count>0, 0 = count 0, -1 = undetermined (run the real clipper). ClipSegment used to be
+@@ -524,6 +525,9 @@
+     static const u8 sel[8][3]={{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,1,1},{0,0,1},{1,0,1},{1,1,1}};
+     fx32 cube[8][4];
+     for(int c=0;c<8;c++)for(int i=0;i<4;i++)cube[c][i]=(fx32)(px[sel[c][0]][i]+py[sel[c][1]][i]+pz[sel[c][2]][i]+(u32)M.nums[3][i]);
++    /* platinum3ds run 45 wide_cull: while wideview is active, test against a 1.25x wider view (x' = 0.8x), so map props
++       (buildings) in the side strips pass the game's box test. Only the visibility answer changes. */
++    {if(P3DS_WideCull)for(int c=0;c<8;c++)cube[c][0]=(fx32)(((s64)cube[c][0]*4)/5);}
+ #ifdef OPT_MATH_ORACLE
+     {fx32 rc[8][4];s16 xs[2]={x,x1},ys[2]={y,y1},zs[2]={z,z1};
+      for(int c=0;c<8;c++){rc[c][0]=xs[sel[c][0]];rc[c][1]=ys[sel[c][1]];rc[c][2]=zs[sel[c][2]];calculateVtxFx(&rc[c][0],&rc[c][1],&rc[c][2],&rc[c][3]);}
+@@ -581,6 +585,7 @@
+     for(int i=0; i < 8; i++) {
+         calculateVtxFx(&cube[i][0], &cube[i][1], &cube[i][2], &cube[i][3]);
+     }
++    {if(P3DS_WideCull)for(int c=0;c<8;c++)cube[c][0]=(fx32)(((s64)cube[c][0]*4)/5);} /* run 45 wide_cull */
+ #endif
+ 
+     #define SetupFace(_face0,_face1,_face2,_face3) \

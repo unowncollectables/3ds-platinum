@@ -1,0 +1,30 @@
+--- a/overlay005__land_data.c	2026-10-18 16:29:45.428423507 -0400
++++ b/overlay005__land_data.c	2026-10-18 16:29:45.432423507 -0400
+@@ -1873,12 +1873,16 @@
+         ctx->currentSubTask = MAP_MODEL_LOADER_SUBTASK_END_TASK;
+     }
+ 
++    /* platinum3ds run 47 land_fastload: read + bind + init the block model in ONE task step (wideview corners) */
++    extern int P3DS_LandFast;
++    const int fast = P3DS_LandFast;
++fastStep:
+     switch (ctx->currentSubTask) {
+     case MAP_MODEL_LOADER_SUBTASK_FIRST_FILE_READ: {
+         int bytesToRead;
+         ctx->bytesRead = 0;
+ 
+-        if (ctx->mapModelDataSize <= MAP_MODEL_LAZY_LOADER_DATA_CHUNK_SIZE) {
++        if (fast || ctx->mapModelDataSize <= MAP_MODEL_LAZY_LOADER_DATA_CHUNK_SIZE) {
+             bytesToRead = ctx->mapModelDataSize;
+             ctx->currentSubTask = MAP_MODEL_LOADER_SUBTASK_BIND_TEXTURE;
+         } else {
+@@ -1953,6 +1957,9 @@
+         return;
+     }
+     }
++    if (fast && (ctx->currentSubTask == MAP_MODEL_LOADER_SUBTASK_BIND_TEXTURE || ctx->currentSubTask == MAP_MODEL_LOADER_SUBTASK_INIT_RENDER_OBJ)) {
++        goto fastStep;
++    }
+ }
+ 
+ SysTask *LandDataManager_LazyLoadMapModel(NARC *landDataNARC, const int mapModelDataSize, NNSG3dRenderObj *mapRenderObj, NNSG3dResFileHeader **mapModelFile, NNSG3dResTex *mapTexture, BOOL *loadedMapValid, BOOL *loadTaskRunning)
