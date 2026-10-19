@@ -1,0 +1,12 @@
+--- a/applications__party_menu__callbacks.c
++++ b/applications__party_menu__callbacks.c
+@@ -1114,7 +1114,8 @@
+     Pokemon_SetValue(mon, MON_DATA_MOVE1_PP + moveSlot, &tempVar);
+ 
+     if (application->partyMenu->usedItemID != ITEM_NONE) {
+-        if (Item_IsHMMove(application->partyMenu->learnedMove) == FALSE) {
++        extern int P3DS_ReusableTMsCfg(void); /* run 64 reusable_tms=1: TMs are not used up (default 0 = game behaviour) */
++        if (Item_IsHMMove(application->partyMenu->learnedMove) == FALSE && !P3DS_ReusableTMsCfg()) {
+             Bag_TryRemoveItem(application->partyMenu->bag, application->partyMenu->usedItemID, 1, HEAP_ID_PARTY_MENU);
+         }
+ 

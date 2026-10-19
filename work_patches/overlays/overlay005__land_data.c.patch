@@ -1,5 +1,5 @@
---- a/overlay005__land_data.c	2026-10-18 16:29:45.428423507 -0400
-+++ b/overlay005__land_data.c	2026-10-18 16:29:45.432423507 -0400
+--- a/overlay005__land_data.c
++++ b/overlay005__land_data.c
 @@ -1873,12 +1873,16 @@
          ctx->currentSubTask = MAP_MODEL_LOADER_SUBTASK_END_TASK;
      }

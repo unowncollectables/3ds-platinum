@@ -1,0 +1,68 @@
+--- a/overlay005__ov5_021ECE40.c
++++ b/overlay005__ov5_021ECE40.c
+@@ -96,6 +96,47 @@
+ static void ov5_021ED5B4(UnkStruct_ov5_021ED0A4 *param0, int param1);
+ static int ov5_021ED5E8(UnkStruct_ov5_021ED0A4 *param0, int param1);
+ static void ov5_021ED610(UnkStruct_ov5_021ED0A4 *param0, int param1);
++/* run 64 fog_animfix=1 (default): the field's "free gfx resources no active map object uses" pass
++   (ov5_021ED63C / ov5_021ED778, run on every map change) could free the resource block that the PLAYER's billboard
++   still reads its frame table (BillboardGfxSequence) and anims from; the next seamless map change (Route 210
++   South -> North, fog) reused the block and overwrote the table -> frozen walk cycle / wrong facing. Skip the free
++   while the player's billboard points into that item (exact owner: the item with the highest data address <= ptr). */
++#include "field/field_system.h"
++#include "player_avatar.h"
++#include "overlay005/ov5_021EB1A0.h"
++extern int P3DS_CfgInt(const char *, int);
++extern void PSPNativeMemLog(const char *, ...);
++static int P3DS_InItem(ResourceHeap *rh, const void *data, const void *p)
++{
++    if (!data || !p || (const u8 *)p < (const u8 *)data || (const u8 *)p - (const u8 *)data >= 0x10000) return 0;
++    for (u32 i = 0; i < rh->itemCount; i++) {
++        const u8 *d = rh->items[i].data;
++        if (d && d > (const u8 *)data && d <= (const u8 *)p) return 0;
++    }
++    return 1;
++}
++static int P3DS_PlayerUsesItem(const MapObjectManager *man, ResourceHeap *rh, u32 id)
++{
++    static int cfg = -1;
++    if (cfg < 0) { cfg = P3DS_CfgInt("fog_animfix", 1) != 0; PSPNativeMemLog("[FIELD] fog_animfix=%d", cfg); }
++    if (!cfg || !man || !rh) return 0;
++    FieldSystem *fs = MapObjectMan_FieldSystem(man);
++    if (!fs || !fs->playerAvatar) return 0;
++    MapObject *pl = PlayerAvatar_GetMapObject(fs->playerAvatar);
++    if (!pl) return 0;
++    u8 *dd = (u8 *)sub_02062AF0(pl);
++    Billboard *bb = dd ? *(Billboard **)(dd + 4) : NULL;
++    if (!bb) return 0;
++    const void *data = ResourceHeap_GetItemData(rh, id);
++    if (P3DS_InItem(rh, data, bb->gfxSequence.startFrame) || P3DS_InItem(rh, data, bb->gfxSequence.textureIdx)
++        || P3DS_InItem(rh, data, bb->anims) || P3DS_InItem(rh, data, bb->animTexture) || P3DS_InItem(rh, data, bb->texture)) {
++        static unsigned n;
++        if (n++ < 20) PSPNativeMemLog("[FIELD] fog_animfix: kept resource %lu (player billboard still uses it)", (unsigned long)id);
++        return 1;
++    }
++    return 0;
++}
++
+ static void ov5_021ED63C(MapObjectManager *param0, UnkStruct_ov5_021ED0A4 *param1);
+ static void ov5_021ED694(UnkStruct_ov5_021ED0A4 *param0);
+ static void ov5_021ED6A8(UnkStruct_ov5_021ED0A4 *param0, int param1);
+@@ -770,7 +811,7 @@
+ 
+     do {
+         if ((*v1) != 0xffff) {
+-            if (ov5_021EDAB4(param0, *v1, NULL) == 0) {
++            if (ov5_021EDAB4(param0, *v1, NULL) == 0 && !P3DS_PlayerUsesItem(param0, param1->unk_F8, *v1)) {
+                 ResourceHeap_FreeItem(param1->unk_F8, *v1);
+                 *v1 = 0xffff;
+             }
+@@ -851,7 +892,7 @@
+ 
+     do {
+         if ((*v1) != 0xffff) {
+-            if (ov5_021EDB3C(param0, *v1, NULL) == 0) {
++            if (ov5_021EDB3C(param0, *v1, NULL) == 0 && !P3DS_PlayerUsesItem(param0, param1->unk_FC, *v1)) {
+                 ResourceHeap_FreeItem(param1->unk_FC, *v1);
+                 *v1 = 0xffff;
+             }

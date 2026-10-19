@@ -25,17 +25,19 @@ static int uiRow = 4;
    verbose_boot=1 brings the checklist console back. Errors/crashes always switch to the full checklist + red box. */
 static int quietBoot = -1;
 static int isQuiet(void) { if (quietBoot < 0) { quietBoot = 1; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l[64]; int v; while (fgets(l, sizeof l, f)) if (sscanf(l, "verbose_boot=%d", &v) == 1) quietBoot = !v; fclose(f); } } return quietBoot; }
-static void uiInit(void) { consoleSelect(&con); consoleClear(); if (isQuiet()) { __real_printf("\x1b[15;16H\x1b[2mLoading...\x1b[0m"); return; } __real_printf("\x1b[1;1H\x1b[36;1m  Platinum 3DS\x1b[0m  \x1b[2mdev build\x1b[0m\n  ------------------------------\n"); }
+static void uiInit(void) { consoleSelect(&con); consoleClear(); if (isQuiet()) return; /* run 64 clean launch: quiet boot = plain black (the credits splash is drawn by render3ds) */ __real_printf("\x1b[1;1H\x1b[36;1m  Platinum 3DS\x1b[0m  \x1b[2mdev build\x1b[0m\n  ------------------------------\n"); }
 static const char *stepNames[16]; static int stepOk[16], nSteps;
 static void uiStepDraw(const char *name, int ok);
 static void uiStep(const char *name, int ok) { if (nSteps < 16) { stepNames[nSteps] = name; stepOk[nSteps++] = ok; } uiStepDraw(name, ok); }
 static void uiStepDraw(const char *name, int ok) { if (isQuiet()) return; __real_printf("\x1b[%d;3H%-24s %s\x1b[0m", uiRow++, name, ok ? "\x1b[32;1m OK " : "\x1b[31;1mFAIL"); }
 static void uiShowChecklist(void) { consoleInit(GFX_BOTTOM, &con); conOnBottom = 1; uiInit(); uiRow = 4; for (int i = 0; i < nSteps; i++) uiStepDraw(stepNames[i], stepOk[i]); }
 static void uiError(const char *why) {
-    if (isQuiet()) { quietBoot = 0; uiShowChecklist(); } else if (!conOnBottom) uiShowChecklist();
+    /* run 64: quiet boot -> plain error screen (title + red box), no checklist; verbose_boot=1 keeps the old one */
+    if (isQuiet()) { consoleInit(GFX_BOTTOM, &con); conOnBottom = 1; consoleSelect(&con); consoleClear(); __real_printf("\x1b[2;3H\x1b[37;1mPlatinum 3DS\x1b[0m"); uiRow = 4; }
+    else if (!conOnBottom) uiShowChecklist();
     int r = uiRow + 2 > 20 ? 20 : uiRow + 2; char line[37];
     __real_printf("\x1b[%d;2H\x1b[41;37;1m%-38s", r++, " ERROR");
-    for (const char *p = why; *p && r < 28; r++) { int n = 0; while (p[n] && n < 36) n++; snprintf(line, sizeof line, "%.*s", n, p); __real_printf("\x1b[%d;2H %-37s", r, line); p += n; }
+    for (const char *p = why; *p && r < 28; r++) { int n = 0; while (p[n] && n < 36) n++; if (p[n] && n == 36) { int k = n; while (k > 8 && p[k] != ' ') k--; if (p[k] == ' ') n = k; } /* run 64: wrap at spaces */ snprintf(line, sizeof line, "%.*s", n, p); __real_printf("\x1b[%d;2H %-37s", r, line); p += n; while (*p == ' ') p++; }
     __real_printf("\x1b[%d;2H%-38s\x1b[0m\x1b[%d;2H  START: exit   SELECT: power off", r, "", r + 2);
 }
 #define STEP(name, cond, failmsg) do { int ok_ = (cond); uiStep(name, ok_); PSPNativeMemLog("[3DS] step %s: %s", name, ok_ ? "ok" : "FAIL"); if (!ok_) hold(failmsg); } while (0)
@@ -101,7 +103,8 @@ static int isVerbose(void) { if (verboseLog < 0) { verboseLog = 0; FILE *f = fop
 int __wrap_printf(const char *fmt, ...) { if (!strncmp(fmt, "[AUDIO-SAS] grain", 17) || !strncmp(fmt, "[AUDIO-SAS] key", 15)) { if (!isVerbose()) return 0; } char b[400]; va_list ap; va_start(ap, fmt); int n = vsnprintf(b, sizeof b, fmt, ap); va_end(ap);
     size_t l = strlen(b); while (l && b[l - 1] == '\n') b[--l] = 0; if (l) { PSPNativeMemLog("%s", b); snprintf(lastMsg, sizeof lastMsg, "%s", b); } return n; }
 int __wrap_puts(const char *s) { PSPNativeMemLog("%s", s); snprintf(lastMsg, sizeof lastMsg, "%s", s); return 1; }
-static void aptHookCb(APT_HookType t, void *p) { if (t == APTHOOK_ONEXIT) { quitting = 1; } }
+static volatile int lidEvt; /* run 64 lid_sound: 1 = closed (sleep), 2 = opened (wake); consumed on the game thread */
+static void aptHookCb(APT_HookType t, void *p) { if (t == APTHOOK_ONEXIT) { quitting = 1; } else if (t == APTHOOK_ONSLEEP) lidEvt = 1; else if (t == APTHOOK_ONWAKEUP) lidEvt = 2; }
 
 /* Bottom screen: checklist until the first game frame, then the DS touch screen.
    Hold SELECT+START ~1 s to toggle the checklist view (debug). */
@@ -171,11 +174,20 @@ void P3DS_FrameHook(void) {
     if ((k & (KEY_L | KEY_R)) == (KEY_L | KEY_R) && (hidKeysDown() & KEY_A)) { /* run 52: sharp 3D disabled -> L+R+A does nothing (still swallowed) */ } /* run 47: L+R+A = res3d 0/2 (was the zinv debug toggle; zinv stays config-only gpu3d_zinv) */
     if ((k & (KEY_SELECT | KEY_START)) == (KEY_SELECT | KEY_START) && !(k & (KEY_L | KEY_R))) { if (++held == 60) { if (conOnBottom) bottomToGame(); else uiShowChecklist(); } } else held = 0;
     if (quitting || !aptMainLoop()) hardExit(0);
+    /* run 64 lid_sound=1 (default; run 65: Poke Ball recall SE on close, send-out SE on open, see P3DS_PlayLidSE).
+       Only in the overworld (sound system up, no battle/cutscene music to interrupt). Played on the game thread. */
+    { static int lt = -1, n; extern int P3DS_CfgInt(const char *, int); extern int P3DS_InField; if (lt < 0) lt = P3DS_CfgInt("lid_test", 0) != 0;
+      if (lt && P3DS_InField) { ++n; if (n == 300) lidEvt = 1; else if (n == 420) lidEvt = 2; } } /* run 65 debug: fake a lid close/open in the overworld */
+    if (lidEvt) { int e = lidEvt; lidEvt = 0; static int ls = -1; extern int P3DS_CfgInt(const char *, int); extern int P3DS_InField;
+        if (ls < 0) ls = P3DS_CfgInt("lid_sound", 1) != 0;
+        if (ls && P3DS_InField) { extern void P3DS_PlayLidSE(int); P3DS_PlayLidSE(e == 2); }
+        PSPNativeMemLog("[3DS] lid %s (sound %d)", e == 1 ? "closed" : "opened", ls && P3DS_InField); }
 }
 static int touchPrev;
 /* 3DS bottom touch -> DS touch screen (256x192 centred at +32,+24 on the 320x240 panel). */
 int P3DS_TouchRead(int *x, int *y) {
     if (conOnBottom) return 0;
+    { extern volatile int P3DS_PromptOpen; if (P3DS_PromptOpen == 1) return 0; } /* run 64 repel_prompt */
     touchPosition t; int dx, dy;
     { /* run 53 cstick_poketch=1 (default): C-stick up/down = tap the Poketch's side button (next / previous app),
          only in the overworld and only when the stylus isn't down. One short tap per flick (stick must return). */
@@ -238,11 +250,14 @@ int main(void) {
     { struct mallinfo mi = mallinfo(); extern char *fake_heap_start, *fake_heap_end; PSPNativeMemLog("[3DS] malloc heap %lu KiB (used %lu)", (unsigned long)((fake_heap_end - fake_heap_start) >> 10), (unsigned long)mi.uordblks); }
     uiStep("System", 1);
     STEP("Overlays", PSPNativeOverlay_Init(), "overlay init failed");
-    STEP("ROM (platinum.nds)", PSPNativeRomFS_SetPath("sdmc:/3ds/platinum3ds/platinum.nds"), "cannot open sdmc:/3ds/platinum3ds/platinum.nds");
+    { FILE *rf = fopen("sdmc:/3ds/platinum3ds/platinum.nds", "rb"); char hd[16] = {0}; int ok = rf && fread(hd, 1, 12, rf) == 12; if (rf) fclose(rf); /* run 64: plain error when the ROM is missing */
+      if (!ok) { uiStep("ROM (platinum.nds)", 0); PSPNativeMemLog("[3DS] step ROM: FAIL (missing)"); hold("ROM not found. Put your Pokemon Platinum (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds"); } }
+    STEP("ROM (platinum.nds)", PSPNativeRomFS_SetPath("sdmc:/3ds/platinum3ds/platinum.nds"), "ROM not found. Put your Pokemon Platinum (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds");
     { /* create a blank save only if none exists; never touch an existing one */
       FILE *f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "rb");
       if (f) fclose(f); else if ((f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "wb"))) { static u8 blk[4096]; memset(blk, 0xFF, sizeof blk); for (int i = 0; i < 128; i++) fwrite(blk, 1, sizeof blk, f); fclose(f); PSPNativeMemLog("[3DS] created blank platinum.sav"); } }
     STEP("Save (platinum.sav)", PSPNative_OpenBackup("sdmc:/3ds/platinum3ds/platinum.sav"), "platinum.sav invalid: must be exactly 512 KiB");
+    { extern int P3DS_GameFontLoad(void); P3DS_GameFontLoad(); } /* run 64: game font from the ROM for port UI */
     PSPNativeStackProbeInit(); STEP("Stack probe", 1, "");
     WIN_Init_sTexStartAddrTable(); WIN_Init_sTexPlttStartAddrTable(); STEP("Texture tables", 1, "");
     CTRDG_Init(); STEP("Cartridge slot", 1, "");
@@ -273,6 +288,23 @@ extern void __real_TextureResource_UploadToVRam(void *r);
 void __wrap_TextureResource_UploadToVRam(void *r) { CRUMB("texres-upload"); __real_TextureResource_UploadToVRam(r); }
 extern void __real_NNS_GfdDoVramTransfer(void);
 void __wrap_NNS_GfdDoVramTransfer(void) { CRUMB("vramxfer"); __real_NNS_GfdDoVramTransfer(); }
+extern int P3DS_CfgInt(const char *, int);
+/* run 63 vram_trace (debug, log_level 2): VRAM transfer task requests / failures / process calls per 2 s. */
+extern int __real_VramTransfer_Request(int type, unsigned dest, void *buf, unsigned size); extern void __real_VramTransfer_Process(void);
+static unsigned vtReq, vtFail, vtProc, vtMaxPer, vtPer; static u64 vtT;
+static void vtLog(void) { u64 now = svcGetSystemTick(); if (now - vtT > 268111856ull * 2) { vtT = now; static int vt = -1; if (vt < 0) vt = P3DS_CfgInt("vram_trace", 0); /* run 66: cached */ if (vt) PSPNativeMemLog("[VXFER] 2s: requests %u failed %u process %u max/frame %u", vtReq, vtFail, vtProc, vtMaxPer); vtReq = vtFail = vtProc = vtMaxPer = 0; } }
+int __wrap_VramTransfer_Request(int type, unsigned dest, void *buf, unsigned size) { int r = __real_VramTransfer_Request(type, dest, buf, size); vtReq++; vtPer++; if (!r) vtFail++; return r; }
+/* run 63 heap_watch=<decimal address> (debug, default 0): log every game heap alloc covering that address and every
+   free of a block starting up to 64 KiB below it, with the caller (finds use-after-free / reuse of a watched object). */
+extern void *__real_Heap_Alloc(u32 h, u32 n); extern void *__real_Heap_AllocAtEnd(u32 h, u32 n); extern void __real_Heap_Free(void *p); extern void __real_Heap_FreeExplicit(u32 h, void *p);
+static unsigned hwAddr = 1; static unsigned hwA(void) { if (hwAddr == 1) hwAddr = (unsigned)P3DS_CfgInt("heap_watch", 0); return hwAddr; }
+static void hwChk(const char *k, void *p, u32 h, u32 n, void *ra) { unsigned a = hwA(), q = (unsigned)p; if (!a || !p) return;
+  if (n ? (q <= a && a < q + n) : (q <= a && a - q < 0x10000)) PSPNativeMemLog("[HEAPW] %s %p heap %lu size %lu from %p (watch %x)", k, p, (unsigned long)h, (unsigned long)n, ra, a); }
+void *__wrap_Heap_Alloc(u32 h, u32 n) { void *p = __real_Heap_Alloc(h, n); hwChk("alloc", p, h, n, __builtin_return_address(0)); return p; }
+void *__wrap_Heap_AllocAtEnd(u32 h, u32 n) { void *p = __real_Heap_AllocAtEnd(h, n); hwChk("allocEnd", p, h, n, __builtin_return_address(0)); return p; }
+void __wrap_Heap_Free(void *p) { hwChk("free", p, 0, 0, __builtin_return_address(0)); __real_Heap_Free(p); }
+void __wrap_Heap_FreeExplicit(u32 h, void *p) { hwChk("freeX", p, h, 0, __builtin_return_address(0)); __real_Heap_FreeExplicit(h, p); }
+void __wrap_VramTransfer_Process(void) { __real_VramTransfer_Process(); vtProc++; if (vtPer > vtMaxPer) vtMaxPer = vtPer; vtPer = 0; vtLog(); }
 extern void __real_NNS_G3dTexLoad(void *t, int e);
 void __wrap_NNS_G3dTexLoad(void *t, int e) { static unsigned n; if ((n++ & 255) == 0) PSPNativeMemLog("[TEX] G3dTexLoad #%u tex=%p from %p", n, t, __builtin_return_address(0)); CRUMB("g3d-texload"); __real_NNS_G3dTexLoad(t, e); }
 extern void __real_NNS_G3dPlttLoad(void *t, int e);

@@ -1,5 +1,5 @@
---- a/overlay005__ov5_021DFB54.c	2026-10-18 16:29:45.412423507 -0400
-+++ b/overlay005__ov5_021DFB54.c	2026-10-18 16:29:45.412423507 -0400
+--- a/overlay005__ov5_021DFB54.c
++++ b/overlay005__ov5_021DFB54.c
 @@ -278,6 +278,7 @@
  
  static void PlayerAvatar_RequestStateCycle(PlayerAvatar *playerAvatar)

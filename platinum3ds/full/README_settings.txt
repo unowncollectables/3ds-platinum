@@ -31,6 +31,16 @@ FOLLOWING POKEMON (run 58)
   follower_behind=1 1 = the follower is always drawn behind you (no more covering your legs when it walks behind
                     you going up). 0 = old run-58 order. Default 1.
   follower_debug=0  1 = draw it two tiles right of the player (alignment test only). Default 0.
+  follower_slot=0   which party Pokemon follows: 0 = LEAD (first in the party), 1-6 = that party slot. An empty slot
+                    or an egg falls back to the lead. Stored in config.txt only, never in the save. Default 0.
+                    (Menu: FOLLOWER SLOT)  [run 61]
+  follower_talk=0   1 = press A while standing still and facing your follower: a short text box ("BOOTS IS HAPPY TO
+                    BE WITH YOU!", 8 different lines) appears at the bottom of the top screen for ~2.6 s. Drawn by the
+                    port over the picture: no game message, no script, nothing saved; it never shows if the game
+                    starts something itself (hidden item, sign) and disappears when you move or a script starts.
+                    Default 0. (Menu: FOLLOWER TALK)  [run 61]
+  follower_sidefix=1  walking left/right the follower now faces the way it walks (run 58-60 showed the side views
+                    mirrored the wrong way round). 0 = old look. Default 1.  [run 61]
 
 PICTURE
   cam_zoom=0        overworld camera distance: -2 / -1 closer, 0 original, +1 / +2 farther (-14%..+16%). Zooming out
@@ -49,11 +59,23 @@ PICTURE
   wide_fill=1       with wide view: screens without real wide 3D (battles, title, bag/party/Pokedex menus) fill the
                     sides with a soft mirrored copy of the picture's edge instead of black bars. Looks poor and can copy menu
                     edges into the sides. 0 = black bars (the run 54 look). Default 0.
+  wide_menus=1      (run 65) with wide view and 1.25x: menus, battles, the title and other 2D screens fill the full
+                    400 px width by continuing the DS's own background tiles past the screen edges (same 1.25x size as
+                    the overworld, not mirrored, not blurred; fades/brightness follow). Sprites are not continued.
+                    Costs about 0.3-1 ms per frame (unchanged frames reuse the last strips). 0 = off (wide_fill / black
+                    bars as before). Default 1.
+  encounter_test=1  (run 65, DEBUG ONLY) every step on any tile starts a wild grass battle. Default 0. Leave off.
   fog3d=1           DS 3D fog (Route 210 etc.; also in the wide view sides). 1 = done by the 3DS GPU's fog unit,
                     practically free. 2 = the run 55 exact method (much slower, about 6-10 ms per frame in fog areas
                     and on the title). 0 = no fog. Default 1.
-  stereo_2d=1       3D slider: in battles the background layers sit behind the screen (text and menus stay at the
-                    screen). 0 = off. Default 1.
+  stereo_2d=2       3D slider, battles/menus: how far the background layers sit behind the screen (text, menus,
+                    HP boxes stay at the screen). 2 = GENTLE (new default: back layer 3 px, middle 1-2 px per eye
+                    at full slider). 1 = STRONG (run 55-60: 12 / 9 px - far more depth than the battle Pokemon
+                    themselves have, which made the Pokemon look doubled/ghosted against the background).
+                    0 = FLAT. Default 2. (Menu: BATTLE 3D DEPTH)  [run 61]
+  wide_haze=1       with wide view: a 2D haze/fog layer that the game blends over the 3D world (foggy areas) is
+                    continued into the side areas (tint measured from the picture's own edges, applied by the GPU;
+                    ~0.1 ms). 0 = off. Default 1. (Menu: WIDE HAZE)  [run 61]
   battle_monobj_hide=1  fixes the Pokemon showing twice while a Poke Ball is thrown in battle. 0 = off. Default 1.
   (res3d / res3d_lindepth: sharp 3D is DISABLED since run 52 - broken on hardware; these lines are ignored.)
   tex_postvblank=1  3D sprites pick up their new picture in the same frame (fixes the one-frame coloured box
@@ -103,7 +125,7 @@ CONTROLS / TOUCH
                     2 = C-stick moves like the D-pad (walking and menus, same as the circle pad). Default 2.
                     (the old cstick_poketch line is ignored now.)
   menu_combo=1      L+R+Y opens the settings menu. 0 = off. Default 1.
-  fps_counter=1     FPS counter shown at start (the menu saves this; L+R+START still toggles). Default 1.
+  fps_counter=0     FPS counter shown at start (the menu saves this; L+R+START still toggles). Default 0 (run 64).
   soft_reset=1      L+R+START+SELECT soft reset. 0 = off (the combo does nothing). Default 1.
   hotkey_swallow=1  hide hotkey presses from the game. 0 = off. Default 1.
   touch_latch=1     catch very quick taps on the touch screen. 0 = off. Default 1.
@@ -116,17 +138,83 @@ SOUND
 LOGGING
   stereo_blobdiag=1 with the 3D slider up, logs [STEREO] blob lines and saves stereo_blob_*.bmp once if one eye
                     shows a black patch the other doesn't (for the black-blob report). 0 = off. Default 1.
-  gpu_compose=0     GPU 2D compositor for the TOP screen (engine A). Default 0 = off (old CPU path, unchanged).
+  gpu_compose=2     GPU 2D compositor for the TOP screen (engine A). Default 2 since run 61 (was 0; you confirmed on
+                    hardware that it runs much better). 0 = off (old CPU path, unchanged).
                     1 = ANALYZE: only writes [GPUC] statistics lines to log.txt.
                     2 = GPU: frames that use only "simple" 2D features (text BGs, 3D layer, plain sprites, no
                         windows/blending/brightness/mosaic) are drawn by the 3DS GPU with a tile cache; every other
                         frame (battles with effects, fades, Cut, ...) uses the old CPU path automatically.
-                        Azahar: overworld composite 14 ms -> 5.5 ms, pixel-identical (run 60). Not yet tested on
-                        hardware - try it and report.
+                        Azahar: overworld composite 14 ms -> 5.5 ms, pixel-identical (run 60).
                     3 = VERIFY (debugging): picture comes from the old path, the GPU result is made too and compared
                         pixel by pixel; log.txt gets "[GPUC] verify" lines, the first mismatches are saved as
                         gpuc_mmN_cpu.bmp / gpuc_mmN_gpu.bmp. Slower than 0. (Menu: GPU COMPOSE)
+  gpu_compose_stereo=1  with gpu_compose=2 and the 3D slider up: overworld frames are GPU-composed for BOTH eyes
+                    (before run 61 the 3D slider always forced the slow CPU path: ~17 ms, 25 fps). 0 = old.
+                    Default 1. (Menu: GPU COMPOSE 3D)  [run 61]
+  menu_audio=1      music and sounds keep playing while the L+R+Y settings menu is open (the game itself stays
+                    paused). 0 = frozen like before. Default 1. (Menu: MENU MUSIC)  [run 61]
   log_level=1       1 = short log.txt; 2 = detailed diagnostics. Default 1.
 
 Everything else in old config files (stereo_c1, steal_b, gpu3d, tearfix, rb_sync, ...) is for diagnosis only;
 leave it out unless asked.
+
+stereo_edgefix=1        (run 62, default 1) 3D slider + wide view: keep the 3D triangles that the per-eye stereo
+                        shift brings on screen at the far left (right eye) / far right (left eye). Fixes the thin
+                        black sliver at the left edge of the right eye. 0 = old behaviour.
+
+fog_animfix=1           (run 64, default 1) Fixes the player's walk animation freezing (or facing the wrong way)
+                        after a seamless map change such as Route 210 South -> North in the fog. The game freed the
+                        player's walk-frame table while the sprite still used it; the port now keeps it. 0 = old.
+
+credits_splash=1        (run 64, default 1) Boot credits "Patch by Unown Collectables & 3DS Homebrew Dev" on the top
+                        screen while the game starts (drawn by the port in the game's own font, read from your
+                        ROM). A skips it. 0 = off.
+splash_ms=2000          (run 64) Splash length in ms including fades (300..5000).
+
+ui_gamefont=1           (run 64, default 1) Port text boxes (follower talk, toasts, save box, settings app) use the
+                        game's own font and message-box frame, read from your ROM at start. 0 = old port font.
+ui_frame=0              (run 64) Which of the game's 20 message-box frames the port boxes use (0..19).
+settings_app=1          (run 64, default 1) L+R+Y opens the touch settings app on the bottom screen (tabs Video /
+                        Speed / Game (2 pages: tap the tab again) / Cheats / Menu / Map; tap a cell to change it,
+                        L/R switch tabs, B closes). The game is paused while it is open; the Poketch comes back
+                        when it closes. Menu tab: tap Pokemon / Bag / Pokedex / Trainer card / Save / Options to
+                        open the game's own screen. Map tab (run 65): where you are and a grid of this map's wild
+                        Pokemon - each with its party icon (read from your ROM), encounter chance (the game's slot
+                        rates, duplicates summed) and level range - in sections Grass / cave (day or night table),
+                        Surfing, Old Rod, Good Rod, Super Rod. Tap the panel for the next page. Built once per map
+                        when you stand still; swarms and the Poke Radar are not included. 0 = the old text list on the top screen.
+fast_text=0             (run 64, default 0 = off) 2, 3 or 4: the game prints that many letters per frame. Stops at
+                        every pause / button prompt, so no text is skipped. Also in the settings app (Game tab).
+reusable_tms=0          (run 64, default 0) 1 = TMs are not used up when you teach them. Also in the settings app.
+follower_gap=1          (run 64, default 1) The following Pokemon walks a bit farther back (more for big Pokemon), so
+                        it no longer covers your head. 0 = old spacing.
+follower_area_talk=1    (run 64, default 1) With follower_talk=1: what your Pokemon says depends on where you are
+                        (town, route, cave, lake, legendary place), the weather, the time of day and its type.
+follower_cry=1          (run 64, default 1) Your Pokemon cries when you talk to it (the game's own cry sound).
+follower_items=0        (run 64, default 0) 1 = now and then, after you talk to it, your Pokemon finds a common item
+                        (Potion, Poke Ball, Repel, berries ...). It is put in your Bag the normal game way, so your
+                        save stays a normal Platinum save. At most once every 120 steps.
+follower_ballpop=1      (run 64, default 1) After a door, warp or cutscene your Pokemon comes out of its ball: the
+                        game's ball sound and it grows in for a moment. 0 = it just appears.
+settings_touch=1        (run 66, default 1) Overworld touch shortcuts in the bottom screen's corners where the Poketch has
+                        no screen or button. Touch and HOLD about 0.3 s: top-left = this settings app (same as L+R+Y),
+                        top-right = Pokemon (party), bottom-right = Bag. Party and Bag are the game's own screens, opened
+                        through the game's own Start menu (same as the Menu tab), so saving works normally. A short tap
+                        in a corner does nothing. 0 = off.
+lid_sound=1             (run 64, default 1; run 65 sounds) Closing the lid plays the game's Poke Ball recall
+                        (return) sound, opening it the Poke Ball release (send-out) sound - the same sounds as in battle
+                        (overworld only; the music keeps playing / resumes). NOTE: those two sounds are in the game's battle
+                        sound bank, which the game doesn't keep loaded in the overworld; when they can't start (always so far
+                        in testing) the game's overworld Poke Ball sound (the Poke Center ball sound) plays instead. 0 = silent.
+lid_test=1              (run 65, DEBUG ONLY) fakes a lid close / open about 5 and 7 s into the overworld. Default 0.
+summary_ivs=1           (run 64, default 1) On the summary's Skills page (the stats page) press Y to show / hide a box
+                        with the Pokemon's IVs and EVs, in the order HP/Atk/Def/SpA/SpD/Spe. Read only.
+                        Also in the settings app (Game page 2).
+repel_prompt=1          (run 64, default 1) When a Repel wears off and you still have one, after the game's "Repel's
+                        effect wore off" message you are asked "Use another Repel?" (Up/Down, A = yes, B = no).
+                        Yes uses it exactly like the Bag does (one taken from the Bag, normal Repel length).
+                        Uses the kind you used last (else Repel, Super Repel, Max Repel). Game page 2 of the app.
+cheat_no_encounters=0   (run 64 cheat, default 0) 1 = no random wild battles while walking / surfing; Sweet Scent and
+                        Great Marsh mud encounters are blocked too. Fishing, Honey trees and scripted /
+                        legendary Pokemon are unchanged.
+                        Nothing is written to your save. Settings app, Cheats tab.

@@ -1,5 +1,5 @@
---- a/field_map_change.c	2026-10-18 16:29:45.420423507 -0400
-+++ b/field_map_change.c	2026-10-18 16:29:45.424423507 -0400
+--- a/field_map_change.c
++++ b/field_map_change.c
 @@ -256,6 +256,7 @@
  void FieldMapChange_UpdateGameData(FieldSystem *fieldSystem, BOOL noWarp)
  {

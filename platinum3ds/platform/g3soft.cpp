@@ -89,6 +89,7 @@ extern "C" { unsigned long long P3DS_SpkGetTexTicks; }
    and the GPU texture is updated IN PLACE (same object the queued draws reference). GPU sync path only. */
 static unsigned g3FrameNo;static Tex*usedTex[96];static unsigned usedN,postFixes;
 static int postVblCfg(){static int v=-1;if(v<0){v=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"tex_postvblank=%d",&x)==1)v=x!=0;fclose(f);}PSPNativeMemLog("[G3] tex_postvblank=%d",v);}return v;}
+extern "C" int P3DS_CfgInt(const char*,int);
 static Tex folTex[8];
 static Tex*GetTexture(){u64 t=svcGetSystemTick();Tex*r=GetTextureImpl();if(r&&(r<folTex||r>=folTex+8)&&r->useF!=g3FrameNo+1){r->useF=g3FrameNo+1;if(usedN<96)usedTex[usedN++]=r;}u64 d=svcGetSystemTick()-t;prTex+=d;P3DS_SpkGetTexTicks+=d;return r;}
 static bool DecodeTex(Tex*e){const unsigned fmt=e->fmt,w=e->w,h=e->h;
@@ -288,10 +289,16 @@ static void GpuRaw(const GuVertex*v,unsigned n){
  bool dw=!translucent||s_SIM_transDepthWrite;unsigned dtest=s_curPolygonAttr.depthTest;
  if(tex&&!tex->gt)tex->gt=G3SIM_GpuTex(tex);
  const float*M=rawM;
+/* run 62 stereo_edgefix=1 (default): the per-eye stereo shift (up to stereoSd DS px, right eye +, left eye -) is added
+   AFTER this x-plane reject, so tris just outside the left plane that the right-eye shift would bring on screen were
+   dropped -> a few-px black column at the far left of the right eye (wide view, slider up; mirror case at the right edge
+   of the left eye). Widen the x reject planes by the maximum shift (stereoSd/128 clip units per w; par <= 1). */
+ static int edgeFix=-1;if(edgeFix<0){edgeFix=P3DS_CfgInt("stereo_edgefix",1)!=0;PSPNativeMemLog("[G3] stereo_edgefix=%d",edgeFix);}
+ const float qwK=(G3G_Wide?1.25f:1.0f)+(edgeFix&&stereoSd?stereoSd*(1.0f/128.0f):0.0f);
  for(unsigned i=0;i+2<n;i+=3){float c[12];unsigned out=0x3F;u32 col[3];float su[3],sv[3];
   for(int k=0;k<3;k++){const GuVertex&p=v[i+k];float*q=c+4*k;
    q[0]=p.x*M[0]+p.y*M[4]+p.z*M[8]+M[12];q[1]=p.x*M[1]+p.y*M[5]+p.z*M[9]+M[13];q[2]=p.x*M[2]+p.y*M[6]+p.z*M[10]+M[14];q[3]=p.x*M[3]+p.y*M[7]+p.z*M[11]+M[15];
-   unsigned o=0;const float qw=G3G_Wide?1.25f*q[3]:q[3];/* run 43 wideview: keep tris in the side strips */if(q[0]>qw)o|=1;if(q[0]<-qw)o|=2;if(q[1]>q[3])o|=4;if(q[1]<-q[3])o|=8;if(q[2]>q[3])o|=16;if(q[2]<-q[3])o|=32;out&=o;
+   unsigned o=0;const float qw=qwK*q[3];/* run 43 wideview: keep tris in the side strips */if(q[0]>qw)o|=1;if(q[0]<-qw)o|=2;if(q[1]>q[3])o|=4;if(q[1]<-q[3])o|=8;if(q[2]>q[3])o|=16;if(q[2]<-q[3])o|=32;out&=o;
    col[k]=p.color;su[k]=p.u;sv[k]=p.v;}
   if(wbufOn()){/* run 31: DS W-buffer (SwapBuffers bit1): depth = w, linear. With z-buffer depth the title's projection
      gave z==w for every vertex (all depth ~1.0), so Giratina's body lost the depth test. */
@@ -361,6 +368,16 @@ void G3SIM_FlushDeferred(){
      if(DecodeTex(t)){if(t->gt)G3G_TexUpdate(t->gt,t->px,t->w,t->h);postFixes++;}}
     if(rn){t->gen=PSPNativeVramGen;t->cnt=VramCnt();}}}
   {static unsigned f;if(++f%900==0){PSPNativeMemLog("[G3] tex_postvblank: %u textures refreshed after VBlank (30 s)",postFixes);postFixes=0;}}}
+ /* run 63 tex_trace=1 (debug, default 0): per 3D frame, every small texture used (<=64x64) with a hash of its VRAM
+    bytes -> shows whether a sprite's VRAM really changes (game side) or the cache misses it (port side). */
+ {static int tt=-1;if(tt<0)tt=P3DS_CfgInt("tex_trace",0);if(tt>0){struct E{unsigned off,pal,wh;u32 h;};static E prv[96],cur[96];static unsigned pn;unsigned cn=0;
+  for(unsigned i=0;i<usedN&&cn<96;i++){Tex*t=usedTex[i];if(t->w>64||t->h>64)continue;u32 hsh=2166136261u;for(unsigned j=0;j<t->rawN;j++)hsh=(hsh^t->raw[j])*16777619u;cur[cn++]={t->off,t->pal,t->w<<8|t->h|t->fmt<<16,hsh};}
+  char b[200];int k=0;auto fl=[&](){if(k){PSPNativeMemLog("[TEXTR] f%u g%u%s",g3FrameNo,PSPNativeVramGen,b);k=0;}};
+  for(unsigned i=0;i<cn;i++){bool same=false,had=false;for(unsigned j=0;j<pn;j++)if(prv[j].off==cur[i].off&&prv[j].pal==cur[i].pal&&prv[j].wh==cur[i].wh){had=true;same=prv[j].h==cur[i].h;break;}
+   if(!same){k+=snprintf(b+k,sizeof b-k," %c%x/%x/%x:%08lx",had?'*':'+',cur[i].off,cur[i].pal,cur[i].wh,(unsigned long)cur[i].h);if(k>140)fl();}}
+  for(unsigned j=0;j<pn;j++){bool f=false;for(unsigned i=0;i<cn;i++)if(prv[j].off==cur[i].off&&prv[j].pal==cur[i].pal&&prv[j].wh==cur[i].wh){f=true;break;}
+   if(!f){k+=snprintf(b+k,sizeof b-k," -%x/%x/%x",prv[j].off,prv[j].pal,prv[j].wh);if(k>140)fl();}}
+  fl();memcpy(prv,cur,cn*sizeof(E));pn=cn;}}
  usedN=0;
  if(gpuOn==1){u64 t=svcGetSystemTick();G3G_FogNoW=!wbufOn();G3G_End(GPU3D::NativeFrame,stereoSd?frameR:nullptr);prEnd+=svcGetSystemTick()-t;prN++;}
  {u64 d=svcGetSystemTick()-frameTicks;lastUs=(unsigned)(d/268);lastTris=drawnTris;sumTicks+=d;}if(++frames==120){sumTicks=0;frames=0;

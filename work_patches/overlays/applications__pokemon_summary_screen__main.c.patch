@@ -1,0 +1,23 @@
+--- a/applications__pokemon_summary_screen__main.c
++++ b/applications__pokemon_summary_screen__main.c
+@@ -261,6 +261,7 @@
+ static int PokemonSummaryScreen_Main(ApplicationManager *appMan, int *state)
+ {
+     PokemonSummaryScreen *summaryScreen = ApplicationManager_Data(appMan);
++    { extern volatile int P3DS_SumAlive; P3DS_SumAlive = (summaryScreen->page == SUMMARY_PAGE_SKILLS && *state == SUMMARY_STATE_HANDLE_INPUT) ? 4 : 0; } /* run 64 summary_ivs */
+ 
+     switch (*state) {
+     case SUMMARY_STATE_TRANSITION_IN:
+@@ -1166,6 +1167,12 @@
+         }
+     }
+ 
++    { /* run 64 summary_ivs: copy IVs/EVs for the port's read-only overlay (render3ds). Never written back. */
++        extern volatile int P3DS_SumIV[6], P3DS_SumEV[6];
++        static const int ivId[6] = { MON_DATA_HP_IV, MON_DATA_ATK_IV, MON_DATA_DEF_IV, MON_DATA_SPATK_IV, MON_DATA_SPDEF_IV, MON_DATA_SPEED_IV };
++        static const int evId[6] = { MON_DATA_HP_EV, MON_DATA_ATK_EV, MON_DATA_DEF_EV, MON_DATA_SPATK_EV, MON_DATA_SPDEF_EV, MON_DATA_SPEED_EV };
++        for (int i = 0; i < 6; i++) { P3DS_SumIV[i] = Pokemon_GetValue(mon, ivId[i], NULL); P3DS_SumEV[i] = Pokemon_GetValue(mon, evId[i], NULL); }
++    }
+     Pokemon_ExitDecryptionContext(mon, reencrypt);
+ }
+ 

@@ -173,7 +173,15 @@ int sceAudioOutputPannedBlocking(int ch, int l, int r, void *b) {
 int sceCtrlSetSamplingCycle(int c) { return 0; }
 int sceCtrlSetSamplingMode(int m) { return 0; }
 /* run 53: tiny config helpers (read once per key) */
-int P3DS_CfgInt(const char *key, int def) { FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (!f) return def; char l[96]; size_t n = strlen(key); int v = def;
+/* run 66 [CFG] guard: every P3DS_CfgInt call opens config.txt on the SD (several ms on hardware). Callers must cache;
+   count calls + time and log once per ~10 s whenever any happened so a per-frame caller shows up in log.txt. */
+static unsigned cfgCalls, cfgUs; static u64 cfgT;
+static void cfgAcct(u64 t0) { u64 now = svcGetSystemTick(); cfgCalls++; cfgUs += (unsigned)((now - t0) / CPU_TICKS_PER_USEC);
+    if (now - cfgT > 268111856ull * 10) { if (cfgT) PSPNativeMemLog("[CFG] %u config.txt reads in the last 10 s (%u us total)", cfgCalls, cfgUs); cfgT = now; cfgCalls = cfgUs = 0; } }
+static int cfgIntRaw(const char *key, int def);
+int P3DS_CfgInt(const char *key, int def) { u64 t0 = svcGetSystemTick(); int v = cfgIntRaw(key, def); cfgAcct(t0);
+    { static unsigned nl; if (nl < 60) { nl++; PSPNativeMemLog("[CFG] read %s (%u us)", key, (unsigned)((svcGetSystemTick() - t0) / CPU_TICKS_PER_USEC)); } } return v; }
+static int cfgIntRaw(const char *key, int def) { FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (!f) return def; char l[96]; size_t n = strlen(key); int v = def;
     while (fgets(l, sizeof l, f)) if (!strncmp(l, key, n) && l[n] == '=') v = atoi(l + n + 1); fclose(f); return v; }
 /* run 54 cstick_mode: 0 off, 1 = flick taps the Poketch button (run 53), 2 = C-stick works like the D-pad (default) */
 static int cstickV = -1;
@@ -190,9 +198,22 @@ void P3DS_CfgWrite(const char *key, int val) {
     PSPNativeMemLog("[MENU] config.txt: %s=%d", key, val); }
 int P3DS_CtlZr = -1, P3DS_CtlZl, P3DS_CtlCp;   /* run 55: file scope so the settings menu can change them live */
 int P3DS_CfgSoftReset(void) { static int v = -1; if (v < 0) v = P3DS_CfgInt("soft_reset", 1) != 0; return v; }
-volatile int P3DS_RunToggle;   /* run 53 ZL: read by PlayerAvatar_IsRunButtonHeld (run = B XOR toggle) */
+volatile int P3DS_RunToggle;
+volatile unsigned P3DS_InjectKeys; volatile int P3DS_InjectFrames; volatile int P3DS_StartReq = -1, P3DS_StartReqFound;
+volatile int P3DS_SumIV[6], P3DS_SumEV[6], P3DS_SumAlive;
+/* run 64 repel_prompt: port Yes/No (0 closed, 1 asking, 2 answered; result 1 yes 0 no). Keys handled here on the game
+   thread; while asking the game sees no buttons. */
+volatile int P3DS_RepelAsk, P3DS_RepelLast, P3DS_PromptOpen, P3DS_PromptResult = -1, P3DS_PromptSel; char P3DS_PromptText[64];
+volatile int P3DS_MapId = -1; char P3DS_MapWild[3][200];
+/* run 65 Map tab grid (written by the game thread snapshot) */
+typedef struct { unsigned short species; unsigned char lo, hi, pct, sec; } P3DSMapEnt;
+P3DSMapEnt P3DS_MapEnt[48]; volatile int P3DS_MapEntN, P3DS_MapTod; unsigned *P3DS_MapIcons;
+int P3DS_MapIconMem[48], P3DS_MapIconPal[48], P3DS_MapIconPalFile; volatile int P3DS_MapGen; /* run 64 Map tab snapshot (game thread) */ /* run 64 summary_ivs (written by the summary screen) */   /* run 53 ZL: read by PlayerAvatar_IsRunButtonHeld (run = B XOR toggle) */
 int sceCtrlPeekBufferPositive(SceCtrlData *d, int n) {
     hidScanInput(); { extern void P3DS_FrameHook(void); P3DS_FrameHook(); } u32 k = hidKeysHeld(); unsigned b = 0;
+    if (P3DS_PromptOpen == 1) { u32 dn = hidKeysDown(); if (dn & (KEY_DUP | KEY_DDOWN)) P3DS_PromptSel ^= 1;
+        if (dn & KEY_A) { P3DS_PromptResult = P3DS_PromptSel == 0; P3DS_PromptOpen = 2; } else if (dn & KEY_B) { P3DS_PromptResult = 0; P3DS_PromptOpen = 2; }
+        k = 0; }
     static const u32 map[][2] = { {KEY_SELECT, PSP_CTRL_SELECT}, {KEY_START, PSP_CTRL_START}, {KEY_DUP, PSP_CTRL_UP}, {KEY_DRIGHT, PSP_CTRL_RIGHT},
         {KEY_DDOWN, PSP_CTRL_DOWN}, {KEY_DLEFT, PSP_CTRL_LEFT}, {KEY_L, PSP_CTRL_LTRIGGER}, {KEY_R, PSP_CTRL_RTRIGGER},
         {KEY_A, PSP_CTRL_CIRCLE}, {KEY_B, PSP_CTRL_CROSS}, {KEY_X, PSP_CTRL_TRIANGLE}, {KEY_Y, PSP_CTRL_SQUARE} };
@@ -233,6 +254,7 @@ int sceCtrlPeekBufferPositive(SceCtrlData *d, int n) {
 #undef zr
 #undef zl
 #undef cp
+    if (P3DS_InjectFrames > 0) { k |= P3DS_InjectKeys; P3DS_InjectFrames--; } /* run 64: touch Start menu app (one press) */
     for (unsigned i = 0; i < sizeof map / sizeof map[0]; i++) if (k & map[i][0]) b |= map[i][1];
     circlePosition c; hidCircleRead(&c);
     memset(d, 0, sizeof *d); d->Buttons = b; d->Lx = (unsigned char)(128 + c.dx * 127 / 156); d->Ly = (unsigned char)(128 - c.dy * 127 / 156); return 1;

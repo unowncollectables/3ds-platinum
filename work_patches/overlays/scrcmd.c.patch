@@ -1,5 +1,5 @@
---- a/scrcmd.c	2026-10-18 16:29:45.408423507 -0400
-+++ b/scrcmd.c	2026-10-18 16:29:45.408423507 -0400
+--- a/scrcmd.c
++++ b/scrcmd.c
 @@ -1767,6 +1767,7 @@
  
      *menu = Menu_MakeYesNoChoice(fieldSystem->bgConfig, &sYesNoWindowTemplate, 1024 - (18 + 12) - 9, 11, 4);

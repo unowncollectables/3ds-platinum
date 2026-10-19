@@ -1,0 +1,12 @@
+--- a/start_menu.c
++++ b/start_menu.c
+@@ -552,6 +552,9 @@
+ 
+         if (fieldSystem->menuCursorPos == menu->options[i]) {
+             menu->cursorPos = i;
++#ifdef PLATINUM3DS
++            { extern volatile int P3DS_StartReq, P3DS_StartReqFound; if (P3DS_StartReq == menu->options[i]) P3DS_StartReqFound = 1; } /* run 64 touch start menu */
++#endif
+         }
+     }
+ 

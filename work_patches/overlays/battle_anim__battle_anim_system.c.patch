@@ -1,5 +1,5 @@
---- a/battle_anim__battle_anim_system.c	2026-10-18 16:29:45.424423507 -0400
-+++ b/battle_anim__battle_anim_system.c	2026-10-18 16:29:45.428423507 -0400
+--- a/battle_anim__battle_anim_system.c
++++ b/battle_anim__battle_anim_system.c
 @@ -3966,10 +3966,42 @@
      return btlMonObjData;
  }

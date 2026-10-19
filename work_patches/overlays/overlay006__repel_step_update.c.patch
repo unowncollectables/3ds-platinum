@@ -1,0 +1,10 @@
+--- a/overlay006__repel_step_update.c
++++ b/overlay006__repel_step_update.c
+@@ -18,6 +18,7 @@
+ 
+         if (*repelSteps == 0) {
+             ScriptManager_Set(fieldSystem, SCRIPT_ID(COMMON_SCRIPTS, 32), NULL);
++            { extern volatile int P3DS_RepelAsk; P3DS_RepelAsk = 1; } /* run 64 repel_prompt: ask after the game's own message */
+             return TRUE;
+         }
+     }

@@ -292,6 +292,7 @@ static void clearQuad(void) {
     C3D_DrawArrays(GPU_TRIANGLES, 0, 6);
     C3D_AlphaTest(true, GPU_GREATER, 3);
 }
+extern void P3DS_Crumb(const char *tag, void *caller);
 void G3G_End(u32 *outL, u32 *outR) {
     if (ok != 1) return;
     u64 t0 = svcGetSystemTick();
@@ -303,7 +304,9 @@ void G3G_End(u32 *outL, u32 *outR) {
         fogFrame = fogCfg; if (fogFrame == 1) { fogLutSetup(); const u32 fc = *(const u32 *)(PSPNative_GfxRegisters + 0x358);
             C3D_FogColor(((fc & 31) * 255 / 31) | (((fc >> 5) & 31) * 255 / 31) << 8 | (((fc >> 10) & 31) * 255 / 31) << 16); }
         if (fogFrame && ++fogFrames % 600 == 1) PSPNativeMemLog("[GPU3D] fog3d: fog frame (DISP3DCNT %04x, FOG_COLOR %08lx, offset %04x)", *(const u16 *)(PSPNative_GfxRegisters + 0x60), (unsigned long)*(const u32 *)(PSPNative_GfxRegisters + 0x358), *(const u16 *)(PSPNative_GfxRegisters + 0x35C)); }
+    P3DS_Crumb("g3e-begin", 0); /* run 65: locate the boot g3 stall */
     C3D_FrameBegin(0);
+    P3DS_Crumb("g3e-draw", 0);
     if (G3G_Async) { /* previous frame's GPU work is finished (FrameBegin waited): read it back, then free its textures */
         if (pendRB) for (int e = 0; e < pendEyes; e++) { if (rs) rbConvert(e, e ? outR : outL); else readback(e, e ? outR : outL); }
         for (unsigned i = 0; i < oldN; i++) { C3D_TexDelete(oldFree[i]); free(oldFree[i]); }
@@ -343,8 +346,11 @@ void G3G_End(u32 *outL, u32 *outR) {
         if (rs && sharedTgt) rbQueue(e);   /* shared 2x target: copy this eye out before the next eye clears it */
     }
     if (rs && !sharedTgt) for (int e = 0; e < eyes; e++) rbQueue(e);  /* GPU runs these after the draws, same queue */
+    P3DS_Crumb("g3e-end", 0);
     C3D_FrameEnd(0);
-    if (rs && !G3G_Async) { C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); } /* exact wait: queue (draw + readback DMA) done */
+    P3DS_Crumb("g3e-wait", 0);
+    if (rs && !G3G_Async) { C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); }
+    P3DS_Crumb("g3e-done", 0); /* exact wait: queue (draw + readback DMA) done */
     if (G3G_Async) { pendRB = 1; pendEyes = eyes; memcpy(oldFree, pendFree, pendN * sizeof *pendFree); oldN = pendN; pendN = 0; }
     else {
         pendRB = 0; for (unsigned i = 0; i < oldN; i++) { C3D_TexDelete(oldFree[i]); free(oldFree[i]); } oldN = 0;

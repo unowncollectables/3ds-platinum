@@ -10,7 +10,8 @@
 # 3DS button -> key name for KEYS: A=a B=s X=z Y=x L=q R=w ZL=1 ZR=2 Start=m Select=n
 #   Dpad Up=t Down=g Left=f Right=h  Home=b  CirclePad=Up/Down/Left/Right (arrows)
 #   Hold/combos: KEYS="40:Up@2000 50:q+w+n@300" (keys joined by +, hold ms after @)
-#   Touch: KEYS="10:touch:160,120" (bottom-screen coords 0..319,0..239)
+#   PRESS_BG=1: key holds run in the background so screenshots can be taken during a hold
+#   Touch: KEYS="10:touch:160,120" (bottom-screen coords 0..319,0..239); hold: "10:touch:8,8@800"
 set -u
 SECS=${1:?seconds}; OUT=${2:?outdir}
 P=/workspace/platinum3ds
@@ -87,8 +88,8 @@ shot(){ local t=$1 f="$OUT/t$(printf %06.2f "$1")"
   convert "$f.full.png" -crop 320x240+40+240 +repage "$f.bottom.png"
   echo "shot t=$t -> $f.{top,bottom}.png"; }
 press(){ local k=$1
-  if [[ $k == touch:* ]]; then IFS=, read x y <<<"${k#touch:}"
-    xdotool mousemove $((x+40)) $((y+240)) mousedown 1; sleep 0.15; xdotool mouseup 1
+  if [[ $k == touch:* ]]; then local tk=${k#touch:} td=150; [[ $tk == *@* ]] && { td=${tk##*@}; tk=${tk%@*}; }; IFS=, read x y <<<"$tk"
+    xdotool mousemove $((x+40)) $((y+240)) mousedown 1; sleep "$(awk "BEGIN{print $td/1000}")"; xdotool mouseup 1
   else wid=$(xdotool search --pid $EP 2>/dev/null | tail -1); [ -n "$wid" ] && xdotool windowfocus "$wid" 2>/dev/null
     # hold/combos: "q+w+n" presses together, "@ms" sets hold time (default 150), e.g. 40:Up@2000 or 30:q+w+n@300
     local dur=150 ks=$k; [[ $k == *@* ]] && { dur=${k##*@}; ks=${k%@*}; }
@@ -101,7 +102,7 @@ events=$( { for s in $SHOTS; do echo "$s shot $s"; done; for k in ${KEYS:-}; do 
 while read -r t typ arg; do
   [ -z "$t" ] && continue
   tm=$(awk "BEGIN{print int($t*1000)}"); while (( $(el) < tm )); do sleep 0.1; kill -0 $EP 2>/dev/null || break 2; done
-  [ "$typ" = shot ] && shot "$t" || press "$arg"
+  if [ "$typ" = shot ]; then shot "$t"; elif [ -n "${PRESS_BG:-}" ]; then press "$arg" & else press "$arg"; fi
 done <<<"$events"
 while (( $(el) < SECS*1000 )) && kill -0 $EP 2>/dev/null; do sleep 0.2; done
 kill -0 $EP 2>/dev/null && alive=yes || alive="no (exited early)"

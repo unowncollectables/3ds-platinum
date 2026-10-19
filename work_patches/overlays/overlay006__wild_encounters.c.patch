@@ -1,0 +1,43 @@
+--- a/overlay006__wild_encounters.c
++++ b/overlay006__wild_encounters.c
+@@ -252,6 +252,7 @@
+ 
+     u8 encounterRate = GetTileEncounterRateAndType(fieldSystem, tileBehavior, &encounterType);
+ 
++    { extern int P3DS_CheatNoEncCfg(void); if (encounterRate != 0 && P3DS_CheatNoEncCfg()) return FALSE; } /* run 64 cheat: no random encounters (port setting, off by default) */
+     if (encounterRate == 0) {
+         return FALSE;
+     }
+@@ -387,6 +388,7 @@
+ 
+     u8 encounterRate = GetFishingEncounterRate(fieldSystem, fishingRodType);
+ 
++    { extern int P3DS_CheatNoEncCfg(void); if (encounterRate != 0 && P3DS_CheatNoEncCfg()) return FALSE; } /* run 64 cheat: no random encounters (port setting, off by default) */
+     if (encounterRate == 0) {
+         return FALSE;
+     }
+@@ -469,6 +471,7 @@
+ 
+     u8 encounterRate = GetTileEncounterRateAndType(fieldSystem, tileBehavior, &encounterType);
+ 
++    { extern int P3DS_CheatNoEncCfg(void); if (encounterRate != 0 && P3DS_CheatNoEncCfg()) return FALSE; } /* run 64 cheat: no random encounters (port setting, off by default) */
+     if (encounterRate == 0) {
+         return FALSE;
+     }
+@@ -580,6 +583,7 @@
+ 
+     u8 encounterRate = GetTileEncounterRateAndType(fieldSystem, tileBehavior, &encounterType);
+ 
++    { extern int P3DS_CheatNoEncCfg(void); if (encounterRate != 0 && P3DS_CheatNoEncCfg()) return FALSE; } /* run 64 cheat: no random encounters (port setting, off by default) */
+     if (encounterRate == 0) {
+         return FALSE;
+     }
+@@ -791,6 +795,8 @@
+ // Returns encounter rate. Assigns encounter type to third parameter.
+ static u8 GetTileEncounterRateAndType(FieldSystem *fieldSystem, u8 tileBehavior, u8 *encounterType)
+ {
++    { extern int P3DS_CfgInt(const char *, int); static int et = -1; if (et < 0) et = P3DS_CfgInt("encounter_test", 0); /* run 65 debug (default 0): every tile is grass at max rate (battle tests) */
++      if (et > 0) { *encounterType = ENCOUNTER_TYPE_GRASS; return 255; } }
+     if (TileBehavior_HasEncounters(tileBehavior)) {
+         if (TileBehavior_IsSurfable(tileBehavior)) {
+             *encounterType = ENCOUNTER_TYPE_SURF;

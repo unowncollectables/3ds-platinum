@@ -143,6 +143,14 @@ static void fadeNow(int *dir, unsigned *amt) {   /* dir 1 = white, 2 = black; am
     if ((bc & 1) && (eff == 2 || eff == 3) && y) { int d2 = eff == 2 ? 1 : 2;
         if (!*dir) { *dir = d2; *amt = y; } else if (d2 == *dir) *amt = *amt + y * (16 - *amt) / 16; }
 }
+/* run 61 wide_haze=1 (default; only while wide-view strips are drawn): a 2D haze/fog layer alpha-blended over the 3D
+   (BLDCNT effect 1, BG0 = 2nd target) only exists in the 256-px centre, so the strips looked clear. render3ds fits it
+   per frame as C = k*3D + b (k = EVB/16 from BLDALPHA, b = median of the centre's own residual over sparse samples of
+   both edge bands, ~0.1 ms) and the strips get it in the texture combiner (tex*k + b): no CPU pass over pixels. */
+int P3DS_HazeOn; unsigned P3DS_HazeK, P3DS_HazeB; /* ABGR constants for the combiner */
+static int hazeCfg = -1;
+int P3DS_WideHazeCfg(void) { if (hazeCfg < 0) { hazeCfg = 1; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); char l[64]; int x; if (f) { while (fgets(l, sizeof l, f)) if (sscanf(l, "wide_haze=%d", &x) == 1) hazeCfg = x != 0; fclose(f); } PSPNativeMemLog("[WIDE] wide_haze=%d", hazeCfg); } return hazeCfg; }
+void P3DS_SetWideHazeCfg(int v) { hazeCfg = v != 0; }
 static void strips(C3D_RenderTarget *t, int eye) {
     const u32 *src = P3DS_WideStrip[eye]; if (!src) return;
     static int hDir; static unsigned hAmt, hLeft; int fDir = 0; unsigned fAmt = 0;
@@ -166,6 +174,12 @@ static void strips(C3D_RenderTarget *t, int eye) {
     C3D_Mtx proj; Mtx_OrthoTilt(&proj, 0.0f, 400.0f, 240.0f, 0.0f, 1.0f, -1.0f, true);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uProj, &proj);
     C3D_TexBind(0, &stripTex[eye]);
+    const int haze = P3DS_HazeOn && !fAmt;
+    if (haze) { C3D_TexEnv *e0 = C3D_GetTexEnv(0), *e1 = C3D_GetTexEnv(1); C3D_TexEnvInit(e0); C3D_TexEnvInit(e1);
+        C3D_TexEnvSrc(e0, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, 0); C3D_TexEnvFunc(e0, C3D_RGB, GPU_MODULATE); C3D_TexEnvColor(e0, P3DS_HazeK);
+        C3D_TexEnvSrc(e0, C3D_Alpha, GPU_TEXTURE0, 0, 0); C3D_TexEnvFunc(e0, C3D_Alpha, GPU_REPLACE);
+        C3D_TexEnvSrc(e1, C3D_RGB, GPU_PREVIOUS, GPU_CONSTANT, 0); C3D_TexEnvFunc(e1, C3D_RGB, GPU_ADD); C3D_TexEnvColor(e1, P3DS_HazeB);
+        C3D_TexEnvSrc(e1, C3D_Alpha, GPU_PREVIOUS, 0, 0); C3D_TexEnvFunc(e1, C3D_Alpha, GPU_REPLACE); }
     const float t1 = 192.0f / 256.0f, hx = 0.5f / 64.0f; /* half-texel inset so LINEAR does not bleed across the 32|32 seam */
     for (int side = 0; side < 2; side++) { float x0 = side ? 360 : 0, x1 = side ? 400 : 40, s0 = side ? 0.5f + hx : 0.0f, s1 = side ? 1.0f : 0.5f - hx;
         C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
@@ -174,6 +188,7 @@ static void strips(C3D_RenderTarget *t, int eye) {
         C3D_ImmSendAttrib(x1, 0, 0, 0); C3D_ImmSendAttrib(s1, 0, 0, 0);
         C3D_ImmSendAttrib(x1, 240, 0, 0); C3D_ImmSendAttrib(s1, t1, 0, 0);
         C3D_ImmDrawEnd(); }
+    if (haze) tevPlain();
 }
 /* run 38: called when leaving the GPU-scaled path (mode 0): wait until citro3d's queue (last transfer + its async
    gfxScreenSwapBuffers) is done, and turn 3D off so the never-written right-eye buffer isn't shown. */
@@ -181,12 +196,15 @@ static void strips(C3D_RenderTarget *t, int eye) {
    byte-swap upload + 2x prescale and draw from the persistent up[1] (VRAM) texture. Forced after init, mode-0 visits
    and console/bottom toggles. 0 = always upload. */
 int P3DS_GpuBotSame; static int botValid, skipBotCfg = -1; static unsigned botSkips;
+void P3DS_GpuInvalidateBot(void) { botValid = 0; } /* run 64: settings app drew its own bottom picture */
 void P3DS_GpuQuiesce(void) { botValid = 0;
     if (ready) { C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); gspWaitForVBlank(); }
     stereoOn = 0; gfxSet3D(false);
 }
 /* topR != NULL: stereo (slider > 0): left eye = top, right eye = topR. NULL: 2D mode, no right-eye cost. */
+extern void P3DS_Crumb(const char *tag, void *caller);
 void P3DS_GpuPresent(const u32 *top, const u32 *bot, int mode, int drawBottom, const u32 *topR) {
+    P3DS_Crumb("gp-begin", 0); /* run 65: locate the boot stall */
     int st = topR != NULL; if (st != stereoOn) { stereoOn = st; gfxSet3D(st); }
     static int vs = -1; if (vs < 0) { vs = 0; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); char l[64]; int x; if (f) { while (fgets(l, sizeof l, f)) if (sscanf(l, "vsync=%d", &x) == 1) vs = x != 0; fclose(f); } PSPNativeMemLog("[3DS] vsync (tear-free present) %d", vs); }
     C3D_FrameBegin(vs ? C3D_FRAME_SYNCDRAW : 0);
@@ -196,6 +214,7 @@ void P3DS_GpuPresent(const u32 *top, const u32 *bot, int mode, int drawBottom, c
     if (skipBotCfg < 0) { skipBotCfg = 1; /* run 47: default 1 again (safe: only skips when engine B was really reused) */ FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); char l[64]; int x; if (f) { while (fgets(l, sizeof l, f)) if (sscanf(l, "present_skipbot=%d", &x) == 1) skipBotCfg = x != 0; fclose(f); } PSPNativeMemLog("[3DS] present_skipbot=%d", skipBotCfg); }
     const int botFresh = !(skipBotCfg && botValid && P3DS_GpuBotSame);
     if (!drawBottom) botValid = 0; else if (!botFresh) botSkips++;
+    P3DS_Crumb("gp-upload", 0);
     upTicks = 0; upload(0, top); if (drawBottom && botFresh) upload(1, bot); if (st) upload(2, topR); P3DS_UploadUs = (unsigned)(upTicks / 268);
     C3D_BindProgram(&prog);
     C3D_AttrInfo *ai = C3D_GetAttrInfo(); AttrInfo_Init(ai);
@@ -205,6 +224,7 @@ void P3DS_GpuPresent(const u32 *top, const u32 *bot, int mode, int drawBottom, c
     C3D_TexEnv *env = C3D_GetTexEnv(0); C3D_TexEnvInit(env);
     C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, 0, 0); C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
     for (int k = 1; k < 6; k++) C3D_TexEnvInit(C3D_GetTexEnv(k));
+    P3DS_Crumb("gp-prescale", 0);
     prescale(0); if (drawBottom && botFresh) { prescale(1); botValid = 1; } if (st) prescale(2);
     { static unsigned n; if (++n % 600 == 0) { PSPNativeMemLog("[3DS] present_skipbot: skipped bottom upload %u of 600", botSkips); botSkips = 0; } }
     /* run 33: mode 2 (fill) zoom from config gpuscale_zoom (1.25..1.5625, default 1.40625 = 360x270: 20px bars, 15 rows
@@ -224,10 +244,11 @@ void P3DS_GpuPresent(const u32 *top, const u32 *bot, int mode, int drawBottom, c
            vblank. Until then the "back" buffer that this frame's display transfer writes is STILL ON SCREEN: the
            transfer overwrites it while the LCD scans it -> the first-scanned rows lag (both screens, also 2D video).
            Wait exactly until GSP has taken the previous present, no fixed vblank guesses. */
+        P3DS_Crumb("gp-tearfix", 0);
         u64 t0 = svcGetSystemTick(); int w = 0;
         while ((gspIsPresentPending(GFX_TOP) || gspIsPresentPending(GFX_BOTTOM)) && svcGetSystemTick() - t0 < (u64)(40 * 268111.856)) { w = 1; svcSleepThread(250000); }
         if (w) { waits++; waitTicks += svcGetSystemTick() - t0; }
       } else if (tf && lastEnd) { u64 el = svcGetSystemTick() - lastEnd; if (el < (u64)(2 * 16.713 * 268111.856)) { if (el < (u64)(16.713 * 268111.856)) gspWaitForVBlank(); gspWaitForVBlank(); waits++; } }
       if (tf && ++n % 600 == 0) { PSPNativeMemLog("[3DS] tearfix=%d: waited on %u of 600 presents, avg wait %u us", tf, waits, waits ? (unsigned)(waitTicks / waits / 268) : 0); waits = 0; waitTicks = 0; }
-      C3D_FrameEnd(0); lastEnd = svcGetSystemTick(); }
+      P3DS_Crumb("gp-end", 0); C3D_FrameEnd(0); lastEnd = svcGetSystemTick(); P3DS_Crumb("gp-done", 0); }
 }
