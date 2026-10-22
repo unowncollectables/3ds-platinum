@@ -1,14 +1,21 @@
 --- a/overlay006__wild_encounters.c
 +++ b/overlay006__wild_encounters.c
-@@ -252,6 +252,7 @@
+@@ -252,6 +252,14 @@
  
      u8 encounterRate = GetTileEncounterRateAndType(fieldSystem, tileBehavior, &encounterType);
  
 +    { extern int P3DS_CheatNoEncCfg(void); if (encounterRate != 0 && P3DS_CheatNoEncCfg()) return FALSE; } /* run 64 cheat: no random encounters (port setting, off by default) */
++    { extern int P3DS_CfgInt(const char *, int); static int dbgStep; int sp = P3DS_CfgInt("dbg_wild_double", 0); /* run 70 debug (default 0): every 8th step a wild DOUBLE battle (2x species sp, lv 30) - test only */
++      if (sp > 0 && ++dbgStep % 8 == 0) { Party *pt = SaveData_GetParty(fieldSystem->saveData); Pokemon *fm = Party_GetPokemonBySlotIndex(pt, 0); WildEncounters_FieldParams fp; EncounterSlot tb[MAX_GRASS_ENCOUNTERS];
++        InitEncounterFieldParams(fieldSystem, fm, MapHeaderData_GetWildEncounters(fieldSystem), &fp); fp.repelActive = FALSE;
++        for (int i = 0; i < MAX_GRASS_ENCOUNTERS; i++) { tb[i].species = sp; tb[i].maxLevel = tb[i].minLevel = 30; }
++        FieldBattleDTO *d = FieldBattleDTO_New(HEAP_ID_FIELD2, BATTLE_TYPE_DOUBLES); FieldBattleDTO_Init(d, fieldSystem);
++        if (TryGenerateWildMon(fm, 0xff, &fp, tb, ENCOUNTER_TYPE_GRASS, 1, d) && TryGenerateWildMon(fm, 0xff, &fp, tb, ENCOUNTER_TYPE_GRASS, 1, d)) { Encounter_NewVsWild(fieldSystem, d); return TRUE; }
++        FieldBattleDTO_Free(d); } }
      if (encounterRate == 0) {
          return FALSE;
      }
-@@ -387,6 +388,7 @@
+@@ -387,6 +395,7 @@
  
      u8 encounterRate = GetFishingEncounterRate(fieldSystem, fishingRodType);
  
@@ -16,7 +23,7 @@
      if (encounterRate == 0) {
          return FALSE;
      }
-@@ -469,6 +471,7 @@
+@@ -469,6 +478,7 @@
  
      u8 encounterRate = GetTileEncounterRateAndType(fieldSystem, tileBehavior, &encounterType);
  
@@ -24,7 +31,7 @@
      if (encounterRate == 0) {
          return FALSE;
      }
-@@ -580,6 +583,7 @@
+@@ -580,6 +590,7 @@
  
      u8 encounterRate = GetTileEncounterRateAndType(fieldSystem, tileBehavior, &encounterType);
  
@@ -32,7 +39,7 @@
      if (encounterRate == 0) {
          return FALSE;
      }
-@@ -791,6 +795,8 @@
+@@ -791,6 +802,8 @@
  // Returns encounter rate. Assigns encounter type to third parameter.
  static u8 GetTileEncounterRateAndType(FieldSystem *fieldSystem, u8 tileBehavior, u8 *encounterType)
  {
@@ -41,3 +48,11 @@
      if (TileBehavior_HasEncounters(tileBehavior)) {
          if (TileBehavior_IsSurfable(tileBehavior)) {
              *encounterType = ENCOUNTER_TYPE_SURF;
+@@ -1056,6 +1069,7 @@
+ 
+ static void CreateWildMon(u16 species, u8 level, const int partyDest, const WildEncounters_FieldParams *encounterFieldParams, Pokemon *firstPartyMon, FieldBattleDTO *battleParams)
+ {
++    { extern int P3DS_Cheat(int); if (P3DS_Cheat(2)) { CreateWildMonShinyWithGenderOrNature(species, level, partyDest, encounterFieldParams->trainerID, encounterFieldParams, firstPartyMon, battleParams); return; } } /* run 67 cheat_shiny: the game's own shiny path (Poke Radar chain) */
+     Pokemon *newEncounter = Pokemon_New(HEAP_ID_FIELD2);
+     Pokemon_Init(newEncounter);
+     BOOL hasRandomGender = TRUE;

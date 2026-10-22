@@ -862,3 +862,313 @@ Stereo now per-vertex: g3soft rasterizes each triangle per eye (x += eye*sd*z/65
   hit r60v3/r60menu/r60vb/r60menu2 (verify mode) and r60b2 (mode 2). New gc-* crumbs show r60menu2 stalled BEFORE
   gpucomp was entered (last gc-done ok in the frame before) -> not inside gpucomp; whether the extra GPU frame
   makes it more likely is open.
+
+## Run 61 (hardware feedback on run 60) — tag run61
+Input: test_saves/log_run60.txt (user config stereo_c1=0 wideview=1 gpuscale=1 follower=1 gpu_compose=2) + photos.
+All new behaviour behind config keys; new menu entries FOLLOWER SLOT, FOLLOWER TALK, MENU MUSIC, GPU COMPOSE 3D,
+BATTLE 3D DEPTH, WIDE HAZE (MItem labels widened to 7). Build sha1 b8e1934f34bd0d5273cce63278691d94f4fc08be.
+1. FOG / HAZE in the wide strips (wide_haze=1; gpuscale.c strips() + render3ds wideHaze): the hardware log's field
+   frames have BLDCNT 2144 / BLDALPHA 0709 = BG2 haze alpha-blended over BG0 (3D) + backdrop, EVA 9 / EVB 7. The
+   strips are 3D-only (G3G_Strip; fog3d's GPU fog is already in them - no seam in r61base column means), so the 2D
+   haze stopped at the 256-px centre. Now per frame: k = EVB/16, b = per-channel median of (C - k*3D) over 192 sparse
+   samples of the two 32-px edge bands; strips drawn through a 2-stage texture combiner (tex*k + b). No per-pixel CPU
+   pass. Only for BLDCNT effect 1 + BG0 2nd target + a BG1-3 1st target. "[WIDE] wide_haze" line every 600 strip
+   frames (count, avg us, BLDCNT/BLDALPHA). NOT verified on a hazed map: the test save (map 371, Route 212 rain) has
+   BLDCNT 0000 (r61a log: 0 of 600 hazed).
+2. FOLLOWER FACING (follower_sidefix=1): HGSS NSBTX frame order is up 0-1, down 2-3, LEFT 4-5, RIGHT 6-7 (preview of
+   Pikachu / Girafarig); run 58 drew 4-5 unmirrored for right and mirrored for left -> both side views backwards
+   (r61base t043/t047). Now frame = dir*2 + anim, no mirroring. Azahar: left r61a t043, right r61a t047, up r61c
+   t040.5, down r61c t039.2 (emu_shots/run61/fol_4dirs_zoom_left_right_up_down.png, before: fol_run60_BEFORE_*).
+3. FOLLOWER TALK (follower_talk=1, default 0): A while still + facing the follower -> after 2 frames in which the game
+   started no field task (hidden item / sign / script win), P3DS_FolSay draws a word-wrapped HGSS-style box (port 3x5
+   font x2, added J Q , ') at the bottom of the top screen for 2.6 s; cleared on movement, task start or leaving the
+   field. Nickname from MON_DATA_NICKNAME (charmap digits 0x121, A-Z 0x12B, a-z 0x145 -> upper case). 8 original
+   lines. No game message system, no script object, nothing saved. r61a: "[FOL] talk: BOOTYTOOF GAVE YOU A CHEERFUL
+   LOOK!" (fol_talk.png).
+4. FOLLOWER PICK (follower_slot=0..6, config only): 1-6 = that party slot; empty / egg -> lead. Part of the sprite
+   key -> reload within 30 frames after a change.
+5. 3D IN BATTLE (stereo_2d): run 55 shifted the right eye's battle BG prio 3 by 2x and prio 2 by 1.5x the 3D shift
+   (12 / 9 DS px at full slider, 1x strength) while the battle Pokemon are 3D quads (user log [STEREO]: 4 tris in
+   battle) with only +-6*par px per eye (par ~0.3 -> ~3.6 px between the eyes): 8+ px disparity between a Pokemon and
+   its background, so with the eyes on one the other is doubled. New default stereo_2d=2 GENTLE: prio 3 = (sd+1)/2,
+   prio 2 = (sd+2)/4 (3 / 2 px at full slider), close to the Pokemon's own disparity. 1 = old STRONG, 0 = FLAT.
+   NOT confirmed (Azahar reports slider 0; with stereo_fake=100 the key scripts didn't reach a battle; the box was
+   then reset, see below) -> conservative default as requested.
+6. LAG with gpu_compose=0 (measured, user log): mono 29-30 fps both ways (composite 8.7 ms CPU split vs 4.0 ms GPU);
+   slider 1.00: composite 15-18 ms -> 25-26 fps (game logic is frame-locked: 25 fps = 17% slow motion) and run 60
+   skipped gpu_compose in stereo. The 35 s gap at f=2700-2760 (game pumps 0) is a HOME/sleep pause, not a stall. No
+   input-path change since run 57 (follower = one cheap per-frame function; analyzer only at gpu_compose=1; swizzle is
+   GPU-side). Fixes: gpu_compose default 2 (user-confirmed on hardware; run-60 parity 5,140 frames 0 px) and
+   gpu_compose_stereo=1: in the field both eyes are GPU-composed (left with NativeFrame, right with
+   P3DS_G3RightEye into rawR; 2D layers identical like the CPU field path; any failure -> CPU right eye).
+   Azahar, stereo_fake=100, same save + keys: CPU stereo (r61d, gpu_compose_stereo=0) composite 26-28 ms, 20 fps ->
+   GPU both eyes (r61c, r61e) 9.0 ms, 29-30 fps, 599-600 of 600 stereo frames composed for both eyes. Eye dumps
+   (dump_eyes, r61c eye1) show the 3D world shifted between eyes, rain/2D identical.
+7. MENU MUSIC (menu_audio=1): the L+R+Y menu loop calls PSPNativeSoundAdvance(real elapsed us) every iteration (the
+   game frame's own sound pump; game logic stays paused). r61a: game pumps 546-565 (expect 516) per 2.7 s while the
+   menu was open, 0 underfeed holds (run 60 hardware log: 0 pumps / 344 holds while paused).
+Defaults boot (no config, no followers.bin, r61def): gpu_compose=2, wide_haze=1, follower=0 logged; field 29 fps,
+composite 5.4 ms. Debug: stereo_fake=N (pretend slider N%), dump_eyes=F (both eyes at F, F+300.. -> eyeN_L/R.bmp).
+BOX RESET during the run (~16:57): /tmp, /opt/devkitpro and /opt/azahar disappeared and /workspace rolled back to
+the run61b-wip state (commits/tag/shots after it lost, re-made here from surviving runs r61base/a/c/d). The final
+.3dsx (b8e1934f) is the run61b-wip build = all run-61 code; r61e / r61def outputs were lost (numbers above are from
+the logs read before the reset). Rebuilding needs devkitPro reinstalled.
+
+## Run 62 WIP (tag run62-wip; builds on run61 53ee385)
+- Tools: devkitPro reinstalled (dkp-pacman 3ds-dev + 3ds-portlibs; devkitARM r68 / gcc 16.1.0; needed
+  `ln -sf /proc/self/mounts /etc/mtab`), Azahar 2126.2 AppImage re-extracted to /opt/azahar (+ libopengl0 etc).
+  Clean relink of run61 sources = 5 bytes different from backups/platinum3ds_full_run61.3dsx (build stamp); boots.
+- 1) Stereo black sliver (right eye, far left, wide view + slider): cause found in g3soft.cpp GpuRaw: the x reject
+  planes (+-1.25w in wide view) were tested BEFORE the per-eye stereo shift (right eye +stereoSd*par DS px), so tris
+  just left of the plane that the right-eye shift would bring on screen were dropped -> a <=4 DS px (5 screen px)
+  empty column at x=0 of the right eye (mirror case at the right edge of the left eye). Fix stereo_edgefix=1
+  (default): reject planes widened by stereoSd/128 clip units per w while stereo is on. Cost: one add per frame, a few
+  extra tris per eye at the edges. NOT verified on hardware (Azahar reports slider 0).
+- 2) Stuck walk animation in fog: REPRODUCED in Azahar, cause NOT found yet. Save warp: run22 save with Location
+  (normal block 0x1280: map 363, warp -1, x 564, z 543) + player MapObjectSave (0x2858: xInit/x, zInit/z) patched,
+  CRCs fixed (/tmp/r62/r210n.sav, not committed). Route 210 North fog shows (BLDCNT 2144, fog3d frames).
+  Starting IN the fog: player turns/animates fine (emu_shots/run62/fog_first_run_turns_ok.png). Walking down into
+  map 362 and back up into 363 (fog weather starts): while walking left the player keeps its back (up) frame,
+  the follower trails correctly (emu_shots/run62/stuck_facing_up_fog_vs_fog3d0.png). Same with follower=0,
+  follower_talk=0, wide_haze=0, fog3d=0, tex_postvblank=0, wideview=0 (emu_shots/run62/stuck_postvblank0_cpu3d_wide0.png;
+  gpu3d=0 run showed a black screen). So NOT caused by follower_talk/slot/sidefix/wide_haze. Next: log the player
+  object facing dir + the player's billboard texture VRAM address/decode per frame across the 362->363 change.
+- tools/emu_smoke.sh: PRESS_BG=1 runs key holds in the background so screenshots land during a hold.
+- 3) Bottom-screen settings app / game-font text boxes: not started.
+
+## Big build (multi-run delivery; checklist kept here across resumes)
+Legend: [x] done+verified  [~] in progress  [ ] not started
+- [x] 1. Fog stuck walk animation: fog_animfix=1 (run 64, verified in Azahar with repro save)
+- [x] 2. Clean launch (run 64: quiet boot = black, fps_counter default 0, plain error screen, missing-ROM check)
+- [x] 3. Boot credits splash (run 64: credits_splash=1, splash_ms=2000, game font from ROM, A skips)
+- [~] 4. Game font + text-box frame (run 64: follower_talk mixed case, toasts, save box + yes/no, splash, settings app done; old L+R+Y list (settings_app=0) and corner save overlay still port font)
+- [x] 5a. Settings touch app on the bottom screen (run 64: settings_app=1, L+R+Y, tabs, version string; verified in Azahar)
+- [~] 5b. Touch Start-menu app (run 64: "Menu" tab in the settings app opens the real Pokemon/Bag/Pokedex/Trainer card/Save/Options; entry is still L+R+Y only (no free bottom-screen spot without covering the Poketch) -> next run)
+- [~] 5c. Touch party + bag on bottom screen (run 64: reachable by touch via the Menu tab -> the game's own party / Bag screens; a native touch-only party/bag layout -> next run with item 6)
+- [x] 5d. Live map app (run 64: Map tab = place name + wild Pokemon grass/surf/Super Rod with levels from the game's encounter data and species names from the ROM; items not listed)
+- [x] 5e. Cheats page (run 64: Cheats tab, cheat_no_encounters=0; more cheats can be added as rows)
+- [ ] 6. (moved to the NEXT run by the user) Full-width 400 px menus, then battles (native layout; gpucomp alpha blending for battles)
+- [x] 7. Toggles: repel_prompt=1, summary_ivs=1 (Y on Skills page), reusable_tms=0, fast_text=0 (run 64). Visible wild Pokemon NOT done (needs map-object spawning + encounter hand-off; next run). reusable_tms real teach untested (hardware).
+- [x] 8. Polish: lid_sound=1, follower_ballpop=1 (voxel sprites skipped by the user)
+- [x] F1. follower_gap=1: follower farther back / offset by sprite size (big species extra), keep follower_behind
+- [x] F2. Area follower dialogue: lines by map/area (towns, routes, caves, lakes, legendary spots), weather, time of
+      day, species/type; port-side text table, game font + box
+- [x] F3. follower_items=0 (default off): follower sometimes finds a common item after talking, added only through the
+      game's own Bag_TryAddItem path (as script additem / hidden items), cooldown
+- [x] F4. follower_cry=1: species cry (with form) via the game's Pokemon_PlayCry when you talk to the follower
+- [x] (run 62) stereo_edgefix (code; hardware check pending)
+
+## Run 63 WIP (tag run63-wip; builds on run62-wip def2a37)
+- Save copy: test_saves/r210n_edit.sav (run22 save warped to Route 210 North 564,543). Repro config:
+  test_saves/cfg_fogtrace_T1.txt; keys: title A x6, Start x2 (journal), Down 3 s (into map 362), Up 3 s (back into 363),
+  Left 3.5 s (PRESS_BG=1 tools/emu_smoke.sh).
+- New debug toggles (all default 0, log_level=2): tex_trace (g3soft: per-frame small-texture add/remove/content diff),
+  player_trace (p3ds_follower.h: player status/facing/anim, billboard state + gfx sequence), vram_trace (main3ds.c:
+  VramTransfer_Request/Process counts), heap_watch=<decimal addr> (main3ds.c: Heap_Alloc/Free covering an address).
+  New link wraps: VramTransfer_Request/Process, Heap_Alloc/AllocAtEnd/Free/FreeExplicit (pass-through, ~0 cost).
+- Findings (all in Azahar, reproducible):
+  * NOT the port texture cache, NOT the display-list cache (g3cache=0 still stuck), NOT follower/haze/fog3d.
+  * Game logic is fine: facing/move dir change (PLTR), billboard ACTIVE, anim# and frame advance.
+  * The player's billboard gfx sequence table (startFrame/textureIdx/plttIdx, one 132-byte block at 0x9bf150 in
+    heap 65 via ResourceHeap_AllocItem) is FREED at the first field load (ResourceHeap_FreeItem, from
+    ov5_021ECE40.c ov5_021ED63C = "free anim resources no active map object uses", called from line ~1027) while the
+    player billboard still points into it; at the 362->363 seamless map change ResourceHeap_AllocItem reuses the block
+    (12 bytes) and overwrites startFrame[1..7] (0 4 8 12.. -> 0 30 256 256 18002 0 776 0) -> every walk frame maps to
+    the same texture index -> frozen walk cycle, wrong facing. (A use-after-free in the game data path; the
+    exposure is the port, the trigger is any later alloc that lands in that block.)
+- Next: find why ov5_021EDAB4 does not count the player for that resource id (log id, player gfx modelType,
+  ov5_021EDD2C(0)); fix in the port (toggle fog_animfix=1): keep the resource while the player billboard references it
+  (skip the free when the id equals the player's), verify with T1 repro (TEXTR offsets must cycle while walking left).
+
+## Run 64 WIP (tag run64-wip)
+- Item 1 DONE: fog_animfix=1 (default). overlay005 ov5_021ECE40.c: ov5_021ED63C/ov5_021ED778 now skip
+  ResourceHeap_FreeItem when the player's billboard (sub_02062AF0(player)+4) still points into that item
+  (gfxSequence startFrame/textureIdx, anims, animTexture, texture). Patched source: patches/run64/.
+  Verified with test_saves/r210n_edit.sav + cfg_fogtrace_T1.txt: log shows "[FIELD] fog_animfix: kept resource 1",
+  PLTR3 startFrame stays "0 4 8 12 16..." after 362->363, TEXTR player texture cycles 2a120/2a320/2a520 while walking
+  left in the fog. Shots: emu_shots/run64/fogfix_walk_*.png. Cost: a loop over the item list only on map change.
+  Side effect: the kept 132-byte block is freed normally once the player no longer references it.
+- Item 2 DONE (clean launch): quiet boot no longer prints "Loading..." (plain black until the first game frame);
+  fps_counter default 0 (L+R+START / settings still turn it on); errors in quiet mode show a plain screen (title +
+  red box, word-wrapped, no checklist; verbose_boot=1 keeps the old checklist); the ROM is checked up front ->
+  "ROM not found. Put your Pokemon Platinum (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds" (emu_shots/run64/error_norom.png).
+  Before this a missing ROM ended in "abort() ... OS_Terminate". All detail stays in log.txt.
+- Item 3 DONE (credits splash): render3ds.cpp drawSplash over the first game frames (the game is black/loading then,
+  so no wait is added): "Patch by" / line / "Unown Collectables & 3DS Homebrew Dev" in the game's message font,
+  fade in 300 ms / out 250 ms, A skips (log "[SPLASH] skipped (A)"). credits_splash=0 disables, splash_ms=300..5000.
+  In Azahar it overlaps the game's copyright fade on the bottom screen; the top copyright appears right after.
+  Shot: emu_shots/run64/splash.png.
+- New platform/p3ds_gamefont.c (start of item 4): reads /graphic/pl_font.narc from the user's ROM at boot (NDS FNT/FAT
+  + NARC parse with stdio, ~33 KB x 2 fonts, member 0 system / 1 message), ASCII->charcode, draws 16x16 2bpp glyphs
+  (1 = text, 2 = shadow) into port overlays: P3DS_GameFontLoad/Ready/Width/Draw. Nothing ROM-derived in git.
+- Item 4 (mostly done): p3ds_gamefont.c also loads the game's message-box frame (pl_winframe.narc message_box_NN
+  tiles 2+N / palette 25+N, ui_frame=0..19, default 0) and draws it like DrawMessageBoxFrame (2 tiles left, 3 right).
+  ui_gamefont=1 (default; 0 = old port font). Now in game font + frame: follower_talk (mixed case, nickname case kept,
+  same place as the game's field message window, emu_shots/run64/follower_talk_gamefont.png), hotkey toasts, the
+  save box ("Would you like to save the game?" / "Saving..." + spinner / "Your progress has been saved!") and its
+  Yes/No box (emu_shots/run64/save_ask_gamefont.png). Port-font leftovers: the run 55 list menu (only with
+  settings_app=0), the small corner save overlay outside the field, FPS digits.
+  Harness note: in Azahar the 2nd A on the game's Yes/No did not register (same with the run 63 build), so the
+  "Saving..."/"saved" states were not screenshotted this run.
+- Item 5a DONE: settings_app=1 (default): L+R+Y opens a touch settings app on the bottom screen (Poketch is back
+  on close; the game is paused like the old menu). Tabs Display / Perform. / Gameplay / Cheats (cheats: placeholder,
+  nothing yet), 2 x 5 cells in the game font: label, value in red, arrows; tap left third = previous value, rest =
+  next; D-pad + A (next) / X (previous), L/R = tab, B / START / L+R+Y close. Changed cells get a green dot; changes
+  apply on close and are saved to config.txt (same getters/setters as the list menu). Top screen: dimmed game, title
+  box with the version string "Platinum 3DS run64 (<build date>)" and a help box. Buffers malloc'd only while open
+  (a 590 KB static BSS version caused a g3-flush stall at boot in one run). Bottom picture re-uploaded after close
+  (P3DS_GpuInvalidateBot). Shots: emu_shots/run64/settings_app_*.png.
+- Item 7 (one toggle): fast_text=0 (default off) / 2 / 3 / 4 = characters per frame for the game's text printer
+  (text.c SysTask_RunTextPrinter renders extra characters only while the printer is in the plain "print character"
+  state; any wait, scroll or button prompt stops the loop, so no text page can be skipped by a held A). Settings app
+  Gameplay tab "Fast text" (Off / 2X / 3X / 4X). Azahar: with 4X the save question's Yes/No is already up 0.6 s after
+  the A press, without it not yet (emu_shots/run64/fast_text4_vs_off.png; the port save box covers the text itself).
+  Patched source: patches/run64/text.c.
+- Item 5b (first version): settings app tab "Menu" with 6 big cells (Pokemon, Bag, Pokedex, Trainer card, Save,
+  Options). Tapping one closes the app and asks the field (p3ds_follower.h, game thread, only when no field task runs)
+  to open the game's OWN Start menu (X injected for 2 pad polls via psp_ctru.c P3DS_InjectKeys) with the cursor
+  preset through the game's own fieldSystem->menuCursorPos; start_menu.c reports whether that option exists in this
+  menu (P3DS_StartReqFound), and only then A is injected 10 frames later. If the option is hidden (no Pokedex yet...)
+  the Start menu just stays open. Busy field for 3 s -> request dropped (logged [STARTAPP]). Verified in Azahar:
+  tap Bag -> the real Bag opens (emu_shots/run64/menu_tab*.png). Patched sources: patches/run64/start_menu.c,
+  p3ds_follower.h. Not yet: Map (Town Map is a key item, not a Start-menu entry), opening it without L+R+Y first
+  (needs an always-available bottom-screen entry point next to the Poketch), accents now drawn (Latin-1 0xE9 -> game charcode 0x188, "Poke-acutemon").
+- Run 64 summary: items 1, 2, 3, 5a done and verified in Azahar; 4 mostly done (all new port UI in the game font +
+  frame; FPS digits and the "1/22" page counter of the old list stay port font); 5b first version (Menu tab);
+  7 one toggle (fast_text). Next run: 5b entry point without L+R+Y (small always-there touch tab beside the Poketch),
+  5c touch party/bag, 5d live map app, 5e cheats, then 6 (400 px menus / battles).
+  Backup: backups/platinum3ds_full_run64wip.3dsx. github_export untouched; nothing pushed or copied to the PC.
+- Item 7 more: reusable_tms=0 (default off) / 1: teaching a TM no longer removes it (party_menu callbacks.c
+  TeachMove; HMs were never consumed). Settings app Gameplay tab "Reusable TMs" (toggle + config write verified in
+  Azahar; the actual TM teach was not run in the emulator this run). Patched: patches/run64/applications__party_menu__callbacks.c.
+  Running indoors: Platinum's player_move.c has no indoor restriction (running shoes work everywhere already), so
+  no toggle is needed; noted as N/A.
+
+## Run 64 part 2 (follower requests)
+- F1 follower_gap=1 (default): render-only offset away from the player along the follow direction: 32-px sprites
+  +4 units (+8 when north of the player, where the sprite rises over the head), 64-px +8 (+12 north), big/tall species
+  list (Girafarig, Onix, Steelix, Wailord, Gyarados, Lapras, Snorlax, legendaries ...) +8 more. Trail/logic position
+  and follower_behind depth unchanged. Azahar: Girafarig now clear of the player's head (emu_shots/run64/
+  follower_gap_on.png vs follower_gap_off_before.png).
+- F2 follower_area_talk=1 (default): platform/p3ds_foltalk.c original text table: 17 towns x 2 lines, categories
+  (route, sea route, lake, legendary spot, forest, cave via MapHeader_IsCave, Pokemon Center, Mart, Gym, Great Marsh,
+  Old Chateau/Lost Tower, League, Galactic, house interiors, snow), weather (rain/snow/fog/sandstorm/ash, outdoors),
+  time of day (morning/evening/night), type and species flavour. Area table platform/p3ds_areas.h generated by
+  platform/gen/gen_areas.py from the decomp's map header NAMES (no ROM data). Drawn in the game font/box.
+  Azahar Route 210: 3 talks -> 3 different route lines (emu_shots/run64/follower_area_talk_*.png).
+- F3 follower_items=0 (default off): after a talk, if 120 player steps passed since the last find (port memory), 1 in
+  3: one of Potion, Antidote, Paralyze Heal, Awakening, Poke Ball, Great Ball, Super Potion, Escape Rope, Repel, Oran /
+  Pecha / Cheri Berry, Honey is added with the game's own Bag_TryAddItem(SaveData_GetBag(save), id, 1, HEAP_ID_FIELD1)
+  (the call ScrCmd_AddItem, hidden items and berry picking use), so the bag data is exactly what vanilla writes.
+  Full pocket -> nothing found, nothing said. Text "<name> found a Potion! You put it in your Bag."
+  follower_items_test=1 = debug, no cooldown/chance. Azahar: "[FOL] item: ... found item 18 via Bag_TryAddItem"
+  + message (emu_shots/run64/follower_item_found.png). Not checked: the saved file after a real save (harness Yes/No).
+- F4 follower_cry=1 (default): Pokemon_PlayCry(mon) (species + form, the game's own cry path) on each talk. Azahar log:
+  "[AUDIO-SEQ] seqEx 2 ... bank=203 -> ok" = the game's cry sequence for Girafarig; BGM keeps running (no audio
+  capture in the harness, so not listened to).
+
+## Run 64 part 3 (final; tag run64)
+User plan change: item 6 (400-px menus/battles) moved to the next run; voxel sprites skipped; quick smoke tests only.
+All new features behind config keys (README_settings.txt), all save-safe:
+- follower_ballpop=1: after >=20 hidden frames (warp/door/cutscene/load) the follower's first step plays the game's
+  SEQ_SE_DP_BOWA and the quad grows in over 12 frames (render only). Azahar: log "[FOL] ball pop after 95 hidden frames".
+  Shot emu_shots/run64/follower_ballpop_grow.png (hard to see in a still).
+- lid_sound=1: APTHOOK_ONSLEEP/ONWAKEUP -> game thread (P3DS_FrameHook) plays SEQ_SE_DP_CLOSE2 / SEQ_SE_DP_WIN_OPEN, only in
+  the overworld. Azahar cannot close a lid -> untested.
+- summary_ivs=1: summary main.c copies IVs/EVs (Pokemon_GetValue) into port globals in SetMonDataFromMon and flags the
+  Skills page each frame; Y toggles a game-font box. Shot emu_shots/run64/summary_ivs_evs.png (Girafarig 23/12/7/17/27/18).
+- repel_prompt=1: Repel_UpdateSteps flags the wear-off; 8 frames after the game's message task ends, a port Yes/No
+  (game input held while asking, Up/Down/A/B); Yes = Bag_TryRemoveItem + repel steps = Item_LoadParam(EFFECT_PARAM) +
+  SEQ_SE_DP_CARD2 (same as the Bag). Debug repel_prompt_test=1 sets 2 steps once. Azahar: yes -> "used item 79 -> 100
+  steps", no -> declined. Shot emu_shots/run64/repel_prompt.png.
+- Settings app tabs renamed Video / Speed / Game (2 pages) / Cheats / Menu / Map. Game page 2: Repel prompt, IV/EV on
+  summary. Cheats: No wild encounters (cheat_no_encounters, wild_encounters.c Try*Encounter early return: walking,
+  surfing, Sweet Scent, mud). Shot emu_shots/run64/cheats_tab.png; config write verified.
+- Map tab: place name from the decomp map header identifiers (platform/gen/gen_areanames.py -> p3ds_areanames.h, no ROM
+  data) + wild Pokemon (grass, surf, Super Rod, level ranges) from MapHeaderData_GetWildEncounters and species names
+  from the ROM's message bank, snapshot on the game thread when the map changes and the player has stood still 30
+  frames (snapshot costs ~12.6 ms once, never mid-walk). Shot emu_shots/run64/map_tab.png (Route 212 South).
+- Azahar note: the known intermittent watchdog "g3-flush" stall (pre-existing since run 57) hit 5 of ~16 boots this
+  session, all before the overworld (frame 194-628, title/intro); a rerun always booted. Not reproduced as a code
+  change effect (the HEAD-equivalent build booted, the same new build booted on rerun). Needs a hardware check.
+- Not done (next run): item 6, visible wild Pokemon, touch-native party/bag, an L+R+Y-free entry to the app.
+
+## Run 65 WIP (full-width menus/battles, Map tab grid, boot freeze fix; builds on run64 bc56149)
+- **wide_menus=1** (default 1, render3ds.cpp `wideNative`): with wideview + 1.25x, every non-overworld screen (bag, party,
+  summary, battles, title...) fills 400 px. CPU renderer for DS x -32..-1 / 256..287: per text BG and tile row the edge
+  period (1/2/4 tiles) is detected from the map entries at the screen edges and those DS tiles are repeated (not mirrored,
+  not blurred); the back-most layer borrows the nearest periodic row so panels' backgrounds continue; 64-wide maps use the
+  real wrap; ext palettes + BLDCNT brighten/darken handled; master-brightness fades applied in gpuscale strips().
+  FNV input hash -> unchanged frames reuse. Cost 0.3-1.1 ms/frame avg in Azahar (was 2.3 ms per-pixel first try).
+  Same 1.25x as the field, so no size jump between field and menus. OBJs are not continued. Field keeps G3G strips.
+- Battles use the same path (no gpucomp alpha blending needed for the fill; gpucomp alpha blending = NOT done, only
+  a perf item).
+- **encounter_test=1** (debug, default 0, overlay006 wild_encounters): every step = wild grass battle (for testing).
+- **Map tab grid**: game-thread snapshot (p3ds_follower.h p3dsMapSnap, 15 us, once per map/time-of-day after 30 still
+  frames) builds per section (grass with day/night slots 2-3, surf, old/good/super rod) species / level range / summed
+  slot-rate chance, sorted by chance, plus icon member/palette via PokeIconSpriteIndex/PaletteIndex. Icons are read
+  from the ROM (pl_poke_icon.narc, P3DS_IconLoad in p3ds_gamefont.c) by the settings app on first view (game paused,
+  ~150 ms in Azahar for 13 icons). Grid 4 per row, "45% 23-26" under each icon, tap panel = next page. Nothing
+  ROM-derived committed.
+- **Boot freeze ("game stalled ... main last: b-wait") root cause found and fixed**: early_b and the frame job both
+  signalled the ONESHOT LightEvent bStart; if both landed before the engine-B worker woke they collapsed, the worker ran
+  only the early part and the main thread waited for bDone forever. Crumbs proved it (w-early, w-early-sig, no w-job;
+  main at b-wait). Fix: pending-work counter (bPost / bPend) -> lossless hand-off. Stall crumbs left in (cheap).
+- Commits: 26112d5 (wide_menus), 82322f8 (wide battles, encounter_test, crumbs), b7891d6 (Map grid + freeze fix),
+  4003c11 (icons loaded in settings app), + docs/version commit (tag run65-wip). Azahar: 8 boots after the fix, 0 stalls (before: ~6 in 18). Build sha1 25736936b341d462c78f8fbdf13eebae92012617, 5,914,188 bytes.
+- Screenshots: emu_shots/run65/wide_menus_party.png, wide_menus_summary.png, wide_battle.png, map_grid.png,
+  map_grid_page2.png.
+- **Run 65 final (tag run65):** lid_sound now asks for the Poké Ball sounds, recall SEQ_SE_DP_SUIKOMU (decomp
+  SEQ_SE_DP_SLOT02_sseq_1 = 1797) on close and send-out SEQ_SE_DP_BOWA2 (SEQ_SE_DP_SLOT01_sseq_1 = 1798, the battle send-out
+  sound in battle_display.c) on open. Both are in BANK_SE_BATTLE, which isn't resident in the overworld: Azahar
+  [AUDIO-SEQ] shows 1797/1798 FAIL, then the fallback SEQ_SE_DP_BOWA (1534, BANK_BASIC, the Poké Center ball sound) plays.
+  Playing the real ones would need the battle SE bank/wave arc loaded into the field sound heap (risky; not done). SE players
+  only, so the BGM isn't stopped. Debug lid_test=1 fakes a close/open. The version string is run65 (P3DS_VERSION).
+
+## Run 66 (FPS regression fix, touch shortcuts, GitHub export prep; tag run66)
+- **FPS regression cause (runs 64-65):** `P3DS_FollowerFrame` (p3ds_follower.h, repel_prompt block, run 64 c8d4642) called
+  `P3DS_CfgInt("repel_prompt_test", 0)` on EVERY overworld frame. P3DS_CfgInt opens and parses config.txt on the SD each
+  call. Hardware log_run65: field g3soft (game thread) 31.7 ms vs 22.6 in run61 (G3PROF GetTexture/GpuRaw/G3G_End
+  unchanged, so the +9 ms was outside 3D); 3D field 21.9 fps vs 29.0. Azahar (same config): field 18.2 fps / g3soft 41.5 ms
+  (run65) -> 28.4 fps / 27.0 ms (run66). Fix: cache it (static), also cache vram_trace (was read every 2 s).
+  Guard: P3DS_CfgInt now counts reads + time and logs "[CFG] N config.txt reads in the last 10 s" when any happen, and the
+  first 60 reads by key ("[CFG] read <key> (us)"), so a per-frame reader shows up in any log. All other config reads are
+  one-time (audited). wide_menus (0.75 ms, non-field only), Map snapshot (19-34 us per map), bPost/bPend and crumbs were not
+  the cause. The boot-freeze fix (bPost/bPend) is kept. Note: the user's config has log_level=2 (writes all detail lines to
+  SD, e.g. 400 [VDUMP] lines); log_level=1 is the normal setting.
+- **settings_touch=1** (default): overworld only, touch and hold 0.3 s in the Poketch's dead corners (no Poketch screen or
+  button there: DS screen 16..207 x 16..175, buttons x 224..255 y 32..160): top-left = settings app, top-right = Pokemon,
+  bottom-right = Bag. Party/Bag go through the existing P3DS_StartReq path (the game's own Start menu, then its real
+  screens; the party bottom screen is the game's own touch ball layout, the Bag bottom screen its own touch pocket wheel),
+  so save-safe. In 1:1 scale the black border quadrants are used. Azahar: all three verified (emu_shots/run66).
+- **GitHub export** (github_export, committed locally, NOT pushed): Runs 62-66 platform sources (+ p3ds_gamefont.c,
+  p3ds_foltalk.c, p3ds_areas(.h)/areanames.h + their gen/ scripts that read only decomp map-header identifiers), README_settings,
+  Makefile, emu_smoke.sh, PROGRESS, and work_patches/overlays regenerated against pokeplatinum for all 16 port-modified
+  overlay sources (new: bag main, party callbacks, summary main, ov5_021ECE40, repel_step_update, wild_encounters,
+  start_menu, text) + p3ds_follower.h; every patch verified to reproduce the work-tree file from the pristine source.
+  Audit: no ROM, saves, builds, images, sound or binary data (export .gitignore + manual list check; largest file
+  render3ds.cpp 112 KB of code).
+
+## Run 67 (config cache, cheats, hidden Debug tab; tag run67)
+- **Remaining [CFG] reads (log_run66: 9-23 config.txt reads per 10 s, ~13 ms each):** overlay code caches settings in
+  overlay statics (repel_prompt_test, player_trace, fog_animfix, encounter_test, follower_items...), and overlay data is
+  reset on every overlay reload (map change, battle), so each reload re-read config.txt from the SD. Fix: P3DS_CfgInt
+  now keeps config.txt in RAM (loaded once, LightLock, invalidated by P3DS_CfgWrite / saveScale). [CFG] now counts only
+  real SD loads. Azahar: one load (161 bytes) per boot.
+- **Cheats tab** (all default 0, config cheat_*): cheat_money (999999 in the field), cheat_catch (CalcCatchShakes ->
+  success), cheat_shiny (CreateWildMon -> the game's own CreateWildMonShinyWithGenderOrNature), cheat_eggs (party egg
+  cycles 0 + daycare step counter 250 -> the normal hatch event within ~5 steps), cheat_exp (x2/x3 after the game's own
+  multipliers), cheat_candy (Bag topped up to 99 Rare Candy via Bag_TryAddItem). Field cheats run every 30 frames, only
+  without a running field task. Not done: walk through walls (time). Instant text = existing fast_text 4X.
+- **Speed tab removed** -> hidden "Debug" tab (SELECT inside the settings app toggles it), keys unchanged.
+- Fog 3D dip analysis: not done (next).
+
+## Run 68 (Snowpoint City crash fix; tag run68)
+- Crash: GF_ASSERT in ov5_021D6EC8 (weather particle setup, overlay005/ov5_021D5EB8.c) on entering Snowpoint (snow).
+  The decomp has two variants of the weather particle buffer: SDK_BUILD_ARM = s32[10], otherwise s64[10]. This port
+  builds the non-SDK_BUILD_ARM path, so snow/blizzard pass sizeof(s64)*10 (80) / *8 (64), but the size check was the
+  unguarded `param1 <= sizeof(s32)*10` (40) -> assertion. Not caused by any port toggle (reproduced with follower=0,
+  fog_animfix=0 and plain defaults). Fix: check/clear against sizeof(param0->unk_0C) (the real buffer, 80 bytes here).
+- New: [ASSERT] log line (always, log_level 1) with the caller address of any GF_ASSERT failure (resolve with
+  arm-none-eabi-addr2line -f -e platinum3ds_full.elf <addr>) + crumb dump; Makefile --wrap=ErrorHandling_AssertFail.
+- Azahar: snowpoint_crash.sav walked into Snowpoint and around with the user's config and with defaults: no assert.

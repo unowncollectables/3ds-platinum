@@ -30,6 +30,7 @@ cp "$TDSX" "$W/game.3dsx"
 ln -s "$NDS" "$SD/platinum.nds"
 [ -f "$SAVE" ] && cp "$SAVE" "$SD/platinum.sav"
 FOLBIN=${FOLBIN-$P/platinum3ds/full/followers.bin}; [ -n "$FOLBIN" ] && [ -f "$FOLBIN" ] && ln -s "$FOLBIN" "$SD/followers.bin"
+[ -f "$P/platinum3ds/full/emotes.bin" ] && ln -s "$P/platinum3ds/full/emotes.bin" "$SD/emotes.bin"
 if [ -n "$CONFIG" ]; then cp "$CONFIG" "$SD/config.txt"
 elif [ -f "$P/test_saves/config.txt" ]; then cp "$P/test_saves/config.txt" "$SD/config.txt"; fi
 api=1; [ "$RENDERER" = sw ] && api=0

@@ -178,11 +178,21 @@ int sceCtrlSetSamplingMode(int m) { return 0; }
 static unsigned cfgCalls, cfgUs; static u64 cfgT;
 static void cfgAcct(u64 t0) { u64 now = svcGetSystemTick(); cfgCalls++; cfgUs += (unsigned)((now - t0) / CPU_TICKS_PER_USEC);
     if (now - cfgT > 268111856ull * 10) { if (cfgT) PSPNativeMemLog("[CFG] %u config.txt reads in the last 10 s (%u us total)", cfgCalls, cfgUs); cfgT = now; cfgCalls = cfgUs = 0; } }
-static int cfgIntRaw(const char *key, int def);
-int P3DS_CfgInt(const char *key, int def) { u64 t0 = svcGetSystemTick(); int v = cfgIntRaw(key, def); cfgAcct(t0);
-    { static unsigned nl; if (nl < 60) { nl++; PSPNativeMemLog("[CFG] read %s (%u us)", key, (unsigned)((svcGetSystemTick() - t0) / CPU_TICKS_PER_USEC)); } } return v; }
-static int cfgIntRaw(const char *key, int def) { FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (!f) return def; char l[96]; size_t n = strlen(key); int v = def;
-    while (fgets(l, sizeof l, f)) if (!strncmp(l, key, n) && l[n] == '=') v = atoi(l + n + 1); fclose(f); return v; }
+/* run 67: config.txt is cached in RAM. Overlay code keeps its "read once" statics in overlay data, which is reset every
+   time the overlay is reloaded (map change, battle...), so those keys were re-read from the SD after every load
+   (~13 ms each on hardware, 9-23 reads per 10 s in log_run66). Now only the first call (and the first call after
+   P3DS_CfgWrite / saveScale changed the file) touches the SD; [CFG] counts those real file reads. */
+static char cfgBuf[16384]; static int cfgLen = -1; static LightLock cfgLk; static int cfgLkInit;
+void P3DS_CfgInvalidate(void) { if (!cfgLkInit) { LightLock_Init(&cfgLk); cfgLkInit = 1; } LightLock_Lock(&cfgLk); cfgLen = -1; LightLock_Unlock(&cfgLk); }
+int P3DS_CfgInt(const char *key, int def) {
+    if (!cfgLkInit) { LightLock_Init(&cfgLk); cfgLkInit = 1; }
+    LightLock_Lock(&cfgLk);
+    if (cfgLen < 0) { u64 t0 = svcGetSystemTick(); FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); cfgLen = 0;
+        if (f) { cfgLen = (int)fread(cfgBuf, 1, sizeof cfgBuf - 1, f); if (cfgLen < 0) cfgLen = 0; fclose(f); } cfgBuf[cfgLen] = 0; cfgAcct(t0);
+        PSPNativeMemLog("[CFG] config.txt loaded into RAM (%d bytes, %u us)", cfgLen, (unsigned)((svcGetSystemTick() - t0) / CPU_TICKS_PER_USEC)); }
+    int v = def; size_t n = strlen(key); const char *p = cfgBuf;
+    while (*p) { const char *e = strchr(p, '\n'); if (!strncmp(p, key, n) && p[n] == '=') v = atoi(p + n + 1); if (!e) break; p = e + 1; }
+    LightLock_Unlock(&cfgLk); return v; }
 /* run 54 cstick_mode: 0 off, 1 = flick taps the Poketch button (run 53), 2 = C-stick works like the D-pad (default) */
 static int cstickV = -1;
 int P3DS_CstickMode(void) { if (cstickV < 0) { cstickV = P3DS_CfgInt("cstick_mode", 2); if (cstickV < 0 || cstickV > 2) cstickV = 2; } return cstickV; }
@@ -195,7 +205,7 @@ void P3DS_CfgWrite(const char *key, int val) {
             if (n + l + 2 < sizeof buf) { memcpy(buf + n, line, l); n += l; if (l && line[l - 1] != '\n') buf[n++] = '\n'; } } fclose(f); }
     if (!done) n += (size_t)snprintf(buf + n, sizeof buf - n, "%s=%d\n", key, val);
     f = fopen("sdmc:/3ds/platinum3ds/config.txt", "w"); if (f) { fwrite(buf, 1, n, f); fclose(f); }
-    PSPNativeMemLog("[MENU] config.txt: %s=%d", key, val); }
+    P3DS_CfgInvalidate(); PSPNativeMemLog("[MENU] config.txt: %s=%d", key, val); }
 int P3DS_CtlZr = -1, P3DS_CtlZl, P3DS_CtlCp;   /* run 55: file scope so the settings menu can change them live */
 int P3DS_CfgSoftReset(void) { static int v = -1; if (v < 0) v = P3DS_CfgInt("soft_reset", 1) != 0; return v; }
 volatile int P3DS_RunToggle;

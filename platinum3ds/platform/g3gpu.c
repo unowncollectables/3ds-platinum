@@ -57,8 +57,15 @@ static void stripConvert(int e) {
     u16 mb = *(u16 *)(PSPNative_GfxRegisters + 0x6C); unsigned mm = (mb >> 14) & 3, f = mb & 31; if (f > 16) f = 16;
     { extern int P3DS_WideFadeFix(void); extern int P3DS_WideFxCfg(void); if (P3DS_WideFadeFix() || P3DS_WideFxCfg()) f = 0; }  /* run 54: wide_fx fits the strips to the centre */  /* run 52: fade applied when drawing (gpuscale) */
     u32 *d = G3G_Strip[e];
+    static int edgeFill = -1; if (edgeFill < 0) { extern int P3DS_CfgInt(const char *, int); edgeFill = P3DS_CfgInt("wide_edgefill", 1) != 0; PSPNativeMemLog("[WIDE] wide_edgefill=%d", edgeFill); }
     for (unsigned y = 0; y < 192; y++) { const u32 *row = s + y * 320;
         for (unsigned x = 0; x < 64; x++) { u32 c = row[x < 32 ? x : x + 256];
+            /* run 69 wide_edgefill: past the edge of the loaded map (Iron Island dock, sea routes...) the DS draws
+               nothing there, so the strip pixel is empty (alpha 0). Continue the scene with the nearest real pixel
+               of the same row a whole number of 32-px (2 map tiles) periods further in - same texture/tile phase,
+               not mirrored or blurred. Only empty pixels pay; rows with nothing real stay as before. */
+            if ((c & 255) < 8 && edgeFill) { int sx = x < 32 ? (int)x : (int)x + 256, dir = x < 32 ? 32 : -32;
+                for (int k = sx + dir; k >= 0 && k < 320; k += dir) { u32 t = row[k]; if ((t & 255) >= 8) { c = t; break; } } }
             unsigned r = c >> 24, g = (c >> 16) & 255, b = (c >> 8) & 255;
             if ((c & 255) < 8) r = g = b = 0;   /* 3D clear / alpha 0: black like the pillarbox */
             if (mm == 1 && f) { r += (255 - r) * f / 16; g += (255 - g) * f / 16; b += (255 - b) * f / 16; }

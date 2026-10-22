@@ -25,6 +25,8 @@
 #include "map_header_data.h"
 #include "overlay006/wild_encounters.h"
 #include "pokemon_icon.h"
+#include "trainer_info.h"
+#include "daycare_save.h"
 #include "item.h"
 #include "map_header.h"
 #include "field_overworld_state.h"
@@ -60,6 +62,7 @@ typedef struct P3DSFol {
     int species;   /* run 64 follower_gap / talk lines */
     int tileSteps, lastFind, finds; /* run 64 follower_items cooldown (port memory only) */
     int popT, hiddenFrames; /* run 64 follower_ballpop */
+    int idleT; /* run 71 follower_idle */
 } P3DSFol;
 typedef char p3dsFolSizeChk[sizeof(P3DSFol) <= 256 ? 1 : -1];
 
@@ -162,6 +165,26 @@ static void P3DS_FollowerTalk(FieldSystem *fieldSystem, P3DSFol *f, VecFx32 pos,
                     Pokemon_GetValue(f->mon, MON_DATA_TYPE_1, NULL), Pokemon_GetValue(f->mon, MON_DATA_TYPE_2, NULL), f->species, rng);
             } else snprintf(t, sizeof t, lines[(f->anim / 7 + f->talkN * 3) % (int)(sizeof lines / sizeof lines[0])], nm);
             f->talkN++;
+            /* run 71 follower_friend_talk=1 (default): HGSS-style mood. Friendship (read only) picks an emote bubble
+               (HGSS fuki art from emotes.bin, drawn by the platform) and, 1 talk in 3, a friendship line instead of
+               the area line. Weather (snow/rain) -> sweat/shiver bubble. Nothing is written to the Pokemon or save. */
+            { static int ft = -1; if (ft < 0) { ft = P3DS_CfgInt("follower_friend_talk", 1) != 0; PSPNativeMemLog("[FOL] follower_friend_talk=%d", ft); }
+              static int em = -1; if (em < 0) { em = P3DS_CfgInt("follower_emotes", 1) != 0; PSPNativeMemLog("[FOL] follower_emotes=%d", em); }
+              int fr = Pokemon_GetValue(f->mon, MON_DATA_FRIENDSHIP, NULL), outdoor = MapHeader_IsOutdoors(map);
+              int cold = outdoor && ((weather >= 5 && weather <= 7) || weather == 11), wet = outdoor && weather >= 2 && weather <= 4;
+              if (ft && (rng >> 20) % 3 == 0) {
+                  static const char *const hi[] = { "%s is gazing at you lovingly!", "%s nuzzled up to you. It really loves you!", "%s is overjoyed to be at your side!" };
+                  static const char *const mid[] = { "%s is happy to be with you!", "%s gave you a cheerful look!", "%s is stepping along to a happy rhythm." };
+                  static const char *const lo[] = { "%s is looking around curiously.", "%s glanced at you.", "%s is minding its own business." };
+                  static const char *const vlo[] = { "%s doesn't seem to be paying attention...", "%s turned away from you.", "%s seems a little distant..." };
+                  const char *const *L = fr >= 220 ? hi : fr >= 150 ? mid : fr >= 70 ? lo : vlo;
+                  if (cold && (rng >> 24) & 1) snprintf(t, sizeof t, "%s is shivering in the cold...", nm);
+                  else snprintf(t, sizeof t, L[(rng >> 9) % 3], nm); }
+              if (em) { /* emotes.bin order: 0 heart 1 note 2 ! 3 ? 4 sweat 5 ... 6 idea 7 troubled 8 poison 9..13 faces */
+                  int e = fr >= 220 ? ((rng >> 5) & 1 ? 0 : 9) : fr >= 150 ? ((rng >> 5) & 1 ? 1 : 10) : fr >= 70 ? ((rng >> 5) % 3 == 0 ? 3 : (rng >> 5) % 3 == 1 ? 2 : 6) : ((rng >> 5) & 1 ? 5 : 7);
+                  if (cold || wet) e = (rng >> 6) & 1 ? 4 : e;
+                  { int st = Pokemon_GetValue(f->mon, MON_DATA_STATUS, NULL); if (st & 0x88) e = 8; } /* poisoned / toxic */
+                  extern void P3DS_FolEmote(int, int); P3DS_FolEmote(e, 3000); } }
             /* run 64 follower_cry=1 (default): the species' cry through the game's own Pokemon_PlayCry (species + form,
                the same call the summary screen / scripts use; the sound system ducks and restores the music itself) */
             { static int cry = -1; if (cry < 0) { cry = P3DS_CfgInt("follower_cry", 1) != 0; PSPNativeMemLog("[FOL] follower_cry=%d", cry); }
@@ -258,6 +281,22 @@ static void p3dsMapSnap(FieldSystem *fieldSystem)
 static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
 {
     if (fieldSystem) p3dsMapSnap(fieldSystem);
+    /* run 67 cheats (all default off, config.txt cheat_*): only values real Platinum accepts are written
+       (money 999999 = the game's own cap, Rare Candy 99 of max 999, egg cycles 0 = an egg about to hatch). Checked
+       every 30 frames, only when no field task (menu/script) runs. */
+    if (fieldSystem && fieldSystem->saveData && !FieldSystem_IsRunningTask(fieldSystem)) {
+        extern int P3DS_Cheat(int); static unsigned ct;
+        if (++ct % 30 == 0) {
+            if (P3DS_Cheat(0)) { TrainerInfo *ti = SaveData_GetTrainerInfo(fieldSystem->saveData); if (TrainerInfo_Money(ti) < 999999) TrainerInfo_SetMoney(ti, 999999); }
+            if (P3DS_Cheat(5)) { Bag *bag = SaveData_GetBag(fieldSystem->saveData); u16 q = Bag_GetItemQuantity(bag, 50 /* Rare Candy */, HEAP_ID_FIELD1);
+                if (q < 99) Bag_TryAddItem(bag, 50, 99 - q, HEAP_ID_FIELD1); }
+            if (P3DS_Cheat(3)) { Party *party = SaveData_GetParty(fieldSystem->saveData); int egg = 0;
+                for (int i = 0; party && i < Party_GetCurrentCount(party); i++) { Pokemon *m = Party_GetPokemonBySlotIndex(party, i);
+                    if (Pokemon_GetValue(m, MON_DATA_IS_EGG, NULL) && !Pokemon_GetValue(m, MON_DATA_CHECKSUM_FAILED, NULL)) { egg = 1;
+                        if (Pokemon_GetValue(m, MON_DATA_FRIENDSHIP, NULL) != 0) { u8 z = 0; Pokemon_SetValue(m, MON_DATA_FRIENDSHIP, &z); } } }
+                if (egg) { Daycare *dc = SaveData_GetDaycare(fieldSystem->saveData); if (Daycare_GetStepCounter(dc) < 250) Daycare_SetStepCounter(dc, 250); } }
+        }
+    }
     /* run 64 repel_prompt=1 (default): when a Repel wears off and the bag still has one, after the game's own
        "wore off" message a port Yes/No asks "Use another?". Yes uses it exactly like the Bag does: Bag_TryRemoveItem
        + repel steps = the item's own effect param (Item_LoadParam) + the Bag's SE. Game input is held while asking. */
@@ -410,6 +449,12 @@ static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
     c.y += (f->w / 2) * FX32_ONE;
     if (p3dsFolDbg()) c = pos, c.y += (f->w / 2) * FX32_ONE, c.x += 32 * FX32_ONE; /* calibration: beside the player */
     MTX_MultVec43(&c, NNS_G3dGlbGetCameraMtx(), &v);
+    { extern void P3DS_FolEmoteAt(int, int); const MtxFx44 *P = NNS_G3dGlbGetProjectionMtx(); /* run 71: bubble anchor (head top) in DS screen px */
+      fx32 vx = v.x, vy = v.y + (f->w / 2 + 2) * FX32_ONE, vz = v.z;
+      s64 cx = (s64)vx * P->_00 + (s64)vy * P->_10 + (s64)vz * P->_20 + ((s64)P->_30 << 12);
+      s64 cy = (s64)vx * P->_01 + (s64)vy * P->_11 + (s64)vz * P->_21 + ((s64)P->_31 << 12);
+      s64 cw = (s64)vx * P->_03 + (s64)vy * P->_13 + (s64)vz * P->_23 + ((s64)P->_33 << 12);
+      if (cw > 0) P3DS_FolEmoteAt((int)(128 + 128 * cx / cw), (int)(96 - 96 * cy / cw)); }
     v.y += 3 * FX32_ONE; /* HGSS frames sit ~3 px lower in their 32x32 cell than Platinum's (emu-measured) */
     /* run 59: never in front of the player. A follower on the tile south of the player (walking up) is nearer the
        camera, and its 32-px sprite then covered the player's legs ("sitting on" the player). Within 1.5 tiles of the
@@ -421,10 +466,17 @@ static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
         MTX_MultVec43(&pc, NNS_G3dGlbGetCameraMtx(), &pv);
         if (v.z > pv.z - 2 * FX32_ONE) v.z = pv.z - 2 * FX32_ONE;
     }
-    int w = f->w, fr = f->dir * 2 + ((f->anim >> (f->moving ? 3 : 4)) & 1), flip = 0;
+    /* run 71 follower_idle=1 (default): after ~3 s standing still the follower looks around (left / right / at you,
+       its own 4 direction frames) every couple of seconds, and its step cycle slows down; any move resets it. */
+    int dir = f->dir;
+    { static int ic = -1; if (ic < 0) { ic = P3DS_CfgInt("follower_idle", 1) != 0; PSPNativeMemLog("[FOL] follower_idle=%d", ic); }
+      if (f->moving || task || f->talkPend) f->idleT = 0; else if (f->idleT < 100000) f->idleT++;
+      if (ic && f->idleT > 180) { int ph = (f->idleT - 180) / 75, sel = (int)(((unsigned)ph * 2654435761u + (unsigned)f->species) >> 28) & 7;
+          static const signed char kLook[8] = { -1, 2, 3, -1, 1, 2, -1, 3 }; if (kLook[sel] >= 0) dir = kLook[sel]; } }
+    int w = f->w, fr = dir * 2 + ((f->anim >> (f->moving ? 3 : (f->idleT > 180 ? 5 : 4))) & 1), flip = 0;
     if (!p3dsFolSideFix()) { /* run 58 mapping (side views backwards) */
-        if (f->dir == 2) flip = 1;
-        if (f->dir == 3) fr = 4 + ((f->anim >> (f->moving ? 3 : 4)) & 1); }
+        if (dir == 2) flip = 1;
+        if (dir == 3) fr = 4 + ((f->anim >> (f->moving ? 3 : 4)) & 1); }
     G3_MtxMode(GX_MTXMODE_POSITION_VECTOR);
     G3_PushMtx();
     G3_Identity();

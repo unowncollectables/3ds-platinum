@@ -153,7 +153,8 @@ LOGGING
                     Default 1. (Menu: GPU COMPOSE 3D)  [run 61]
   menu_audio=1      music and sounds keep playing while the L+R+Y settings menu is open (the game itself stays
                     paused). 0 = frozen like before. Default 1. (Menu: MENU MUSIC)  [run 61]
-  log_level=1       1 = short log.txt; 2 = detailed diagnostics. Default 1.
+  log_level=1       1 = short log.txt; 2 = detailed diagnostics (writes much more to the SD card and can cost
+                    some speed - only for bug hunting). Default 1.
 
 Everything else in old config files (stereo_c1, steal_b, gpu3d, tearfix, rb_sync, ...) is for diagnosis only;
 leave it out unless asked.
@@ -201,6 +202,19 @@ settings_touch=1        (run 66, default 1) Overworld touch shortcuts in the bot
                         top-right = Pokemon (party), bottom-right = Bag. Party and Bag are the game's own screens, opened
                         through the game's own Start menu (same as the Menu tab), so saving works normally. A short tap
                         in a corner does nothing. 0 = off.
+Cheats tab (run 67, every cheat OFF by default, stored in config.txt; values written to the save are ones real
+Platinum accepts):
+cheat_money=1           Infinite money: in the overworld your money is kept at 999,999 (the game's own maximum).
+cheat_catch=1           Always catch: every Poke Ball thrown in a wild battle catches (the game's own "always catch" result).
+cheat_shiny=1           Every wild Pokemon is shiny (uses the game's own Poke Radar shiny code; Cute Charm/Synchronize kept).
+cheat_eggs=1            Fast eggs: eggs in your party hatch after a few steps (egg cycles set to 0, the normal hatch event).
+cheat_exp=1 / 2         EXP boost: battle EXP x2 / x3.
+cheat_candy=1           Rare Candy 99: in the overworld your Bag is topped up to 99 Rare Candies (the Bag allows 999).
+cheat_no_encounters=1   (run 64) no random wild battles.
+Debug tab (run 67): the old Speed tab (fast upload, fast 3D convert, GPU compose, GPU compose 3D, log detail) is hidden;
+press SELECT inside the settings app to show / hide it. The config.txt keys still work as before.
+Run 67: config.txt is read from the SD card once and then kept in memory (it used to be re-read after every map
+change / battle, ~13 ms each on hardware).
 lid_sound=1             (run 64, default 1; run 65 sounds) Closing the lid plays the game's Poke Ball recall
                         (return) sound, opening it the Poke Ball release (send-out) sound - the same sounds as in battle
                         (overworld only; the music keeps playing / resumes). NOTE: those two sounds are in the game's battle

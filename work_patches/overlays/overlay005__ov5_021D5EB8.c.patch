@@ -1,0 +1,21 @@
+--- a/overlay005__ov5_021D5EB8.c
++++ b/overlay005__ov5_021D5EB8.c
+@@ -1551,7 +1551,8 @@
+ {
+     GF_ASSERT(param0->unk_08 == NULL);
+     GF_ASSERT(param1 > 0);
+-    GF_ASSERT(param1 <= (sizeof(s32) * 10));
++    GF_ASSERT(param1 <= (int)sizeof(param0->unk_0C)); /* p3ds run 68: was sizeof(s32) * 10; this port builds the non-SDK_BUILD_ARM path
++       where unk_0C is s64[10] and snow/blizzard weather pass sizeof(s64) * 10 / * 8 -> assert on entering Snowpoint */
+ 
+     param0->unk_08 = param0->unk_0C;
+ }
+@@ -1559,7 +1560,7 @@
+ static void ov5_021D6EF0(UnkStruct_ov5_021D6FA8 *param0)
+ {
+     param0->unk_08 = NULL;
+-    memset(param0->unk_0C, 0, (sizeof(s32) * 10));
++    memset(param0->unk_0C, 0, sizeof(param0->unk_0C)); /* p3ds run 68: whole buffer (s64[10] in this build) */
+ }
+ 
+ static UnkStruct_ov5_021D6FA8 *ov5_021D6F00(UnkStruct_ov5_021DB4B8 *param0, int param1)

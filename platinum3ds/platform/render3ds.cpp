@@ -352,6 +352,23 @@ static void drawPrompt(u32*img){if(P3DS_PromptOpen!=1||!P3DS_GameBoxReady())retu
  const int ix=192,iy=104,iw=40,ih=32;P3DS_GameBoxDraw(img,256,256,192,ix,iy,iw,ih);
  P3DS_GameFontDraw(img,256,256,192,ix+10,iy,"Yes",kMsgFg,kMsgSh,1,1);P3DS_GameFontDraw(img,256,256,192,ix+10,iy+16,"No",kMsgFg,kMsgSh,1,1);
  {int cy=iy+8+(P3DS_PromptSel?16:0);for(int r=0;r<7;r++){int h=r<4?r:6-r;for(int c=0;c<=h;c++)img[(cy+r-3+4)*256+ix+3+c]=kMsgFg;}}}
+/* run 71 follower_emotes: HGSS emote bubble (fuki_* art from the user's SoulSilver ROM, SD file emotes.bin made by
+   followers/extract_emotes.py) over the follower's head while it talks. Position = the follower's projected head top
+   (p3ds_follower.h, every frame). Short pop-in, then a 2-frame bob. Missing file -> no bubble. */
+static u32 emTex[14][32*32];static int emN=-1;static volatile int emIdx=-1,emX,emY;static volatile u64 emAt;static volatile int emMs;
+static void emLoad(){emN=0;FILE*f=fopen("sdmc:/3ds/platinum3ds/emotes.bin","rb");if(!f){PSPNativeMemLog("[FOL] emotes.bin missing: no bubbles");return;}
+ char h[8];u32 n=0;if(fread(h,1,8,f)==8&&!memcmp(h,"P3EM",4)){memcpy(&n,h+4,4);if(n>14)n=14;
+  for(u32 i=0;i<n;i++){u8 b[12+512+32];if(fread(b,1,sizeof b,f)!=sizeof b)break;const u16*pl=(const u16*)(b+524);
+   for(int k=0;k<1024;k++){u8 v=b[12+k/2];unsigned ci=(k&1)?v>>4:v&15;if(!ci){emTex[i][k]=0;continue;}u16 c=pl[ci];u32 r=c&31,g=(c>>5)&31,bb=(c>>10)&31;
+    emTex[i][k]=(((r<<3)|(r>>2))<<24)|(((g<<3)|(g>>2))<<16)|(((bb<<3)|(bb>>2))<<8)|0xFF;}emN=(int)i+1;}}
+ fclose(f);PSPNativeMemLog("[FOL] emotes.bin: %d bubbles",emN);}
+extern "C" void P3DS_FolEmote(int i,int ms){if(emN<0)emLoad();emIdx=i;emMs=ms;emAt=svcGetSystemTick();PSPNativeMemLog("[FOL] emote %d",i);}
+extern "C" void P3DS_FolEmoteAt(int x,int y){emX=x;emY=y;}
+static void drawFolEmote(u32*img,u64 now){if(emIdx<0||emIdx>=emN||!emAt)return;const u64 el=(now-emAt)/CPU_TICKS_PER_MSEC;if(el>(u64)emMs||!P3DS_InField){emAt=0;return;}
+ const u32*t=emTex[emIdx];int sc=el<120?(int)(el*16/120)+1:16;if(sc>16)sc=16;const int bob=el>=120&&((el/250)&1)?1:0;
+ const int w=32*sc/16,x0=emX-w/2,y0=emY-w+10-bob;
+ for(int y=0;y<w;y++){const int yy=y0+y;if(yy<0||yy>=192)continue;const u32*row=t+(y*16/sc)*32;
+  for(int x=0;x<w;x++){const int xx=x0+x;if(xx<0||xx>=256)continue;const u32 c=row[x*16/sc];if(c)img[yy*256+xx]=c;}}}
 static void drawFolTalk(u32*img,u64 now){if(!folAt||!folText[0]||now-folAt>(u64)folMs*CPU_TICKS_PER_MSEC)return;
  if(!P3DS_InField){folAt=0;return;}
  if(useGF()){char ln[2][64];int n=gfWrap(folText,208,ln,2);/* the game's field message window: tiles (2,19) 27x4 -> interior 16,152 216x32 */
@@ -523,6 +540,33 @@ static void wideHaze(const u32*C,const u32*T){
  const unsigned kk=k16>=16?255:(unsigned)(k16*16);
  P3DS_HazeK=0xFF000000u|(kk<<16)|(kk<<8)|kk;P3DS_HazeB=0xFF000000u|((unsigned)b[2]<<16)|((unsigned)b[1]<<8)|(unsigned)b[0];P3DS_HazeOn=1;on++;
  usAcc+=(unsigned)((svcGetSystemTick()-t0)/CPU_TICKS_PER_USEC);}
+/* run 70 wide_weather=1 (default; only while wide-view field strips are drawn): weather particles (snow, rain, ...) are
+   2D OBJs the DS clips at the screen edge, so the strips had none. Small OBJs (<=32x32, normal/semi-transparent, not
+   affine) are drawn into P3DS_WeatherObj (64x192, alpha 0 = nothing): the part really past the edge as is, plus the
+   particles of the opposite 32-px edge band moved by one screen width (the game wraps its particles over 256 px, so
+   this is exactly where the next particle of the field would be). No mirror/blur; gpuscale strips() overlays it. */
+extern "C" { u32 P3DS_WeatherObj[64*192]; int P3DS_WeatherOn; }
+static int wideWeatherCfg(){static int v=-1;if(v<0){v=P3DS_CfgInt("wide_weather",1)!=0;PSPNativeMemLog("[WIDE] wide_weather=%d",v);}return v;}
+static void wideWeather(){
+ const u8*R=(const u8*)PSPNative_GfxRegisters;const u32 dc=*(const u32*)R;P3DS_WeatherOn=0;if(!(dc&0x1000))return;
+ const u16*o=(const u16*)GPU::OAM;const u8*vr=GPU::VRAMFlat_AOBJ;const u16*pal=(const u16*)(GPU::Palette+512);
+ static const u8 SW[3][4]={{8,16,32,64},{16,32,32,64},{8,8,16,32}},SH[3][4]={{8,16,32,64},{8,8,16,32},{16,32,32,64}};
+ bool any=false;
+ for(int i=127;i>=0;i--){const u16 a0=o[i*4],a1=o[i*4+1],a2=o[i*4+2];if(a0&0x100)continue;if(a0&0x200)continue;const unsigned om=(a0>>10)&3;if(om>=2)continue;
+  const unsigned sh=a0>>14;if(sh==3)continue;const int w=SW[sh][a1>>14],h=SH[sh][a1>>14];if(w>32||h>32)continue;
+  int x=a1&0x1FF;if(x>=256)x-=512;int y=a0&0xFF;if(y>=192)y-=256;const bool b8=(a0&0x2000)!=0,hf=(a1&0x1000)!=0,vf=(a1&0x2000)!=0;
+  const unsigned tn=a2&0x3FF,pb=a2>>12;const bool oneD=(dc&0x10)!=0;const unsigned bnd=oneD?(32u<<((dc>>20)&3)):32;
+  for(int pass=0;pass<3;pass++){int sx=x+(pass==1?-256:pass==2?256:0);  /* strip coords: DS x -32..-1 -> 0..31, 256..287 -> 32..63 */
+   if(sx+w<=-32||sx>=288||(sx>=0&&sx+w<=256))continue;
+   for(int py=0;py<h;py++){const int yy=y+py;if(yy<0||yy>=192)continue;const int ty=vf?h-1-py:py;
+    for(int px=0;px<w;px++){const int xx=sx+px;int col;if(xx<0&&xx>=-32)col=xx+32;else if(xx>=256&&xx<288)col=xx-224;else continue;
+     const int tx=hf?w-1-px:px;unsigned addr;
+     if(oneD)addr=tn*bnd+((ty>>3)*(w>>3)+(tx>>3))*(b8?64:32);else addr=(tn+(ty>>3)*32+(tx>>3)*(b8?2:1))*32;
+     unsigned ci;if(b8)ci=vr[(addr+(ty&7)*8+(tx&7))&0x3FFFF];else{const u8 b=vr[(addr+(ty&7)*4+((tx&7)>>1))&0x3FFFF];ci=(tx&1)?b>>4:b&15;}
+     if(!ci)continue;const u16 cc=pal[b8?ci:pb*16+ci];const u32 r=cc&31,g=(cc>>5)&31,b=(cc>>10)&31;
+     P3DS_WeatherObj[yy*64+col]=(((r<<3)|(r>>2))<<24)|(((g<<3)|(g>>2))<<16)|(((b<<3)|(b>>2))<<8)|0xFF;any=true;}}}}
+ P3DS_WeatherOn=any;}
+static void wideWeatherRun(){memset(P3DS_WeatherObj,0,sizeof P3DS_WeatherObj);wideWeather();}
 /* run 55 wide_fill=1 (default; only with wideview on, 1.25x mode): every screen WITHOUT real wide 3D strips (battles,
    title, bag/party/Pokedex/summary menus, field screens whose 3D is off) fills the side areas with the centre
    picture's own edge, mirrored and softened (box blur 9x9, 80% brightness) instead of black bars. Built from the same
@@ -708,13 +752,18 @@ static const MItem mItems[]={
  {"FAST TEXT","fast_text",4,{"OFF","2X","3X","4X"}},
  {"REUSABLE TMS","reusable_tms",2,{"OFF","ON"}},
  {"NO WILD ENCOUNTERS","cheat_no_encounters",2,{"OFF","ON"}},{"REPEL PROMPT","repel_prompt",2,{"OFF","ON"}},{"IV/EV ON SUMMARY","summary_ivs",2,{"OFF","ON"}},
+ /* run 67 cheats 27.. (P3DS_Cheat(i-27)), all default OFF */
+ {"INFINITE MONEY","cheat_money",2,{"OFF","ON"}},{"ALWAYS CATCH","cheat_catch",2,{"OFF","ON"}},{"SHINY WILD","cheat_shiny",2,{"OFF","ON"}},
+ {"FAST EGGS","cheat_eggs",2,{"OFF","ON"}},{"EXP BOOST","cheat_exp",3,{"OFF","2X","3X"}},{"RARE CANDY 99","cheat_candy",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
-static int menuGet(int i){switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
+static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
+extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
+static int menuGet(int i){if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
  case 9:return P3DS_CamZoom()+2;case 10:return stereoStr<0?0:stereoStr;case 11:return P3DS_GpuSwizzle()?1:0;case 12:return G3G_FastConv()?1:0;case 13:return splitCfg>0?1:0;case 14:return P3DS_FollowerCfg()?1:0;case 15:return P3DS_GpuComposeCfg();
  case 16:return P3DS_FollowerSlotCfg();case 17:return P3DS_FollowerTalkCfg();case 18:return menuAudioCfg();case 19:return gcStereoCfg();case 20:return stereo2dCfg();case 21:return P3DS_WideHazeCfg();case 22:{int v=P3DS_FastTextCfg();return v<=1?0:v-1;}case 23:return P3DS_ReusableTMsCfg();case 24:return P3DS_CheatNoEncCfg();case 25:return P3DS_RepelPromptCfg();case 26:return sumIvCfg();}return 0;}
-static void menuSet(int i,int v){switch(i){case 0:fpsOn=v!=0;break;case 1:wideCfg=v;break;case 2:P3DS_SetScaleMode(v);break;case 3:P3DS_SetCstickMode(v);break;
+static void menuSet(int i,int v){if(i>=27&&i<33)cheatV[i-27]=v;switch(i){case 0:fpsOn=v!=0;break;case 1:wideCfg=v;break;case 2:P3DS_SetScaleMode(v);break;case 3:P3DS_SetCstickMode(v);break;
   case 4:P3DS_CtlZl=v;if(!v){extern volatile int P3DS_RunToggle;P3DS_RunToggle=0;}break;case 5:P3DS_CtlZr=v;break;case 6:P3DS_CtlCp=v;break;case 7:wideFxV=v;break;case 8:P3DS_SetLogLevel(v?2:1);break;
   case 9:P3DS_SetCamZoom(v-2);break;case 10:stereoStr=v;break;case 11:P3DS_SetGpuSwizzle(v);break;case 12:G3G_SetFastConv(v);break;case 13:splitCfg=v;break;case 14:P3DS_SetFollowerCfg(v);break;case 15:P3DS_SetGpuComposeCfg(v);break;
   case 16:folSlotV=v;break;case 17:folTalkV=v;break;case 18:menuAudioV=v;break;case 19:gcStereoV=v;break;case 20:stereo2dV=v;break;case 21:P3DS_SetWideHazeCfg(v);break;case 22:fastTextV=v?v+1:0;break;case 23:reuseTmV=v;break;case 24:noEncV=v;break;case 25:repPV=v;break;case 26:sumIvV=v;break;}
@@ -769,18 +818,19 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
    B / START / L+R+Y close. Drawn in the game's font + message box frame (port font fallback). The top screen shows
    the dimmed game picture with the title and the build/version string. */
 #ifndef P3DS_VERSION
-#define P3DS_VERSION "run66"
+#define P3DS_VERSION "run72"
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"
 struct ATab{const char*name;int n;int it[12];const char*nm[12];};
 static const ATab kTabs[]={
  {"Video",9,{0,1,2,7,9,10,20,21,13},{"FPS counter","Wide view","Scale","Wide view FX","Camera zoom","3D strength","Battle 3D depth","Wide haze","Split top (mono)"}},
- {"Speed",5,{11,12,15,19,8},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail"}},
  {"Game",12,{22,23,3,4,5,6,14,16,17,18,25,26},{"Fast text","Reusable TMs","C-stick","ZL run toggle","ZR = item (Y)","Circle pad D-pad","Following Pok\xe9mon","Follower slot","Follower talk","Menu music","Repel prompt","IV/EV on summary"}},
- {"Cheats",1,{24},{"No wild encounters"}},
+ {"Cheats",7,{24,27,28,29,30,31,32},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99"}},
  {"Menu",-1,{},{}},
  {"Map",-2,{},{}},
+ /* run 67: the old Speed tab, hidden: only shown when SELECT is held while the settings app opens */
+ {"Debug",5,{11,12,15,19,8},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail"}},
 };
 static void prettyLab(char*d,const char*s,int n){/* run 64: "WIDE VIEW FX" -> "Wide view FX" (acronyms kept) */
  static const char*const acr[]={"FPS","GPU","ZL","ZR","FX","3D","1X","2X","25X","5X","ROM","IV","EV","TM","HM","LED","UI","OK","Y","X","A","B","L","R"};
@@ -804,12 +854,12 @@ static void runApp(const u32*top,int mode,bool gpu){
  enum{N=MENU_N};int val[N];for(int i=0;i<N;i++)val[i]=menuGet(i);int old[N];memcpy(old,val,sizeof old);
  for(int i=0;i<256*192;i++){u32 c=base[i];base[i]=((c>>1)&0x007F7F7Fu)|(c&0xFF000000u);}
  P3DS_MenuOpen=1;PSPNativeMemLog("[APP] settings open");P3DS_Toast("");toastAt=0;
- const int NT=(int)(sizeof kTabs/sizeof kTabs[0]);static int tab=0,page=0;int sel=0;static int mapPage=0;
+ static bool dbgTabs=false;int NT=(int)(sizeof kTabs/sizeof kTabs[0])-(dbgTabs?0:1);static int tab=0,page=0;if(tab>=NT)tab=0; /* run 67: SELECT inside the app shows/hides the Debug tab */int sel=0;static int mapPage=0;
  u32 held=hidKeysHeld();bool wasTouch=(held&KEY_TOUCH)!=0;u64 t0=svcGetSystemTick();
  const u32 bg=0x00B0D8B8u,cellF=0x00F8F8F8u,cellE=0x00586058u,selE=0x0040B040u,valC=0x001828E0u,valSh=0x00A0A8F0u,tabSel=0x0060C070u;
  while(aptMainLoop()){
   hidScanInput();u32 kh=hidKeysHeld(),kd=hidKeysDown()&~held;held&=kh;
-  if(kd&(KEY_B|KEY_START))break;if((kd&KEY_Y)&&(kh&KEY_L)&&(kh&KEY_R))break;
+  if(kd&(KEY_B|KEY_START))break;if((kd&KEY_Y)&&(kh&KEY_L)&&(kh&KEY_R))break;if(kd&KEY_SELECT){dbgTabs=!dbgTabs;NT=(int)(sizeof kTabs/sizeof kTabs[0])-(dbgTabs?0:1);if(tab>=NT){tab=0;page=0;}sel=0;PSPNativeMemLog("[APP] debug tab %s",dbgTabs?"shown":"hidden");}
   const ATab&T=kTabs[tab];int pages=T.n>10?(T.n+9)/10:1;if(page>=pages)page=0;int first=page*10,cnt=T.n-first;if(cnt>10)cnt=10;if(cnt<0)cnt=0;
   static const char*const kMenuNm[6]={"Pok\xe9mon","Bag","Pok\xe9" "dex","Trainer card","Save","Options"};static const int kMenuOpt[6]={1,2,0,3,4,5};
   const bool menuTab=T.n==-1;int startReq=-1;
@@ -996,10 +1046,11 @@ static int Present(bool){
  static bool wnReady;wnReady=false;
  if(wideCfg>0&&P3DS_ScaleMode()==1&&P3DS_WideMenusCfg()&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)&&(power&0x8000)&&engineA.Enabled){wideNative();wnReady=true;}
  else if(wideCfg>0&&P3DS_ScaleMode()==1&&wideFillCfg()&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)&&(power&0x8000)){wideFill(display[0]);fillReady=true;}
+ P3DS_WeatherOn=0;if(wideWeatherCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000))wideWeatherRun();
  {extern int P3DS_HazeOn;P3DS_HazeOn=0;if(P3DS_WideHazeCfg()&&!wideFxCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000))wideHaze(display[0],GPU3D::NativeFrame);}
  P3DS_WideFxOn=0;if(wideFxCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000)){u64 tw=svcGetSystemTick();wideFx(display[0],GPU3D::NativeFrame,G3G_StripValid>=2?2:1);P3DS_WideFxOn=G3G_StripValid>=2?2:1;
   {static u64 acc;static unsigned n;acc+=svcGetSystemTick()-tw;if(++n==600){PSPNativeMemLog("[WIDE] wide_fx avg %u us/frame",(unsigned)(acc/600/268));acc=0;n=0;}}}
- {u64 nowT=svcGetSystemTick();u32*tt=(u32*)(stereo?eyeL:top);drawSaveBox(tt,nowT);if(stereo)drawSaveBox((u32*)eyeR,nowT);drawToast(tt,nowT);if(stereo)drawToast((u32*)eyeR,nowT);drawFolTalk(tt,nowT);drawSumIV(tt);drawPrompt(tt);if(stereo)drawPrompt((u32*)eyeR);if(stereo&&sumShow)drawSumIV((u32*)eyeR);if(stereo)drawFolTalk((u32*)eyeR,nowT);}
+ {u64 nowT=svcGetSystemTick();u32*tt=(u32*)(stereo?eyeL:top);drawSaveBox(tt,nowT);if(stereo)drawSaveBox((u32*)eyeR,nowT);drawToast(tt,nowT);if(stereo)drawToast((u32*)eyeR,nowT);drawFolTalk(tt,nowT);drawFolEmote(tt,nowT);if(stereo)drawFolEmote((u32*)eyeR,nowT);drawSumIV(tt);drawPrompt(tt);if(stereo)drawPrompt((u32*)eyeR);if(stereo&&sumShow)drawSumIV((u32*)eyeR);if(stereo)drawFolTalk((u32*)eyeR,nowT);}
  {static int fi;if(!fi){fi=1;fpsOn=P3DS_CfgInt("fps_counter",0)!=0;/* run 64: default 0 (clean launch) */}}/* run 55: fps_counter (menu-saved) */
  if(fpsOn){char b[24];snprintf(b,sizeof b,"%u %u.%u",fpsShown,msShown/10,msShown%10);u32*tt=(u32*)(stereo?eyeL:top);drawText(tt,2,2,b);if(stereo)drawText((u32*)eyeR,2,2,b);}
  {u64 nowS=svcGetSystemTick();if(splashActive(nowS)){drawSplash((u32*)(stereo?eyeL:top),nowS);if(stereo)drawSplash((u32*)eyeR,nowS);}}

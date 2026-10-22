@@ -168,6 +168,7 @@ static void strips(C3D_RenderTarget *t, int eye) {
     else for (unsigned i = 0; i < 64 * 192; i++) { u32 c = src[i]; unsigned r = c >> 24, g = (c >> 16) & 255, b = (c >> 8) & 255;
         if (fDir == 1) { r += (255 - r) * fAmt / 16; g += (255 - g) * fAmt / 16; b += (255 - b) * fAmt / 16; } else { r -= r * fAmt / 16; g -= g * fAmt / 16; b -= b * fAmt / 16; }
         stripLin[eye][i] = (r << 24) | (g << 16) | (b << 8) | 0xFF; }
+    { extern u32 P3DS_WeatherObj[]; extern int P3DS_WeatherOn; if (P3DS_WeatherOn && !fAmt) for (unsigned i = 0; i < 64 * 192; i++) if (P3DS_WeatherObj[i]) stripLin[eye][i] = P3DS_WeatherObj[i]; } /* run 70 wide_weather */
     GSPGPU_FlushDataCache(stripLin[eye], 64 * 192 * 4);
     C3D_SyncDisplayTransfer(stripLin[eye], GX_BUFFER_DIM(64, 256), stripTex[eye].data, GX_BUFFER_DIM(64, 256), TEX_FLAGS);
     C3D_FrameDrawOn(t);

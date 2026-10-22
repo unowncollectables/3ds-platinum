@@ -133,7 +133,7 @@ void saveScale(void) {
     static char buf[8192]; size_t n = 0; FILE *f = fopen(CFG_PATH, "r");
     if (f) { char line[256]; while (fgets(line, sizeof line, f)) { if (!strncmp(line, "gpuscale=", 9) || !strncmp(line, "scale=", 6)) continue; size_t l = strlen(line); if (n + l + 2 < sizeof buf) { memcpy(buf + n, line, l); n += l; if (line[l - 1] != '\n') buf[n++] = '\n'; } } fclose(f); }
     n += snprintf(buf + n, sizeof buf - n, "gpuscale=%d\n", scaleMode);
-    f = fopen(CFG_PATH, "w"); if (f) { fwrite(buf, 1, n, f); fclose(f); }
+    f = fopen(CFG_PATH, "w"); if (f) { fwrite(buf, 1, n, f); fclose(f); } { extern void P3DS_CfgInvalidate(void); P3DS_CfgInvalidate(); }
     static const char *names[3] = { "0: 1:1 pixel-perfect 256x192 (CPU blit)", "1: GPU 1.25x 320x240, top pillarboxed (x 40..360)", "2: GPU fill, 4:3 zoom gpuscale_zoom (default 1.40625 = 360x270), crops top+bottom" };
     PSPNativeMemLog("[3DS] screen mode %s; bottom 320x240 in GPU modes", names[scaleMode]);
 }
@@ -332,3 +332,12 @@ int P3DS_CamZoom(void) { if (camZoom == -99) { camZoom = P3DS_CfgInt("cam_zoom",
 void P3DS_SetCamZoom(int z) { if (z < -2) z = -2; if (z > 2) z = 2; P3DS_CamZoom(); camZoom = z;
     if (P3DS_FieldCam && z != P3DS_FieldCamStep) { int d = Camera_GetDistance(P3DS_FieldCam); long long base = (long long)d * 100 / P3DS_CamZoomPct(P3DS_FieldCamStep);
         Camera_SetDistance((int)(base * P3DS_CamZoomPct(z) / 100), P3DS_FieldCam); P3DS_FieldCamStep = z; PSPNativeMemLog("[CAM] live zoom %d (distance %d -> %d)", z, d, (int)(base * P3DS_CamZoomPct(z) / 100)); } }
+
+/* run 68: GF_ASSERT carries no file/line, so log WHO failed: the caller's return address (resolve with
+   arm-none-eabi-addr2line -f -e platinum3ds_full.elf <addr>) and the caller's caller, always (log_level 1). */
+extern void __real_ErrorHandling_AssertFail(void);
+void __wrap_ErrorHandling_AssertFail(void) {
+    void *a = __builtin_return_address(0);
+    PSPNativeMemLog("[ASSERT] GF_ASSERT failed: caller %p (addr2line -f -e platinum3ds_full.elf %p)", a, (char *)a - 4);
+    P3DS_CrumbDump();
+    __real_ErrorHandling_AssertFail(); }
