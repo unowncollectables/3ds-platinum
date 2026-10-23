@@ -18,15 +18,16 @@ extern "C" unsigned char PSPNative_GfxRegisters[];
 extern "C" unsigned PSPNativeVramGen;
 extern "C" void PSPNativeMemLog(const char*,...);
 extern "C" u8 s_SIM_transDepthWrite;
-static GuVertex vertices[6144] __attribute__((aligned(16)));
-GuVertex *g3ChunkPtr=vertices;unsigned g3ChunkLeft=6144;
+/* run 73: 6144 -> 24576. The Spear Pillar cutscene (overlay 100, distortion world) submits more than 6144 vertices in one frame -> "[NATIVE-RENDER] vertex overflow" abort. Run 73 fix. */
+static GuVertex vertices[24576] __attribute__((aligned(16)));
+GuVertex *g3ChunkPtr=vertices;unsigned g3ChunkLeft=24576;
 unsigned g3RecCount=0;static bool recActive=false,recBroken=false;
 static unsigned drawnTris;
 /* diagnostics (logged with [G3SOFT]): why pixels are dropped, vertex ranges */
 static unsigned stDecodes,stPix,stDepth,stTexA,stA0,stWritten,stTexTris,stTrans;static float stZmin=1e9f,stZmax=-1e9f,stXmin=1e9f,stXmax=-1e9f;static unsigned stAmin=255,stAmax=0,stFmt[8];static u32 stColOr,stColAnd=~0u;
 extern "C" void abort(void);
 extern "C" void G3SIM_ChunkAlloc(){printf("[NATIVE-RENDER] vertex overflow\n");abort();for(;;){}}
-static void ResetVertices(){if(recActive&&g3RecCount)recBroken=true;g3ChunkPtr=vertices;g3ChunkLeft=6144;}
+static void ResetVertices(){if(recActive&&g3RecCount)recBroken=true;g3ChunkPtr=vertices;g3ChunkLeft=24576;}
 static bool cullAll=false;static u64 prTex,prRaw,prEnd,prN;static int cullFace=0;/*1=GL_FRONT 2=GL_BACK*/
 static int cull3dCfg(){static int v=-1;if(v<0){v=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"cull3d=%d",&x)==1)v=x;fclose(f);}PSPNativeMemLog("[G3] back-face culling cull3d=%d (0 off, 1 normal, 2 inverted winding)",v);}return v;}
 /* ---------------- textures ---------------- */
@@ -90,8 +91,8 @@ extern "C" { unsigned long long P3DS_SpkGetTexTicks; }
 static unsigned g3FrameNo;static Tex*usedTex[96];static unsigned usedN,postFixes;
 static int postVblCfg(){static int v=-1;if(v<0){v=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"tex_postvblank=%d",&x)==1)v=x!=0;fclose(f);}PSPNativeMemLog("[G3] tex_postvblank=%d",v);}return v;}
 extern "C" int P3DS_CfgInt(const char*,int);
-static Tex folTex[8];
-static Tex*GetTexture(){u64 t=svcGetSystemTick();Tex*r=GetTextureImpl();if(r&&(r<folTex||r>=folTex+8)&&r->useF!=g3FrameNo+1){r->useF=g3FrameNo+1;if(usedN<96)usedTex[usedN++]=r;}u64 d=svcGetSystemTick()-t;prTex+=d;P3DS_SpkGetTexTicks+=d;return r;}
+static Tex folTex[5*8]; /* run 73: slot 0 follower, slots 1..4 wild_vis (8 frames each) */
+static Tex*GetTexture(){u64 t=svcGetSystemTick();Tex*r=GetTextureImpl();if(r&&(r<folTex||r>=folTex+40)&&r->useF!=g3FrameNo+1){r->useF=g3FrameNo+1;if(usedN<96)usedTex[usedN++]=r;}u64 d=svcGetSystemTick()-t;prTex+=d;P3DS_SpkGetTexTicks+=d;return r;}
 static bool DecodeTex(Tex*e){const unsigned fmt=e->fmt,w=e->w,h=e->h;
    stDecodes++;
    unsigned n=w*h;if(!e->px)e->px=(u32*)malloc(n*4);if(!e->px)return false;u32*o=e->px;unsigned palN=0;
@@ -136,21 +137,25 @@ extern "C" int P3DS_FollowerSprite(int species,int form,int female){
  if(e[3]){if(female)idx++;}else if(form>0&&form<=e[2])idx+=form;
  if(idx<0)idx=0;if((u32)idx>=folNSpr)idx=folNSpr-1;return idx;}
 /* loads sprite spr (8 frames) into the frame slots; returns the frame width (32/64) or 0 */
-extern "C" int P3DS_FollowerLoad(int spr,int shiny){
+static int folCurS[5]={-1,-1,-1,-1,-1},folCurShS[5];
+static int folLoadSlot(int sl,int spr,int shiny){
  if(folState!=1||spr<0||(u32)spr>=folNSpr)return 0;const u8*d=folDir+spr*8;unsigned w=d[4],h=d[5],nf=d[6];u32 off=d[0]|d[1]<<8|d[2]<<16|(u32)d[3]<<24;
- if(spr==folCur&&shiny==folCurShiny)return w;
+ if(spr==folCurS[sl]&&shiny==folCurShS[sl])return w;
  if(nf!=8||(w!=32&&w!=64)||h!=w)return 0;unsigned fs=w*h/2,n=8*fs+64;u8*b=(u8*)malloc(n);if(!b)return 0;
  FILE*f=fopen(FOL_PATH,"rb");bool ok=f&&!fseek(f,off,SEEK_SET)&&fread(b,1,n,f)==n;if(f)fclose(f);
  if(!ok){free(b);PSPNativeMemLog("[FOL] read fail spr %d",spr);return 0;}
  const u8*pp=b+8*fs+(shiny?32:0);u16 pal[16];for(int i=0;i<16;i++)pal[i]=pp[i*2]|pp[i*2+1]<<8;
- for(int k=0;k<8;k++){Tex&t=folTex[k];if(!t.px||t.w!=w){free(t.px);t.px=(u32*)malloc(w*h*4);}if(!t.px){free(b);return 0;}
+ for(int k=0;k<8;k++){Tex&t=folTex[sl*8+k];if(!t.px||t.w!=w){free(t.px);t.px=(u32*)malloc(w*h*4);}if(!t.px){free(b);return 0;}
   const u8*s=b+k*fs;for(unsigned i=0;i<w*h;i++){unsigned ix=(s[i>>1]>>((i&1)*4))&15;t.px[i]=ix?c555(pal[ix],255):0;}
-  G3G_TexFree(t.gt);t.gt=nullptr;t.off=0x7FFF8;t.pal=0x1FF00+k*16;t.fmt=3;t.w=w;t.h=h;t.c0=1;t.gen=0;t.raw=nullptr;t.rawN=0;}
- free(b);folCur=spr;folCurShiny=shiny;PSPNativeMemLog("[FOL] sprite %d shiny %d %ux%u",spr,shiny,w,h);return w;}
-static inline Tex*folLookup(const G3SIM_TexImageParam_t&p){if(p.textureOffset!=0x7FFF8||p.textureFormat!=3||(s_texPlttBase&~0x70u)!=0x1FF00)return nullptr;Tex*t=&folTex[(s_texPlttBase>>4)&7];return t->px?t:nullptr;}
+  G3G_TexFree(t.gt);t.gt=nullptr;t.off=0x7FFF8-sl*8;t.pal=0x1FF00+k*16;t.fmt=3;t.w=w;t.h=h;t.c0=1;t.gen=0;t.raw=nullptr;t.rawN=0;}
+ free(b);folCurS[sl]=spr;folCurShS[sl]=shiny;if(!sl){folCur=spr;folCurShiny=shiny;}PSPNativeMemLog(sl?"[WILD] slot %d load sprite %d shiny %d %ux%u":"[FOL] slot %d sprite %d shiny %d %ux%u",sl,spr,shiny,w,h);return w;}
+extern "C" int P3DS_FollowerLoad(int spr,int shiny){return folLoadSlot(0,spr,shiny);}
+extern "C" int P3DS_WildLoad(int sl,int spr,int shiny){return sl>=1&&sl<=4?folLoadSlot(sl,spr,shiny):0;}
+extern "C" void P3DS_WildFree(int sl){if(sl<1||sl>4)return;for(int k=0;k<8;k++){Tex&t=folTex[sl*8+k];G3G_TexFree(t.gt);t.gt=nullptr;free(t.px);t.px=nullptr;}folCurS[sl]=-1;}
+static inline Tex*folLookup(const G3SIM_TexImageParam_t&p){if(p.textureOffset>0x7FFF8||p.textureOffset<0x7FFD8||p.textureFormat!=3||(s_texPlttBase&~0x70u)!=0x1FF00)return nullptr;Tex*t=&folTex[((0x7FFF8-p.textureOffset)/8)*8+((s_texPlttBase>>4)&7)];return t->px?t:nullptr;}
 static Tex*GetTextureImpl(){
  const auto&p=s_texImageParam;unsigned fmt=p.textureFormat;if(!fmt)return nullptr;
- if(p.textureOffset==0x7FFF8)return folLookup(p);
+ if(p.textureOffset>=0x7FFD8&&p.textureOffset<=0x7FFF8)return folLookup(p);
  unsigned w=p.textureSSize,h=p.textureTSize;if(w<8||h<8||w>1024||h>1024)return nullptr;
  for(unsigned i=0;i<texN;i++){Tex&t=texCache[i];if(t.off==p.textureOffset&&t.pal==s_texPlttBase&&t.fmt==fmt&&t.w==w&&t.h==h&&t.c0==p.color0){
    if(t.gen==PSPNativeVramGen){t.lru=++texTick;return &t;}

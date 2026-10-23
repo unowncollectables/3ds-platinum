@@ -232,3 +232,13 @@ cheat_no_encounters=0   (run 64 cheat, default 0) 1 = no random wild battles whi
                         Great Marsh mud encounters are blocked too. Fishing, Honey trees and scripted /
                         legendary Pokemon are unchanged.
                         Nothing is written to your save. Settings app, Cheats tab.
+
+Run 73
+  wild_vis=0          visible wild Pokemon in grass (port-drawn, nothing saved); walking into one starts that battle
+  wild_vis_max=2      how many at once (0..4)
+  wild_vis_test=0     debug: one wild_vis_species sprite 2 tiles in front of the player (drawing test, no battle)
+  wild_vis_species=25 species for wild_vis_test
+  wild_vis_replace=0  1 = random grass encounters are off while wild_vis is on (only the visible ones battle)
+  (no new key) wide_weather copies only grouped weather particles (no cursor / lone sprites); wide_edgefill is off
+  indoors and only extends repeating background; wide_menus continues only the screen background layer; wide-view
+  strips hold still during attack screen shake. 3D vertex buffer raised (Spear Pillar cutscene abort).

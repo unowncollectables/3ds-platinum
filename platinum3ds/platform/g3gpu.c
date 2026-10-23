@@ -52,6 +52,7 @@ static void rbQueue(int e) {
     if (curHi == 1) C3D_SyncDisplayTransfer((u32 *)tgt[e]->frameBuf.colorBuf, GX_BUFFER_DIM(2 * curW, 384), rb[e], GX_BUFFER_DIM(curW, 192), RB_FLAGS_2X);
     else C3D_SyncDisplayTransfer((u32 *)tgt[e]->frameBuf.colorBuf, GX_BUFFER_DIM(curW, 256), rb[e], GX_BUFFER_DIM(curW, 256), RB_FLAGS); } /* inFrame: queued only */
 extern unsigned char PSPNative_GfxRegisters[];
+int P3DS_MapOutdoor = 1; /* run 73: set by the follower frame (MapHeader_IsOutdoors) */
 static void stripConvert(int e) {
     const u32 *s = rb[e];
     u16 mb = *(u16 *)(PSPNative_GfxRegisters + 0x6C); unsigned mm = (mb >> 14) & 3, f = mb & 31; if (f > 16) f = 16;
@@ -64,8 +65,15 @@ static void stripConvert(int e) {
                nothing there, so the strip pixel is empty (alpha 0). Continue the scene with the nearest real pixel
                of the same row a whole number of 32-px (2 map tiles) periods further in - same texture/tile phase,
                not mirrored or blurred. Only empty pixels pay; rows with nothing real stay as before. */
-            if ((c & 255) < 8 && edgeFill) { int sx = x < 32 ? (int)x : (int)x + 256, dir = x < 32 ? 32 : -32;
-                for (int k = sx + dir; k >= 0 && k < 320; k += dir) { u32 t = row[k]; if ((t & 255) >= 8) { c = t; break; } } }
+            if ((c & 255) < 8 && edgeFill && P3DS_MapOutdoor) { int sx = x < 32 ? (int)x : (int)x + 256, dir = x < 32 ? 32 : -32;
+                for (int k = sx + dir; k >= 0 && k < 320; k += dir) { u32 t = row[k]; if ((t & 255) < 8) continue;
+                    /* run 73: only a pixel that repeats one period further in is real tiled background (sea, ground);
+                       a sprite / NPC / unique object there is skipped. Indoors (houses, Centers, gyms): no fill. */
+                    int k2 = k + dir; if (k2 < 0 || k2 >= 320) break; u32 t2 = row[k2]; (void)t2;
+                    { int k3 = k + dir * 32; if (k3 < 0 || k3 >= 320) break; u32 u = row[k3];
+                      int dr = (int)(t >> 24) - (int)(u >> 24), dg = (int)((t >> 16) & 255) - (int)((u >> 16) & 255), db = (int)((t >> 8) & 255) - (int)((u >> 8) & 255);
+                      if (dr * dr + dg * dg + db * db > 48 * 48) continue; }
+                    c = t; break; } }
             unsigned r = c >> 24, g = (c >> 16) & 255, b = (c >> 8) & 255;
             if ((c & 255) < 8) r = g = b = 0;   /* 3D clear / alpha 0: black like the pillarbox */
             if (mm == 1 && f) { r += (255 - r) * f / 16; g += (255 - g) * f / 16; b += (255 - b) * f / 16; }

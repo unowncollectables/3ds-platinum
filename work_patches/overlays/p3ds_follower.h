@@ -281,6 +281,7 @@ static void p3dsMapSnap(FieldSystem *fieldSystem)
 static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
 {
     if (fieldSystem) p3dsMapSnap(fieldSystem);
+    { extern int P3DS_MapOutdoor; if (fieldSystem && fieldSystem->location) P3DS_MapOutdoor = MapHeader_IsOutdoors(fieldSystem->location->mapHeaderID) != 0; } /* run 73 wide_edgefill */
     /* run 67 cheats (all default off, config.txt cheat_*): only values real Platinum accepts are written
        (money 999999 = the game's own cap, Rare Candy 99 of max 999, egg cycles 0 = an egg about to hatch). Checked
        every 30 frames, only when no field task (menu/script) runs. */
@@ -497,4 +498,82 @@ static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
     G3_TexCoord(s1, 0); G3_Vtx(hw, hw, 0);
     G3_End();
     G3_PopMtx(1);
+}
+
+/* run 73 wild_vis (default 0): visible wild Pokemon. Port-drawn quads like the follower (followers.bin sprites, texture
+   slots 1..4 = magic address 0x7FFF8 - slot*8), never map objects, never saved, invisible to scripts. Spawn only on
+   grass encounter tiles 4..8 tiles from the player (species/level from the map's grass table, game slot rates), wander
+   one grass tile every 40..90 frames, despawn > 12 tiles away / map change / warp / task / not walking. The player
+   stepping onto one (or it onto the player) starts the normal wild battle for that species and level, then it is
+   removed. wild_vis_test=1: one wild_vis_species standing 2 tiles in front of the player (drawing test, no battle). */
+typedef struct { int on, sp, lv, x, z, fx, fz, t, timer, dir, w, shiny; } P3DSWild;
+static P3DSWild p3dsWild[4];
+extern int P3DS_WildLoad(int, int, int); extern void P3DS_WildFree(int);
+extern int P3DS_WildGrassTile(FieldSystem *, int, int); extern int P3DS_WildPick(FieldSystem *, unsigned, int *, int *); extern int P3DS_WildBattle(FieldSystem *, int, int);
+static void p3dsWildKill(int i) { if (p3dsWild[i].on) { P3DS_WildFree(i + 1); PSPNativeMemLog("[WILD] slot %d despawn species %d", i + 1, p3dsWild[i].sp); } p3dsWild[i].on = 0; }
+static void p3dsWildDraw(P3DSWild *w, int slot, fx32 py, unsigned anim)
+{
+    VecFx32 c, v; fx32 tt = w->t >= 16 ? FX32_ONE : w->t * FX32_ONE / 16;
+    c.x = ((w->fx * 16 + 8) * FX32_ONE) + FX_Mul((w->x - w->fx) * 16 * FX32_ONE, tt);
+    c.z = ((w->fz * 16 + 8) * FX32_ONE) + FX_Mul((w->z - w->fz) * 16 * FX32_ONE, tt);
+    c.y = py + (w->w / 2) * FX32_ONE;
+    MTX_MultVec43(&c, NNS_G3dGlbGetCameraMtx(), &v); v.y += 3 * FX32_ONE;
+    int moving = w->t < 16, fr = w->dir * 2 + ((anim >> (moving ? 3 : 4)) & 1), sz = w->w;
+    G3_MtxMode(GX_MTXMODE_POSITION_VECTOR); G3_PushMtx(); G3_Identity(); G3_Translate(v.x, v.y, v.z); G3_Scale(16 * FX32_ONE, 16 * FX32_ONE, 16 * FX32_ONE);
+    G3_PolygonAttr(GX_LIGHTMASK_NONE, GX_POLYGONMODE_MODULATE, GX_CULL_NONE, 0, 31, GX_POLYGON_ATTR_MISC_FOG);
+    G3_TexImageParam(GX_TEXFMT_PLTT16, GX_TEXGEN_NONE, sz == 64 ? GX_TEXSIZE_S64 : GX_TEXSIZE_S32, sz == 64 ? GX_TEXSIZE_T64 : GX_TEXSIZE_T32,
+        GX_TEXREPEAT_NONE, GX_TEXFLIP_NONE, GX_TEXPLTTCOLOR0_TRNS, 0x7FFF8 - slot * 8);
+    G3_TexPlttBase(0x1FF00 + fr * 16, GX_TEXFMT_PLTT16); G3_Color(GX_RGB(31, 31, 31));
+    fx16 hw = (fx16)((sz / 2) * FX16_ONE / 16);
+    G3_Begin(GX_BEGIN_QUADS);
+    G3_TexCoord(0, 0); G3_Vtx(-hw, hw, 0); G3_TexCoord(0, sz * FX32_ONE); G3_Vtx(-hw, -hw, 0);
+    G3_TexCoord(sz * FX32_ONE, sz * FX32_ONE); G3_Vtx(hw, -hw, 0); G3_TexCoord(sz * FX32_ONE, 0); G3_Vtx(hw, hw, 0);
+    G3_End(); G3_PopMtx(1);
+}
+static void P3DS_WildFrame(FieldSystem *fieldSystem)
+{
+    static int cfg = -1, mx, test, tsp; static int lastMap = -1, lpx, lpz, spawnT; static unsigned rng = 0x9E3779B9u, anim;
+    if (cfg < 0) { cfg = P3DS_CfgInt("wild_vis", 0) != 0; mx = P3DS_CfgInt("wild_vis_max", 2); if (mx < 0) mx = 0; if (mx > 4) mx = 4; test = P3DS_CfgInt("wild_vis_test", 0) != 0; tsp = P3DS_CfgInt("wild_vis_species", 25);
+        PSPNativeMemLog("[WILD] wild_vis=%d max=%d test=%d species=%d replace=%d", cfg, mx, test, tsp, P3DS_CfgInt("wild_vis_replace", 0)); }
+    if (!cfg && !test) return;
+    if (!fieldSystem || !fieldSystem->playerAvatar || !fieldSystem->location || !fieldSystem->saveData || !P3DS_FollowerOpen()) return;
+    MapObject *pl = PlayerAvatar_GetMapObject(fieldSystem->playerAvatar); if (!pl) return;
+    int map = fieldSystem->location->mapHeaderID, x = MapObject_GetX(pl), z = MapObject_GetZ(pl), task = FieldSystem_IsRunningTask(fieldSystem);
+    VecFx32 pos; MapObject_GetPosPtr(pl, &pos);
+    int hide = PlayerAvatar_GetPlayerState(fieldSystem->playerAvatar) != PLAYER_AVATAR_WALKING || FieldMap_InDistortionWorld(fieldSystem) == TRUE || MapObject_IsHidden(pl);
+    int jump = (x - lpx) * (x - lpx) + (z - lpz) * (z - lpz) > 8; lpx = x; lpz = z;
+    if (map != lastMap || hide || jump || (task && !test)) { for (int i = 0; i < 4; i++) p3dsWildKill(i); lastMap = map; spawnT = 120; if (hide || task) return; }
+    anim++; rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+    if (test) { P3DSWild *w = &p3dsWild[0];
+        int d = PlayerAvatar_GetFacingDir(fieldSystem->playerAvatar), tx = x + (d == 2 ? -2 : d == 3 ? 2 : 0), tz = z + (d == 0 ? -2 : d == 1 ? 2 : 0);
+        if (!w->on) { int spr = P3DS_FollowerSprite(tsp, 0, 0); w->w = spr >= 0 ? P3DS_WildLoad(1, spr, 0) : 0; if (!w->w) return; w->on = 1; w->sp = tsp; w->lv = 5; w->dir = 1; w->t = 16;
+            w->x = w->fx = tx; w->z = w->fz = tz; PSPNativeMemLog("[WILD] test sprite species %d at %d,%d", tsp, tx, tz); }
+        if (w->t >= 16 && (w->x != tx || w->z != tz)) { w->fx = w->x; w->fz = w->z; w->x = tx; w->z = tz; w->t = 0; }
+        if (w->t < 16) w->t++;
+        NNS_G3dGeFlushBuffer(); p3dsWildDraw(w, 1, pos.y, anim); return; }
+    NNS_G3dGeFlushBuffer();
+    int n = 0; for (int i = 0; i < 4; i++) n += p3dsWild[i].on;
+    if (spawnT > 0) spawnT--;
+    if (!spawnT && n < mx) { spawnT = 90 + (int)(rng >> 25);
+        for (int tries = 0; tries < 6; tries++) { int dx = (int)((rng >> (tries * 4)) % 17) - 8, dz = (int)((rng >> (tries * 4 + 2)) % 13) - 6;
+            if ((dx < 0 ? -dx : dx) + (dz < 0 ? -dz : dz) < 4) continue;
+            int tx = x + dx, tz = z + dz; if (!P3DS_WildGrassTile(fieldSystem, tx, tz)) continue;
+            int busy = 0; for (int i = 0; i < 4; i++) if (p3dsWild[i].on && p3dsWild[i].x == tx && p3dsWild[i].z == tz) busy = 1; if (busy) break;
+            int sp, lv; if (!P3DS_WildPick(fieldSystem, rng >> 7, &sp, &lv)) break;
+            for (int i = 0; i < 4; i++) if (!p3dsWild[i].on) { P3DSWild *w = &p3dsWild[i]; u64 t0 = svcGetSystemTick();
+                int spr = P3DS_FollowerSprite(sp, 0, 0); w->w = spr >= 0 ? P3DS_WildLoad(i + 1, spr, 0) : 0; if (!w->w) break;
+                w->on = 1; w->sp = sp; w->lv = lv; w->x = w->fx = tx; w->z = w->fz = tz; w->t = 16; w->timer = 40 + (int)(rng % 50); w->dir = 1;
+                PSPNativeMemLog("[WILD] slot %d load species %d lv %d at %d,%d (%u us)", i + 1, sp, lv, tx, tz, (unsigned)((svcGetSystemTick() - t0) / 268)); break; }
+            break; } }
+    for (int i = 0; i < 4; i++) { P3DSWild *w = &p3dsWild[i]; if (!w->on) continue;
+        int ddx = w->x - x, ddz = w->z - z; if (ddx * ddx + ddz * ddz > 144) { p3dsWildKill(i); continue; }
+        if (w->t < 16) w->t++;
+        else if (--w->timer <= 0) { w->timer = 40 + (int)((rng >> 3) % 51); int d = (int)((rng >> 11) & 3), nx = w->x + (d == 2 ? -1 : d == 3 ? 1 : 0), nz = w->z + (d == 0 ? -1 : d == 1 ? 1 : 0);
+            if (P3DS_WildGrassTile(fieldSystem, nx, nz)) { w->fx = w->x; w->fz = w->z; w->x = nx; w->z = nz; w->t = 0; w->dir = d; } else w->dir = d; }
+        if (!task && ((w->x == x && w->z == z) || (w->t >= 8 && w->x == x && w->z == z))) {
+            PSPNativeMemLog("[WILD] contact slot %d species %d lv %d -> battle", i + 1, w->sp, w->lv);
+            int sp = w->sp, lv = w->lv; p3dsWildKill(i);
+            if (!P3DS_WildBattle(fieldSystem, sp, lv)) PSPNativeMemLog("[WILD] no battle (repel / cheat_no_encounters)");
+            return; }
+        p3dsWildDraw(w, i + 1, pos.y, anim + i * 7); }
 }

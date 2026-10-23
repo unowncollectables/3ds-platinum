@@ -7,13 +7,13 @@
 #include <simulator/g3_draw.h>
 #include <simulator/g3_handler.h>
 #include "../native-stack-render/g3_vtx.h"
-static GuVertex vertices[6144] __attribute__((aligned(16)));
-GuVertex *g3ChunkPtr=vertices;unsigned g3ChunkLeft=6144;
+static GuVertex vertices[24576] __attribute__((aligned(16)));
+GuVertex *g3ChunkPtr=vertices;unsigned g3ChunkLeft=24576;
 unsigned g3RecCount=0;static bool recActive=false,recBroken=false;
 static unsigned drawnVerts;
 extern "C" void abort(void);
 extern "C" void G3SIM_ChunkAlloc(){printf("[NATIVE-RENDER] vertex overflow\n");abort();for(;;){}}
-static void ResetVertices(){if(recActive&&g3RecCount)recBroken=true;g3ChunkPtr=vertices;g3ChunkLeft=6144;}
+static void ResetVertices(){if(recActive&&g3RecCount)recBroken=true;g3ChunkPtr=vertices;g3ChunkLeft=24576;}
 static void DrawVertices(const GuVertex*v,unsigned n,bool copy){(void)v;(void)copy;drawnVerts+=n;}
 extern "C" {
 void G3ListRecordBegin(){recActive=true;recBroken=false;g3RecCount=0;}

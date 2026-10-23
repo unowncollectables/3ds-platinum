@@ -556,6 +556,9 @@ static void wideWeather(){
   const unsigned sh=a0>>14;if(sh==3)continue;const int w=SW[sh][a1>>14],h=SH[sh][a1>>14];if(w>32||h>32)continue;
   int x=a1&0x1FF;if(x>=256)x-=512;int y=a0&0xFF;if(y>=192)y-=256;const bool b8=(a0&0x2000)!=0,hf=(a1&0x1000)!=0,vf=(a1&0x2000)!=0;
   const unsigned tn=a2&0x3FF,pb=a2>>12;const bool oneD=(dc&0x10)!=0;const unsigned bnd=oneD?(32u<<((dc>>20)&3)):32;
+  /* run 73: weather particles come in groups (same palette, shape/size and nearby tiles, >= 4 OBJs); a lone sprite (menu cursor, emote)
+     is not weather and is never copied */
+  {int same=0;for(int j=0;j<128&&same<4;j++){const u16 b0=o[j*4],b2=o[j*4+2];const u16 b1=o[j*4+1];int td=(int)(b2&0x3FF)-(int)(a2&0x3FF);if(!(b0&0x200)&&(b2>>12)==(a2>>12)&&(b0>>14)==(a0>>14)&&(b1>>14)==(a1>>14)&&td<=16&&td>=-16)same++;}if(same<4)continue;}
   for(int pass=0;pass<3;pass++){int sx=x+(pass==1?-256:pass==2?256:0);  /* strip coords: DS x -32..-1 -> 0..31, 256..287 -> 32..63 */
    if(sx+w<=-32||sx>=288||(sx>=0&&sx+w<=256))continue;
    for(int py=0;py<h;py++){const int yy=y+py;if(yy<0||yy>=192)continue;const int ty=vf?h-1-py:py;
@@ -606,6 +609,13 @@ static void wideNative(){const u64 t0=svcGetSystemTick();
   const u16 c=*(const u16*)(R+8+i*2);l.prio=c&3;l.bpp8=(c&0x80)!=0;l.w=(c>>14)&1?64:32;l.h=(c>>14)&2?64:32;
   l.charb=((c>>2)&15)*0x4000+((dc>>24)&7)*0x10000;l.mapb=((c>>8)&31)*0x800+((dc>>27)&7)*0x10000;
   l.hofs=*(const u16*)(R+0x10+i*4)&0x1FF;l.vofs=*(const u16*)(R+0x12+i*4)&0x1FF;
+  /* run 73 shake hold: a layer whose horizontal scroll reverses direction (attack screen shake, ~2-8 px back and
+     forth) keeps its last steady scroll in the strips, so they stay still instead of jittering; real scrolls
+     (same direction twice) and changes > 24 px follow at once, and a value held 6 frames becomes the steady one. */
+  {static unsigned st[4],last[4],hold[4];static int pd[4];int d=(int)((l.hofs-last[i])&0x1FF);if(d>=256)d-=512;
+   if(!d){if(++hold[i]>=6)st[i]=l.hofs;}else{hold[i]=0;int dd=(int)((l.hofs-st[i])&0x1FF);if(dd>=256)dd-=512;
+    if((d>0)==(pd[i]>0)||dd>24||dd<-24)st[i]=l.hofs;pd[i]=d;}
+   last[i]=l.hofs;l.hofs=st[i];}
   l.extSlot=(l.bpp8&&(dc&(1u<<30)))?((i<2&&(c&0x2000))?i+2:i):-1;
   if(l.w==32){/* per visible tile row and side: the period (1, 2 or 4 tiles) of the map entries at that screen edge,
      0 = not periodic there (layer left out of that row's strip). The strip repeats those edge tiles. */
@@ -618,6 +628,10 @@ static void wideNative(){const u64 t0=svcGetSystemTick();
    if(!any)continue;}
   l.on=1;}
  for(int pr=0;pr<4;pr++)for(int i=0;i<4;i++)if(Ly[i].on&&Ly[i].prio==pr)order[no++]=i;
+ /* run 73: only the back-most layer (the screen's background) continues into the strips; 32-wide front layers
+    (panels, number rows, list boxes) touching the edge were repeated as rows of '0's / cut-off panels. 64-wide
+    layers have real content there and stay. */
+ {int k=0;for(int oi=0;oi<no;oi++){const L&l=Ly[order[oi]];if(oi==no-1||l.w==64)order[k++]=order[oi];}no=k;}
  wnLay[no]++;
  /* the back-most layer (the screen's background) also fills rows where a panel touches the edge: those rows borrow
     the nearest row whose edge is periodic, so the background continues behind the panels instead of a black gap */
@@ -818,7 +832,7 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
    B / START / L+R+Y close. Drawn in the game's font + message box frame (port font fallback). The top screen shows
    the dimmed game picture with the title and the build/version string. */
 #ifndef P3DS_VERSION
-#define P3DS_VERSION "run72"
+#define P3DS_VERSION "run73"
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"

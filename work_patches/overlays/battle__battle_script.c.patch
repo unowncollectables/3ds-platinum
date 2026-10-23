@@ -1,6 +1,14 @@
 --- a/battle__battle_script.c
 +++ b/battle__battle_script.c
-@@ -9760,6 +9760,7 @@
+@@ -1383,6 +1383,7 @@
+ 
+     BattleScript_CalcMoveDamage(battleSys, battleCtx);
+     battleCtx->damage = BattleSystem_CalcDamageVariance(battleSys, battleCtx, battleCtx->damage);
++    { extern int P3DS_CfgInt(const char *, int); static int oh = -1; if (oh < 0) oh = P3DS_CfgInt("dbg_onehit", 0); if (oh && !(battleCtx->attacker & 1)) battleCtx->damage *= 100; } /* run 73 debug (default 0, emu tests only): player hits x100 */
+     battleCtx->damage *= -1;
+ 
+     return FALSE;
+@@ -9760,6 +9761,7 @@
              if (battleType & BATTLE_TYPE_TRAINER) {
                  totalExp = totalExp * 150 / 100;
              }
@@ -8,7 +16,7 @@
  
              if (BattleSystem_PokemonIsOT(data->battleSys, mon) == FALSE) {
                  if (Pokemon_GetValue(mon, MON_DATA_LANGUAGE, NULL) != gGameLanguage) {
-@@ -10913,6 +10914,7 @@
+@@ -10913,6 +10915,7 @@
      if (BattleSystem_GetBattleType(battleSys) & BATTLE_TYPE_ALWAYS_CATCH) {
          return BALL_3_SHAKES_SUCCESS;
      }
