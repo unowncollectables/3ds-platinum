@@ -284,6 +284,25 @@ static void BattleControllerPlayer_InitCommandSelection(BattleSystem *battleSys,
     BattleSystem_SetCommandSelectionFlags(battleSys, 0);
     BattleSystem_LoadFightOverlay(battleSys, TRUE);
 
+    { /* run 75 catch info: read-only snapshot of the wild foe for the port's settings app (Catch tab). Never written back. */
+        extern volatile int P3DS_CatchInfo[20];
+        if (!(BattleSystem_GetBattleType(battleSys) & BATTLE_TYPE_TRAINER) && battleCtx->battleMons[1].curHP) {
+            BattleMon *bm = &battleCtx->battleMons[1];
+            Pokemon *mon = BattleSystem_GetPartyPokemon(battleSys, 1, battleCtx->selectedPartySlot[1]);
+            static const int ivId[6] = { MON_DATA_HP_IV, MON_DATA_ATK_IV, MON_DATA_DEF_IV, MON_DATA_SPATK_IV, MON_DATA_SPDEF_IV, MON_DATA_SPEED_IV };
+            P3DS_CatchInfo[1] = bm->species; P3DS_CatchInfo[2] = bm->level; P3DS_CatchInfo[3] = bm->curHP; P3DS_CatchInfo[4] = bm->maxHP;
+            P3DS_CatchInfo[5] = bm->status; P3DS_CatchInfo[6] = bm->ability; P3DS_CatchInfo[7] = bm->personality % 25;
+            P3DS_CatchInfo[8] = Pokemon_GetValue(mon, MON_DATA_POKERUS, NULL);
+            for (int k = 0; k < 6; k++) P3DS_CatchInfo[9 + k] = Pokemon_GetValue(mon, ivId[k], NULL);
+            P3DS_CatchInfo[15] = SpeciesData_GetSpeciesValue(bm->species, SPECIES_DATA_CATCH_RATE);
+            P3DS_CatchInfo[16] = BattleSystem_HasCaughtSpecies(battleSys, bm->species);
+            P3DS_CatchInfo[17] = battleCtx->totalTurns;
+            P3DS_CatchInfo[0] = 1;
+        } else {
+            P3DS_CatchInfo[0] = 0;
+        }
+    }
+
     battleCtx->command = BATTLE_CONTROL_COMMAND_SELECTION_INPUT;
 }
 
@@ -2286,7 +2305,7 @@ static BOOL BattleControllerPlayer_DecrementPP(BattleSystem *battleSys, BattleCo
     if (ATTACKER_TURN_FLAGS.ppDecremented == FALSE && ATTACKER_TURN_FLAGS.struggling == FALSE) {
         ATTACKER_TURN_FLAGS.ppDecremented = 1;
 
-        { extern int P3DS_CfgInt(const char *, int); static int cp = -1; if (cp < 0) cp = P3DS_CfgInt("cheat_pp", 0) != 0; if (cp && !(battleCtx->attacker & 1)) ppCost = 0; } /* run 75 cheat_pp: your moves use no PP (nothing else changed) */
+        { extern int P3DS_CfgInt(const char *, int); int cp; cp = P3DS_CfgInt("cheat_pp", 0) != 0; if (cp && !(battleCtx->attacker & 1)) ppCost = 0; } /* run 75 cheat_pp: your moves use no PP (nothing else changed) */
         if (ATTACKING_MON.ppCur[moveSlot] && moveSlot < LEARNED_MOVES_MAX) {
             if (ATTACKING_MON.ppCur[moveSlot] > ppCost) {
                 ATTACKING_MON.ppCur[moveSlot] -= ppCost;

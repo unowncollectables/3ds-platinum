@@ -305,3 +305,4 @@ void P3DS_ShutdownThreads(void) {
     for (int i = 0; i < P3DS_BLOCKS; i++) if (blocks[i]) { free(blocks[i]); blocks[i] = NULL; }
     if (ndspOk == 1) { ndspExit(); ndspOk = -1; }
 }
+volatile int P3DS_CatchInfo[20]; /* run 75 catch info snapshot (battle -> settings app), read-only */

@@ -243,3 +243,8 @@ Run 73
   indoors and only extends repeating background; wide_menus continues only the screen background layer; wide-view
   strips hold still during attack screen shake. 3D vertex buffer raised (Spear Pillar cutscene abort).
 cheat_pp=0  (1 = your moves use no PP in battle; runtime only)
+cheat_speed=0        (1 = holding B runs at bike speed; runtime only)
+cheat_walk_walls=0   (1 = hold R while walking to pass through walls/objects; warps and ledges still work)
+cheat_time=0         (0 off, 1 morning, 2 day, 3 evening, 4 night: overrides time-of-day only; the save clock is untouched)
+catch_overlay=0      (1 = in a wild battle, press Y at the command menu for the Ball tab: species, nature, ability, IVs, Pokerus, HP/status, catch odds)
+battle_anim_speed=0  (1 = skip plain move animations; Fly/Dig/Dive/Bounce/Shadow Force/Transform/Substitute/Minimize still play)

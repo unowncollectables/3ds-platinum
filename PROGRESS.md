@@ -1190,6 +1190,15 @@ All new features behind config keys (README_settings.txt), all save-safe:
 - 8c audit: DWC_ (141) and WM_ (35) symbols from the decomp are linked; no 3DS network (soc/ac/uds) is linked. No network code written.
 
 ## Run 75
-- cheat_pp (Cheat tab "Infinite PP", off by default): player-side moves cost 0 PP (battle_controller_player.c). Runtime only, no save edits. Version run75.
-- Not done (budget): cheat_speed, cheat_walk_walls, cheat_time, Y catch overlay, battle_anim_speed, Underground fix.
-- SHA1 05086dafe549da92f90d6809a4165b20efea3be2. Staged on PC Desktop; SD was in the 3DS.
+Off by default; each has a settings-app row; nothing writes to platinum.sav (checked that the emulator save matches byte for byte).
+- cheat_pp: your moves cost no PP (battle_controller_player.c, the PP-deduct step).
+- cheat_speed: B-run uses the bike-speed walk action (player_move.c NormalOverworld).
+- cheat_walk_walls: hold R to pass walls (PlayerAvatar_CheckCollision; warps and jumps are kept).
+- cheat_time: time-of-day override in TimeOfDayForHour (rtc.c); view only.
+- catch_overlay: snapshot of the wild foe at InitCommandSelection -> P3DS_CatchInfo; "Ball" tab in the settings app; Y opens it in wild battles.
+  Ability/species names come from the decomp constant lists (p3ds_abilnames.h). Odds use the Gen 4 formula estimate (Poke/Great/Ultra/Quick/Timer/Nest).
+- battle_anim_speed=1: Task_SetMoveAnimation skips state 4 -> 6 for animMode 0, except for moves whose animations change sprites.
+- Tabs: a paged tab's label shows only "1/2"; the Catch tab is named "Ball".
+- Tested: settings smoke (Cheat pages, Ball tab "Only in wild battles."), 30 fps, save unchanged. Not tested: in-battle Y overlay, the anim skip, walk-walls and speed (wild-battle setup failed in the emulator).
+- Left: Underground bottom-screen fix, fast HP drain (battle_anim_speed=2), Dusk/Net ball odds.
+- SHA1 9977c2205c556fc747e05d3767f35aafb8ab5fbc
