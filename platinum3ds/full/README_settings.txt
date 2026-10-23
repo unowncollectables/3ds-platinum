@@ -242,3 +242,4 @@ Run 73
   (no new key) wide_weather copies only grouped weather particles (no cursor / lone sprites); wide_edgefill is off
   indoors and only extends repeating background; wide_menus continues only the screen background layer; wide-view
   strips hold still during attack screen shake. 3D vertex buffer raised (Spear Pillar cutscene abort).
+cheat_pp=0  (1 = your moves use no PP in battle; runtime only)

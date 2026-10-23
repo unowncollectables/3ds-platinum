@@ -1188,3 +1188,8 @@ All new features behind config keys (README_settings.txt), all save-safe:
 - log_max_kb=1024 (default): log.txt rolls over to log_old.txt.
 - hm_free=0: Party_HasMonWithMove also accepts a party mon that can learn the HM (game's CanPokemonFormLearnTM); badges still required. Untested in emu.
 - 8c audit: DWC_ (141) and WM_ (35) symbols from the decomp are linked; no 3DS network (soc/ac/uds) is linked. No network code written.
+
+## Run 75
+- cheat_pp (Cheat tab "Infinite PP", off by default): player-side moves cost 0 PP (battle_controller_player.c). Runtime only, no save edits. Version run75.
+- Not done (budget): cheat_speed, cheat_walk_walls, cheat_time, Y catch overlay, battle_anim_speed, Underground fix.
+- SHA1 05086dafe549da92f90d6809a4165b20efea3be2. Staged on PC Desktop; SD was in the 3DS.
