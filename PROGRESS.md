@@ -1172,3 +1172,19 @@ All new features behind config keys (README_settings.txt), all save-safe:
 - New: [ASSERT] log line (always, log_level 1) with the caller address of any GF_ASSERT failure (resolve with
   arm-none-eabi-addr2line -f -e platinum3ds_full.elf <addr>) + crumb dump; Makefile --wrap=ErrorHandling_AssertFail.
 - Azahar: snowpoint_crash.sav walked into Snowpoint and around with the user's config and with defaults: no assert.
+
+## Run 73 (2026-10-23)
+- Spear Pillar cutscene abort "[NATIVE-RENDER] vertex overflow" (overlay 100 submits >6144 vertices/frame): g3soft/g3null vertex buffer 6144 -> 24576. Emu: cutscene start + Mars/Jupiter double battle reached without abort; red chains not reached in emu (battle automation stuck).
+- wide_weather copies only grouped weather OBJs (>=4 same palette/size/nearby tiles): no cursor / lone sprites.
+- wide_edgefill: off indoors (MapHeader_IsOutdoors via follower frame), outdoors only extends pixels that repeat one 32-px period in (no NPC/player copies).
+- wide_menus: only the back-most BG layer (and 64-wide layers) continue into strips (no '0' rows / cut panels).
+- Strips hold the last steady BG scroll during attack screen shake.
+- wild_vis (default 0): visible wild Pokemon (followers.bin sprites in texture slots 1..4), grass-only spawn from the map's table, wander, contact -> normal wild battle. Untested in emu.
+- dbg_onehit (test only), setup_box.sh (reinstall devkitPro/Azahar after a box reset).
+
+## Run 74 (2026-10-23)
+- Settings app: new tabs Pal (follower toggles), Wide (wide_weather/edgefill/menus/fill), Extra (wild_vis*, hm_free, save_backup, log_max_kb). Generic rows write config.txt; most apply after a restart.
+- save_backup=1 (default on): at launch platinum.sav is byte-copied to platinum.sav.bak1 (.bak2/.bak3 rotate). The save itself is never written by the port.
+- log_max_kb=1024 (default): log.txt rolls over to log_old.txt.
+- hm_free=0: Party_HasMonWithMove also accepts a party mon that can learn the HM (game's CanPokemonFormLearnTM); badges still required. Untested in emu.
+- 8c audit: DWC_ (141) and WM_ (35) symbols from the decomp are linked; no 3DS network (soc/ac/uds) is linked. No network code written.

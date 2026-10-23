@@ -256,6 +256,14 @@ int main(void) {
     { /* create a blank save only if none exists; never touch an existing one */
       FILE *f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "rb");
       if (f) fclose(f); else if ((f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "wb"))) { static u8 blk[4096]; memset(blk, 0xFF, sizeof blk); for (int i = 0; i < 128; i++) fwrite(blk, 1, sizeof blk, f); fclose(f); PSPNativeMemLog("[3DS] created blank platinum.sav"); } }
+    { /* run 74 save_backup=1 (default ON, safety): at every launch, before the game opens it, platinum.sav is COPIED to
+         platinum.sav.bak1 (older copies rotate to .bak2 / .bak3). Byte copy only; the save itself is never touched. */
+      extern int P3DS_CfgInt(const char *, int); int nb = P3DS_CfgInt("save_backup", 1);
+      if (nb) { static u8 sb[524288]; FILE *f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "rb"); size_t n = f ? fread(sb, 1, sizeof sb, f) : 0; if (f) fclose(f);
+        if (n == sizeof sb) { remove("sdmc:/3ds/platinum3ds/platinum.sav.bak3"); rename("sdmc:/3ds/platinum3ds/platinum.sav.bak2", "sdmc:/3ds/platinum3ds/platinum.sav.bak3");
+          rename("sdmc:/3ds/platinum3ds/platinum.sav.bak1", "sdmc:/3ds/platinum3ds/platinum.sav.bak2");
+          FILE *o = fopen("sdmc:/3ds/platinum3ds/platinum.sav.bak1", "wb"); size_t w = o ? fwrite(sb, 1, n, o) : 0; if (o) fclose(o);
+          PSPNativeMemLog("[SAVE] backup platinum.sav -> .bak1 (%s, 3 kept)", w == n ? "ok" : "FAILED"); } } }
     STEP("Save (platinum.sav)", PSPNative_OpenBackup("sdmc:/3ds/platinum3ds/platinum.sav"), "platinum.sav invalid: must be exactly 512 KiB");
     { extern int P3DS_GameFontLoad(void); P3DS_GameFontLoad(); } /* run 64: game font from the ROM for port UI */
     PSPNativeStackProbeInit(); STEP("Stack probe", 1, "");

@@ -47,6 +47,10 @@ static void flushOnce(int lock) {
         if (d) fprintf(lf, "[LOG] %u lines dropped (ring full)\n", d);
         if (!n) break;
         fwrite(out, 1, n, lf);
+        { /* run 74 log_max_kb (default 1024, 0 = no limit): past the limit log.txt becomes log_old.txt and a new one starts */
+          static long wr; static int mx = -1; extern int P3DS_CfgInt(const char *, int); if (mx < 0) mx = P3DS_CfgInt("log_max_kb", 1024);
+          wr += n; if (mx > 0 && wr > (long)mx * 1024) { fclose(lf); remove("sdmc:/3ds/platinum3ds/log_old.txt"); rename("sdmc:/3ds/platinum3ds/log.txt", "sdmc:/3ds/platinum3ds/log_old.txt");
+            lf = fopen("sdmc:/3ds/platinum3ds/log.txt", "w"); wr = 0; if (!lf) return; fprintf(lf, "[LOG] log_max_kb=%d reached: older lines in log_old.txt\n", mx); } }
     }
     if (lf) fflush(lf);
     P3DS_LogWriting = 0;

@@ -769,15 +769,19 @@ static const MItem mItems[]={
  /* run 67 cheats 27.. (P3DS_Cheat(i-27)), all default OFF */
  {"INFINITE MONEY","cheat_money",2,{"OFF","ON"}},{"ALWAYS CATCH","cheat_catch",2,{"OFF","ON"}},{"SHINY WILD","cheat_shiny",2,{"OFF","ON"}},
  {"FAST EGGS","cheat_eggs",2,{"OFF","ON"}},{"EXP BOOST","cheat_exp",3,{"OFF","2X","3X"}},{"RARE CANDY 99","cheat_candy",2,{"OFF","ON"}},
+ /* run 74: 33.. generic config rows (value = label index; log_max_kb mapped). Most apply after a restart. */
+ {"FOLLOWER_AREA_TALK","follower_area_talk",2,{"OFF","ON"}},{"FOLLOWER_CRY","follower_cry",2,{"OFF","ON"}},{"FOLLOWER_ITEMS","follower_items",2,{"OFF","ON"}},{"FOLLOWER_BALLPOP","follower_ballpop",2,{"OFF","ON"}},{"FOLLOWER_EMOTES","follower_emotes",2,{"OFF","ON"}},{"FOLLOWER_FRIEND_TALK","follower_friend_talk",2,{"OFF","ON"}},{"FOLLOWER_IDLE","follower_idle",2,{"OFF","ON"}},{"FOLLOWER_GAP","follower_gap",2,{"OFF","ON"}},{"FOLLOWER_BEHIND","follower_behind",2,{"OFF","ON"}},{"WIDE_WEATHER","wide_weather",2,{"OFF","ON"}},{"WIDE_EDGEFILL","wide_edgefill",2,{"OFF","ON"}},{"WIDE_MENUS","wide_menus",2,{"OFF","ON"}},{"WIDE_FILL","wide_fill",2,{"OFF","ON"}},{"WILD_VIS","wild_vis",2,{"OFF","ON"}},{"WILD_VIS_MAX","wild_vis_max",5,{"0","1","2","3","4"}},{"WILD_VIS_REPLACE","wild_vis_replace",2,{"OFF","ON"}},{"WILD_VIS_TEST","wild_vis_test",2,{"OFF","ON"}},{"HM_FREE","hm_free",2,{"OFF","ON"}},{"SAVE_BACKUP","save_backup",2,{"OFF","ON"}},{"LOG_MAX_KB","log_max_kb",4,{"OFF","512 KB","1 MB","2 MB"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static int menuGet(int i){if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
+static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
  case 9:return P3DS_CamZoom()+2;case 10:return stereoStr<0?0:stereoStr;case 11:return P3DS_GpuSwizzle()?1:0;case 12:return G3G_FastConv()?1:0;case 13:return splitCfg>0?1:0;case 14:return P3DS_FollowerCfg()?1:0;case 15:return P3DS_GpuComposeCfg();
  case 16:return P3DS_FollowerSlotCfg();case 17:return P3DS_FollowerTalkCfg();case 18:return menuAudioCfg();case 19:return gcStereoCfg();case 20:return stereo2dCfg();case 21:return P3DS_WideHazeCfg();case 22:{int v=P3DS_FastTextCfg();return v<=1?0:v-1;}case 23:return P3DS_ReusableTMsCfg();case 24:return P3DS_CheatNoEncCfg();case 25:return P3DS_RepelPromptCfg();case 26:return sumIvCfg();}return 0;}
-static void menuSet(int i,int v){if(i>=27&&i<33)cheatV[i-27]=v;switch(i){case 0:fpsOn=v!=0;break;case 1:wideCfg=v;break;case 2:P3DS_SetScaleMode(v);break;case 3:P3DS_SetCstickMode(v);break;
+static void menuSet(int i,int v){if(i>=33){genGet(0);genV[i-33]=v;static const int kLog[4]={0,512,1024,2048};P3DS_CfgWrite(mItems[i].key,!strcmp(mItems[i].key,"log_max_kb")?kLog[v&3]:v);return;}if(i>=27&&i<33)cheatV[i-27]=v;switch(i){case 0:fpsOn=v!=0;break;case 1:wideCfg=v;break;case 2:P3DS_SetScaleMode(v);break;case 3:P3DS_SetCstickMode(v);break;
   case 4:P3DS_CtlZl=v;if(!v){extern volatile int P3DS_RunToggle;P3DS_RunToggle=0;}break;case 5:P3DS_CtlZr=v;break;case 6:P3DS_CtlCp=v;break;case 7:wideFxV=v;break;case 8:P3DS_SetLogLevel(v?2:1);break;
   case 9:P3DS_SetCamZoom(v-2);break;case 10:stereoStr=v;break;case 11:P3DS_SetGpuSwizzle(v);break;case 12:G3G_SetFastConv(v);break;case 13:splitCfg=v;break;case 14:P3DS_SetFollowerCfg(v);break;case 15:P3DS_SetGpuComposeCfg(v);break;
   case 16:folSlotV=v;break;case 17:folTalkV=v;break;case 18:menuAudioV=v;break;case 19:gcStereoV=v;break;case 20:stereo2dV=v;break;case 21:P3DS_SetWideHazeCfg(v);break;case 22:fastTextV=v?v+1:0;break;case 23:reuseTmV=v;break;case 24:noEncV=v;break;case 25:repPV=v;break;case 26:sumIvV=v;break;}
@@ -832,22 +836,25 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
    B / START / L+R+Y close. Drawn in the game's font + message box frame (port font fallback). The top screen shows
    the dimmed game picture with the title and the build/version string. */
 #ifndef P3DS_VERSION
-#define P3DS_VERSION "run73"
+#define P3DS_VERSION "run74"
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"
-struct ATab{const char*name;int n;int it[12];const char*nm[12];};
+struct ATab{const char*name;int n;int it[16];const char*nm[16];};
 static const ATab kTabs[]={
  {"Video",9,{0,1,2,7,9,10,20,21,13},{"FPS counter","Wide view","Scale","Wide view FX","Camera zoom","3D strength","Battle 3D depth","Wide haze","Split top (mono)"}},
  {"Game",12,{22,23,3,4,5,6,14,16,17,18,25,26},{"Fast text","Reusable TMs","C-stick","ZL run toggle","ZR = item (Y)","Circle pad D-pad","Following Pok\xe9mon","Follower slot","Follower talk","Menu music","Repel prompt","IV/EV on summary"}},
- {"Cheats",7,{24,27,28,29,30,31,32},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99"}},
+ {"Cheat",7,{24,27,28,29,30,31,32},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99"}},
+ {"Pal",9,{33,34,35,36,37,38,39,40,41},{"Area talk","Follower cry","Follower finds items","Ball pop-out","Emote bubbles","Friendship talk","Idle look-around","Follower gap","Behind player"}},
+ {"Wide",4,{42,43,44,45},{"Weather in strips","Edge fill","Wide menus","Mirror fill (old)"}},
+ {"Extra",7,{46,47,48,49,50,51,52},{"Visible wild Pok\xe9mon","Visible wild max","Only visible battle","Wild sprite test","HMs without learning","Save backups (3)","Log size limit"}},
  {"Menu",-1,{},{}},
  {"Map",-2,{},{}},
  /* run 67: the old Speed tab, hidden: only shown when SELECT is held while the settings app opens */
  {"Debug",5,{11,12,15,19,8},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail"}},
 };
 static void prettyLab(char*d,const char*s,int n){/* run 64: "WIDE VIEW FX" -> "Wide view FX" (acronyms kept) */
- static const char*const acr[]={"FPS","GPU","ZL","ZR","FX","3D","1X","2X","25X","5X","ROM","IV","EV","TM","HM","LED","UI","OK","Y","X","A","B","L","R"};
+ static const char*const acr[]={"FPS","GPU","ZL","ZR","FX","3D","1X","2X","25X","5X","ROM","IV","EV","TM","HM","LED","UI","OK","KB","MB","Y","X","A","B","L","R"};
  int o=0,first=1;for(int i=0;s[i]&&o<n-1;){if(!((s[i]>='A'&&s[i]<='Z')||(s[i]>='a'&&s[i]<='z')||(s[i]>='0'&&s[i]<='9'))){d[o++]=s[i++];continue;}
   int j=i;while((s[j]>='A'&&s[j]<='Z')||(s[j]>='a'&&s[j]<='z')||(s[j]>='0'&&s[j]<='9'))j++;char w[16];int L=j-i<15?j-i:15;memcpy(w,s+i,L);w[L]=0;
   bool k=false;for(auto a2:acr)if(!strcmp(w,a2))k=true;bool prevAlpha=i>0&&s[i-1]=='-';
