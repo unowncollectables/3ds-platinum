@@ -259,3 +259,4 @@ Run 76
   tod_tint=0           (1 = soft evening / night tint outdoors; follows cheat_time when set)
   bottom_vramgen=1     (Underground fix: bottom screen redraws when its VRAM is written; 0 = old reuse)
   Ball tab now also lists Dusk and Net Ball odds. Log adds [PERF3] (worst frame, bottom reuse) every ~10 s.
+  item_ping=0          (1 = soft Poketch dowsing blip when a hidden item comes within 2 tiles; read-only)

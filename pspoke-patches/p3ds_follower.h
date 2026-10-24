@@ -31,6 +31,9 @@
 #include "map_header.h"
 #include "field_overworld_state.h"
 #include "rtc.h"
+#include "script_manager.h"
+#include "heap.h"
+#include <stdlib.h>
 
 extern int P3DS_FollowerCfg(void);
 extern int P3DS_FollowerOpen(void);
@@ -297,6 +300,14 @@ static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
       if (mh >= 573 && mh <= 583 && P3DS_CfgInt("dw_cry", 0) && !FieldSystem_IsRunningTask(fieldSystem)) { if (++cT >= nextT) { cT = 0;
           nextT = 3600 + (unsigned)(svcGetSystemTick() % 3600u); Sound_PlayPokemonCryEx(POKECRY_NORMAL, 487, 0, 30, HEAP_ID_FIELD1, 1);
           PSPNativeMemLog("[DW] distant Giratina cry"); } } } P3DS_MapOutdoor = MapHeader_IsOutdoors(mh) != 0 || mh == 220 || mh == 221 || (mh >= 573 && mh <= 585); } } /* run 76: Spear Pillar + Distortion World count as outdoor */ /* run 73 wide_edgefill */
+    /* run 76 item_ping=1 (default 0): a soft Pokétch dowsing blip when a hidden item comes within 2 tiles (game's own
+       nearby-item scan, read-only; checked twice a second, only when no task runs). */
+    if (fieldSystem && fieldSystem->location && !FieldSystem_IsRunningTask(fieldSystem) && P3DS_CfgInt("item_ping", 0)) {
+        static unsigned ipT; static int ipNear;
+        if (++ipT % 30 == 0) { HiddenItemTilePosition *hi = FieldSystem_GetNearbyHiddenItems(fieldSystem, HEAP_ID_FIELD1); int best = 99;
+            if (hi) { for (int k = 0; k < 64 && hi[k].range != 0xff; k++) { int dx = abs((int)hi[k].screenTileX - 7), dz = abs((int)hi[k].screenTileZ - 7), d = dx > dz ? dx : dz; if (d < best) best = d; } Heap_Free(hi); }
+            if (best <= 2 && !ipNear) { Sound_PlayEffect(SEQ_SE_DP_POKETCH_009_sseq); PSPNativeMemLog("[ITEM] hidden item %d tile(s) away", best); }
+            ipNear = best <= 2; } }
     /* run 67 cheats (all default off, config.txt cheat_*): only values real Platinum accepts are written
        (money 999999 = the game's own cap, Rare Candy 99 of max 999, egg cycles 0 = an egg about to hatch). Checked
        every 30 frames, only when no field task (menu/script) runs. */
