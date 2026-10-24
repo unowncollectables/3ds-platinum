@@ -19,3 +19,8 @@ Licence notes for a private repo: GPL-3.0 obligations (source availability) appl
 others; keeping the repo private and not distributing builds is fine. If builds are ever shared, the full
 corresponding source (this repo + pspoke base) must be offered under GPL-3.0. The unlicensed decomp projects are
 the reason only diffs, not copies of their files, are stored here.
+
+## GabeSud0/pokeplatinum-3ds (GPL-3.0)
+https://github.com/GabeSud0/pokeplatinum-3ds - copyright its authors, GPL-3.0 (same license as this repo).
+- `platinum3ds/full/cia/platinum3ds.rsf`: adapted from `3ds_port/game/cia/pokeplatinum.rsf` (title/product code/unique ID changed).
+- `tools/check_ci_artifacts.py`: from `tools/check_ci_artifacts.py` (allowed list emptied); run by our pre-push audit.

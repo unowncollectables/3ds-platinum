@@ -47,9 +47,15 @@ clean:
 build/p3ds.specs:
 	@mkdir -p build; sed 's#-T 3dsx.ld%s#-T $(CURDIR)/build/platinum3ds.ld#' /opt/devkitpro/devkitARM/arm-none-eabi/lib/3dsx.specs > $@
 
-cia: platinum3ds_full.elf
-	../../tools/makerom -f cia -o platinum3ds_full.cia -elf platinum3ds_full.elf -rsf cia/game.rsf -icon cia/icon.icn -banner cia/banner.bnr -exefslogo -target t
-build/g3soft.o build/render3ds.o build/gpuscale.o build/g3gpu.o build/gpucomp.o: DEFS += -O3 -marm
+# run 79: HOME Menu version (same ELF, same sdmc:/3ds/platinum3ds/ files). rsf adapted from GabeSud0/pokeplatinum-3ds.
+BT ?= ../../tools/bt/linux-x86_64/bannertool
+MAKEROM ?= ../../tools/makerom
+cia: platinum3ds_full.cia
+platinum3ds_full.cia: platinum3ds_full.elf cia/platinum3ds.rsf
+	sh cia/make_art.sh build/cia
+	$(BT) makebanner -i build/cia/banner.png -a build/cia/banner.wav -o build/cia/banner.bnr
+	$(BT) makesmdh -s "Platinum 3DS" -l "Pokemon Platinum native 3DS port" -p "local build" -i build/cia/icon.png -o build/cia/icon.icn
+	$(MAKEROM) -f cia -o $@ -elf platinum3ds_full.elf -rsf cia/platinum3ds.rsf -icon build/cia/icon.icn -banner build/cia/banner.bnr -exefslogo -target t
 
 build/g3_shbin.h build/g3_shbin.s: $(PLAT)/shaders/g3.v.pica
 	@mkdir -p build; /opt/devkitpro/tools/bin/picasso -o build/g3.shbin $< && cd build && /opt/devkitpro/tools/bin/bin2s -H g3_shbin.h g3.shbin > g3_shbin.s
