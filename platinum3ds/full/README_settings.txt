@@ -248,3 +248,14 @@ cheat_walk_walls=0   (1 = hold R while walking to pass through walls/objects; wa
 cheat_time=0         (0 off, 1 morning, 2 day, 3 evening, 4 night: overrides time-of-day only; the save clock is untouched)
 catch_overlay=0      (1 = in a wild battle, press Y at the command menu for the Ball tab: species, nature, ability, IVs, Pokerus, HP/status, catch odds)
 battle_anim_speed=0  (1 = skip plain move animations; Fly/Dig/Dive/Bounce/Shadow Force/Transform/Substitute/Minimize still play)
+Run 76
+  battle_anim_speed=2  (also makes the HP bar drain 3x faster; damage and end values unchanged)
+  display_capture=1    (screen capture used by the Spear Pillar / Distortion World transition; 0 = old behaviour)
+  dw_depth=2           (Distortion World 3D depth: 0 off, 1 subtle, 2 moderate, 3 strong; eases in over ~0.75 s)
+  dw_debris=0          (1 = drifting debris and dust over the Distortion World, with depth in 3D)
+  dw_unease=0          (1 = occasional uneasy line from your Pokemon in the Distortion World; text only)
+  dw_cry=0             (1 = a distant Giratina cry now and then in the Distortion World)
+  hunt_counter=0       (1 = counts wild encounters per species in hunt.txt next to config.txt; shown on the Ball tab)
+  tod_tint=0           (1 = soft evening / night tint outdoors; follows cheat_time when set)
+  bottom_vramgen=1     (Underground fix: bottom screen redraws when its VRAM is written; 0 = old reuse)
+  Ball tab now also lists Dusk and Net Ball odds. Log adds [PERF3] (worst frame, bottom reuse) every ~10 s.
