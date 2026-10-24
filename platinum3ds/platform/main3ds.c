@@ -213,6 +213,7 @@ int P3DS_TouchRead(int *x, int *y) {
     } else { hidTouchRead(&t); }
     if (P3DS_ScaleMode() == 0) { dx = (int)t.px - 32; dy = (int)t.py - 24; } else { dx = (int)t.px * 256 / 320; dy = (int)t.py * 192 / 240; }
     if (dx < 0 || dx > 255 || dy < 0 || dy > 191) return 0;
+    { extern int P3DS_StripOn; if (P3DS_StripOn && dy >= 176 && dx >= 8 && dx < 208) { touchPrev = 1; return 0; } } /* run 78 bottom strip owns these taps */
     *x = dx; *y = dy; touchPrev = 1; return 1;
 }
 /* Watchdog: if no game frame is presented for ~3 s after the game started, log the breadcrumb and show the
