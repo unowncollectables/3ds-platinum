@@ -1232,3 +1232,6 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Pre-push audit runs the borrowed tools/check_ci_artifacts.py plus a game-data magic scan (NARC/SDAT/BMD0/BTX0/RGCN/RLCN).
 - User save/log/config of 2026-10-24 copied to test_saves/latest_1024 (box only).
 - Skipped: porting their bottom-screen icon menu (port_lowermenu.c), over budget.
+
+## Run 80
+- text_hold_b / text_auto (Extra tab, default off; render_text.c): B held = instant print + advances a finished text box; auto = advance after 45 game frames (~1.5 s). Only the text-box wait (TextPrinter_Continue); yes/no and menus untouched. Boot checked; behaviour untested.

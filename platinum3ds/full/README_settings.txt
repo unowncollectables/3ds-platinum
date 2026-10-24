@@ -268,3 +268,6 @@ Run 78
   bottom_strip=0       (1 = overworld only: Menu / Wide / Ball / Set buttons in the bottom border below the Poketch; taps there never reach the Poketch. Wide toggles wide view for this session only)
 Run 79
   (no new keys) The HOME Menu .cia (make cia) uses the same sdmc:/3ds/platinum3ds/ config.txt, platinum.sav and log.txt as the .3dsx.
+Run 80
+  text_hold_b=0        (1 = holding B prints text instantly and advances finished text boxes; never picks yes/no or menu choices)
+  text_auto=0          (1 = text boxes advance by themselves after ~1.5 s; choices still wait for you)
