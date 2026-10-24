@@ -264,3 +264,5 @@ Run 77
   touch_menu=0         (1 = touch and hold the bottom-left corner of the bottom screen for 0.3 s in the overworld: quick menu
                         with Pokemon / Bag / Pokedex / Trainer card / Save / Options, Map tab next to it; uses the real Start menu)
   dw_roll=0            (1 = Distortion World: ~400 ms damped tilt plus a small 3D depth pulse when you move to a new gravity plane)
+Run 78
+  bottom_strip=0       (1 = overworld only: Menu / Wide / Ball / Set buttons in the bottom border below the Poketch; taps there never reach the Poketch. Wide toggles wide view for this session only)

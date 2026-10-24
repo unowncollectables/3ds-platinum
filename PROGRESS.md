@@ -1223,3 +1223,6 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   menu, save-safe; Map tab one tap right). Boot + open checked in the emulator.
 - dw_roll (default 0, Wide tab "Distortion camera roll"): on a Distortion World map change, damped row-shear tilt
   (exp(-t/140ms)*cos, 400 ms, direction by map order) on both eyes plus up to +30% stereo depth. Untested in the emulator (no DW save).
+
+## Run 78
+- bottom_strip (default 0, Extra tab "Bottom button strip"): overworld strip of 4 game-font buttons in the bottom border (DS y 177..190, x 8..207): Menu -> Menu tab, Wide -> runtime wide view toggle (like L+R+X, not saved), Ball -> Ball tab, Set -> settings app. main3ds touch read drops taps in that band while the strip is on. Boot + Menu tap checked in the emulator.
