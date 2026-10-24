@@ -24,3 +24,4 @@ the reason only diffs, not copies of their files, are stored here.
 https://github.com/GabeSud0/pokeplatinum-3ds - copyright its authors, GPL-3.0 (same license as this repo).
 - `platinum3ds/full/cia/platinum3ds.rsf`: adapted from `3ds_port/game/cia/pokeplatinum.rsf` (title/product code/unique ID changed).
 - `tools/check_ci_artifacts.py`: from `tools/check_ci_artifacts.py` (allowed list emptied); run by our pre-push audit.
+- `platinum3ds/platform/speedcheck.c`: startup speed-up check (job design and loops follow `3ds_port/game/app/main_3ds.c` EnableSpeedup/TimeCore/CheckCoreSpeed; log and config glue rewritten).

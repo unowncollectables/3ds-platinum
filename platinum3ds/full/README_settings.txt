@@ -153,6 +153,10 @@ LOGGING
                     Default 1. (Menu: GPU COMPOSE 3D)  [run 61]
   menu_audio=1      music and sounds keep playing while the L+R+Y settings menu is open (the game itself stays
                     paused). 0 = frozen like before. Default 1. (Menu: MENU MUSIC)  [run 61]
+  speedcheck=1      at boot (New 3DS only), log.txt gets [perf] lines saying whether the 804 MHz / L2 speed-up request was
+                    accepted and how long the same small jobs take on core 0, core 2 and core 1 (integer job: ~35 ms at
+                    804 MHz, ~105 ms at 268 MHz), plus a verdict line. Costs ~0.3 s at boot at 804 MHz (~1 s at 268).
+                    Core 1 shows -1 (no thread yet: its share is only requested later). 0 = skip. Default 1.  [run 81]
   log_level=1       1 = short log.txt; 2 = detailed diagnostics (writes much more to the SD card and can cost
                     some speed - only for bug hunting). Default 1.
 

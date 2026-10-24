@@ -265,6 +265,7 @@ int main(void) {
           rename("sdmc:/3ds/platinum3ds/platinum.sav.bak1", "sdmc:/3ds/platinum3ds/platinum.sav.bak2");
           FILE *o = fopen("sdmc:/3ds/platinum3ds/platinum.sav.bak1", "wb"); size_t w = o ? fwrite(sb, 1, n, o) : 0; if (o) fclose(o);
           PSPNativeMemLog("[SAVE] backup platinum.sav -> .bak1 (%s, 3 kept)", w == n ? "ok" : "FAILED"); } } }
+    { extern void P3DS_SpeedCheck(void); P3DS_SpeedCheck(); } /* run 81: log whether 804 MHz/L2 is really on + per-core speed (speedcheck=0 skips); adapted from GabeSud0/pokeplatinum-3ds */
     STEP("Save (platinum.sav)", PSPNative_OpenBackup("sdmc:/3ds/platinum3ds/platinum.sav"), "platinum.sav invalid: must be exactly 512 KiB");
     { extern int P3DS_GameFontLoad(void); P3DS_GameFontLoad(); } /* run 64: game font from the ROM for port UI */
     PSPNativeStackProbeInit(); STEP("Stack probe", 1, "");

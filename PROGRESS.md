@@ -1235,3 +1235,9 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 
 ## Run 80
 - text_hold_b / text_auto (Extra tab, default off; render_text.c): B held = instant print + advances a finished text box; auto = advance after 45 game frames (~1.5 s). Only the text-box wait (TextPrinter_Continue); yes/no and menus untouched. Boot checked; behaviour untested.
+
+## Run 81
+- speedcheck=1 (default; platform/speedcheck.c, called from main3ds.c after the save backup): at boot on a New 3DS, logs the result of the ptm:sysm 804 MHz + L2 request and times three small jobs (integer / 64-bit multiply / double divide) on core 0, 2 and 1, then a verdict line ("core 0 runs at 804 MHz" / "~268 MHz"). Until now "speed-up on" was only the call being made (run 29), never measured. Idea and job loops adapted from GabeSud0/pokeplatinum-3ds main_3ds.c (credited in THIRD_PARTY.md).
+- Core 1 reads -1: a thread can only be created there after APT_SetAppCpuTimeLimit, which the renderer requests later. Not changed on purpose (the check only observes).
+- NOT built or run: no devkitARM on the box that wrote it; host syntax check only with stub headers. Look for the [perf] lines in the next hardware log.
+
