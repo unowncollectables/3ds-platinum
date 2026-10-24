@@ -1226,3 +1226,9 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 
 ## Run 78
 - bottom_strip (default 0, Extra tab "Bottom button strip"): overworld strip of 4 game-font buttons in the bottom border (DS y 177..190, x 8..207): Menu -> Menu tab, Wide -> runtime wide view toggle (like L+R+X, not saved), Ball -> Ball tab, Set -> settings app. main3ds touch read drops taps in that band while the strip is on. Boot + Menu tap checked in the emulator.
+
+## Run 79
+- `make cia` (platinum3ds/full): same ELF as the 3dsx, makerom + bannertool; rsf adapted from GabeSud0/pokeplatinum-3ds (124MB SystemModeExt, 804 MHz, L2 cache, title ID 000400000F7D3E00). Placeholder icon/banner/silent tune generated at build time (ImageMagick), nothing from the ROM. Same sdmc:/3ds/platinum3ds/ save/config/log as the 3dsx. CIA boot not tested in the emulator.
+- Pre-push audit runs the borrowed tools/check_ci_artifacts.py plus a game-data magic scan (NARC/SDAT/BMD0/BTX0/RGCN/RLCN).
+- User save/log/config of 2026-10-24 copied to test_saves/latest_1024 (box only).
+- Skipped: porting their bottom-screen icon menu (port_lowermenu.c), over budget.
