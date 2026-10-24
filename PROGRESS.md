@@ -1216,3 +1216,10 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - battle_anim_speed=2: also 3x HP bar drain. Ball tab: Dusk and Net odds; hunt_counter (hunt.txt, never the save).
 - tod_tint, item_ping (Poketch dowsing blip within 2 tiles), [PERF3] log line (worst frame, bottom reuse, map).
 - Skipped: fast-forward key (user said skip), Poketch touch app, fog slowdown (needs a hardware log), camera roll.
+
+## Run 77
+- touch_menu (default 0, Extra tab "Touch quick menu"): hold the bottom-left corner 0.3 s in the field -> settings app
+  opened on its Menu tab (game font/boxes; Pokemon, Bag, Pokedex, Trainer card, Save, Options through the real Start
+  menu, save-safe; Map tab one tap right). Boot + open checked in the emulator.
+- dw_roll (default 0, Wide tab "Distortion camera roll"): on a Distortion World map change, damped row-shear tilt
+  (exp(-t/140ms)*cos, 400 ms, direction by map order) on both eyes plus up to +30% stereo depth. Untested in the emulator (no DW save).

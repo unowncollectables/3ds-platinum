@@ -260,3 +260,7 @@ Run 76
   bottom_vramgen=1     (Underground fix: bottom screen redraws when its VRAM is written; 0 = old reuse)
   Ball tab now also lists Dusk and Net Ball odds. Log adds [PERF3] (worst frame, bottom reuse) every ~10 s.
   item_ping=0          (1 = soft Poketch dowsing blip when a hidden item comes within 2 tiles; read-only)
+Run 77
+  touch_menu=0         (1 = touch and hold the bottom-left corner of the bottom screen for 0.3 s in the overworld: quick menu
+                        with Pokemon / Bag / Pokedex / Trainer card / Save / Options, Map tab next to it; uses the real Start menu)
+  dw_roll=0            (1 = Distortion World: ~400 ms damped tilt plus a small 3D depth pulse when you move to a new gravity plane)

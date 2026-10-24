@@ -727,9 +727,18 @@ static int gcStereoV=-1;static int gcStereoCfg(){if(gcStereoV<0){gcStereoV=P3DS_
 /* run 76 dw_depth (Video tab, default 2 = moderate): in the Distortion World the 3D separation ramps up over ~1.5 s
    on entry (and back on exit): 0 off, 1 = x1.25, 2 = x1.5, 3 = x2. Only the stereo strength changes. */
 extern "C" int P3DS_CurMap,P3DS_InField;static inline bool p3dsInDW(){return P3DS_InField&&P3DS_CurMap>=573&&P3DS_CurMap<=583;}
+/* run 77 dw_roll=1 (default 0): on a Distortion World map change (new gravity plane) a ~400 ms damped tilt (row shear of
+   the DS picture, both eyes) plus a small depth pulse. Off = no work at all. */
+static u64 dwRollT;static int dwRollMap=-1,dwRollDir=1;
+static float dwRollEnv(){if(!P3DS_CfgInt("dw_roll",0))return 0.0f;const int m=(P3DS_InField&&P3DS_CurMap>=573&&P3DS_CurMap<=583)?P3DS_CurMap:-1;
+ if(m!=dwRollMap){if(m>=0&&dwRollMap>=0){dwRollT=svcGetSystemTick();dwRollDir=m>dwRollMap?1:-1;PSPNativeMemLog("[DW] camera roll %d -> %d",dwRollMap,m);}dwRollMap=m;}
+ if(!dwRollT)return 0.0f;const float ms=(float)((svcGetSystemTick()-dwRollT)/CPU_TICKS_PER_MSEC);if(ms>400.0f){dwRollT=0;return 0.0f;}
+ return expf(-ms/140.0f)*cosf(ms*(6.2831853f/400.0f));}
+static void drawDwRoll(u32*img){const float e=dwRollEnv();if(e>-0.01f&&e<0.01f)return;const float k=0.07f*e*dwRollDir;u32 row[256];
+ for(int y=0;y<192;y++){const int sh=(int)(k*(y-96));if(!sh)continue;u32*r=img+y*256;memcpy(row,r,sizeof row);for(int x=0;x<256;x++){int sx=x-sh;sx=sx<0?0:sx>255?255:sx;r[x]=row[sx];}}}
 static float P3DS_DwDepth(){static float f=1.0f;static u32 lastF=~0u;if(lastF==frames)return f;lastF=frames;
  static const float mul[4]={1.0f,1.25f,1.5f,2.0f};int c=P3DS_CfgInt("dw_depth",2);if(c<0||c>3)c=2;const float t=p3dsInDW()?mul[c]:1.0f;
- const float st=(mul[3]-1.0f)/45.0f;if(f<t)f=f+st>t?t:f+st;else if(f>t)f=f-st<t?t:f-st;return f;}
+ const float st=(mul[3]-1.0f)/45.0f;if(f<t)f=f+st>t?t:f+st;else if(f>t)f=f-st<t?t:f-st;{const float e=dwRollEnv();if(e>0.0f)return f*(1.0f+0.3f*e);}return f;}
 static int stereoShiftF(int mode){ if(!mode)return 0; if(stereoStr<0){stereoStr=P3DS_CfgInt("stereo_strength",0);if(stereoStr<0||stereoStr>2)stereoStr=0;PSPNativeMemLog("[STEREO] stereo_strength=%d",stereoStr);}
  float s=p3dsSlider()*P3DS_DwDepth(); return (int)(s*6.0f*(stereoStr==2?2.0f:stereoStr==1?1.5f:1.0f)+0.5f); }
 extern "C" u32 *P3DS_G3RightEye(void);
@@ -815,12 +824,12 @@ static const MItem mItems[]={
  {"INFINITE MONEY","cheat_money",2,{"OFF","ON"}},{"ALWAYS CATCH","cheat_catch",2,{"OFF","ON"}},{"SHINY WILD","cheat_shiny",2,{"OFF","ON"}},
  {"FAST EGGS","cheat_eggs",2,{"OFF","ON"}},{"EXP BOOST","cheat_exp",3,{"OFF","2X","3X"}},{"RARE CANDY 99","cheat_candy",2,{"OFF","ON"}},
  /* run 74: 33.. generic config rows (value = label index; log_max_kb mapped). Most apply after a restart. */
- {"FOLLOWER_AREA_TALK","follower_area_talk",2,{"OFF","ON"}},{"FOLLOWER_CRY","follower_cry",2,{"OFF","ON"}},{"FOLLOWER_ITEMS","follower_items",2,{"OFF","ON"}},{"FOLLOWER_BALLPOP","follower_ballpop",2,{"OFF","ON"}},{"FOLLOWER_EMOTES","follower_emotes",2,{"OFF","ON"}},{"FOLLOWER_FRIEND_TALK","follower_friend_talk",2,{"OFF","ON"}},{"FOLLOWER_IDLE","follower_idle",2,{"OFF","ON"}},{"FOLLOWER_GAP","follower_gap",2,{"OFF","ON"}},{"FOLLOWER_BEHIND","follower_behind",2,{"OFF","ON"}},{"WIDE_WEATHER","wide_weather",2,{"OFF","ON"}},{"WIDE_EDGEFILL","wide_edgefill",2,{"OFF","ON"}},{"WIDE_MENUS","wide_menus",2,{"OFF","ON"}},{"WIDE_FILL","wide_fill",2,{"OFF","ON"}},{"WILD_VIS","wild_vis",2,{"OFF","ON"}},{"WILD_VIS_MAX","wild_vis_max",5,{"0","1","2","3","4"}},{"WILD_VIS_REPLACE","wild_vis_replace",2,{"OFF","ON"}},{"WILD_VIS_TEST","wild_vis_test",2,{"OFF","ON"}},{"HM_FREE","hm_free",2,{"OFF","ON"}},{"SAVE_BACKUP","save_backup",2,{"OFF","ON"}},{"LOG_MAX_KB","log_max_kb",4,{"OFF","512 KB","1 MB","2 MB"}},{"CHEAT_PP","cheat_pp",2,{"OFF","ON"}},{"CHEAT_SPEED","cheat_speed",2,{"OFF","ON"}},{"CHEAT_WALK_WALLS","cheat_walk_walls",2,{"OFF","ON"}},{"CHEAT_TIME","cheat_time",5,{"OFF","MORNING","DAY","EVENING","NIGHT"}},{"CATCH_OVERLAY","catch_overlay",2,{"OFF","ON"}},{"BATTLE_ANIM_SPEED","battle_anim_speed",3,{"OFF","SKIP MOVES","SKIP + FAST HP"}},{"DW_DEPTH","dw_depth",4,{"OFF","SUBTLE","MODERATE","STRONG"}},{"DW_DEBRIS","dw_debris",2,{"OFF","ON"}},{"DW_UNEASE","dw_unease",2,{"OFF","ON"}},{"DW_CRY","dw_cry",2,{"OFF","ON"}},{"HUNT_COUNTER","hunt_counter",2,{"OFF","ON"}},{"TOD_TINT","tod_tint",2,{"OFF","ON"}},{"ITEM_PING","item_ping",2,{"OFF","ON"}},
+ {"FOLLOWER_AREA_TALK","follower_area_talk",2,{"OFF","ON"}},{"FOLLOWER_CRY","follower_cry",2,{"OFF","ON"}},{"FOLLOWER_ITEMS","follower_items",2,{"OFF","ON"}},{"FOLLOWER_BALLPOP","follower_ballpop",2,{"OFF","ON"}},{"FOLLOWER_EMOTES","follower_emotes",2,{"OFF","ON"}},{"FOLLOWER_FRIEND_TALK","follower_friend_talk",2,{"OFF","ON"}},{"FOLLOWER_IDLE","follower_idle",2,{"OFF","ON"}},{"FOLLOWER_GAP","follower_gap",2,{"OFF","ON"}},{"FOLLOWER_BEHIND","follower_behind",2,{"OFF","ON"}},{"WIDE_WEATHER","wide_weather",2,{"OFF","ON"}},{"WIDE_EDGEFILL","wide_edgefill",2,{"OFF","ON"}},{"WIDE_MENUS","wide_menus",2,{"OFF","ON"}},{"WIDE_FILL","wide_fill",2,{"OFF","ON"}},{"WILD_VIS","wild_vis",2,{"OFF","ON"}},{"WILD_VIS_MAX","wild_vis_max",5,{"0","1","2","3","4"}},{"WILD_VIS_REPLACE","wild_vis_replace",2,{"OFF","ON"}},{"WILD_VIS_TEST","wild_vis_test",2,{"OFF","ON"}},{"HM_FREE","hm_free",2,{"OFF","ON"}},{"SAVE_BACKUP","save_backup",2,{"OFF","ON"}},{"LOG_MAX_KB","log_max_kb",4,{"OFF","512 KB","1 MB","2 MB"}},{"CHEAT_PP","cheat_pp",2,{"OFF","ON"}},{"CHEAT_SPEED","cheat_speed",2,{"OFF","ON"}},{"CHEAT_WALK_WALLS","cheat_walk_walls",2,{"OFF","ON"}},{"CHEAT_TIME","cheat_time",5,{"OFF","MORNING","DAY","EVENING","NIGHT"}},{"CATCH_OVERLAY","catch_overlay",2,{"OFF","ON"}},{"BATTLE_ANIM_SPEED","battle_anim_speed",3,{"OFF","SKIP MOVES","SKIP + FAST HP"}},{"DW_DEPTH","dw_depth",4,{"OFF","SUBTLE","MODERATE","STRONG"}},{"DW_DEBRIS","dw_debris",2,{"OFF","ON"}},{"DW_UNEASE","dw_unease",2,{"OFF","ON"}},{"DW_CRY","dw_cry",2,{"OFF","ON"}},{"HUNT_COUNTER","hunt_counter",2,{"OFF","ON"}},{"TOD_TINT","tod_tint",2,{"OFF","ON"}},{"ITEM_PING","item_ping",2,{"OFF","ON"}},{"TOUCH_MENU","touch_menu",2,{"OFF","ON"}},{"DW_ROLL","dw_roll",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
 static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
@@ -881,7 +890,7 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
    B / START / L+R+Y close. Drawn in the game's font + message box frame (port font fallback). The top screen shows
    the dimmed game picture with the title and the build/version string. */
 #ifndef P3DS_VERSION
-#define P3DS_VERSION "run76"
+#define P3DS_VERSION "run77"
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"
@@ -893,8 +902,8 @@ static const ATab kTabs[]={
  {"Game",12,{22,23,3,4,5,6,14,16,17,18,25,26},{"Fast text","Reusable TMs","C-stick","ZL run toggle","ZR = item (Y)","Circle pad D-pad","Following Pok\xe9mon","Follower slot","Follower talk","Menu music","Repel prompt","IV/EV on summary"}},
  {"Cheat",11,{24,27,28,29,30,31,32,53,54,55,56},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99","Infinite PP","Fast running (B)","Walls: hold R","Time of day"}},
  {"Pal",9,{33,34,35,36,37,38,39,40,41},{"Area talk","Follower cry","Follower finds items","Ball pop-out","Emote bubbles","Friendship talk","Idle look-around","Follower gap","Behind player"}},
- {"Wide",8,{42,43,44,45,59,60,61,62},{"Weather in strips","Edge fill","Wide menus","Mirror fill (old)","Distortion 3D depth","Distortion debris","Uneasy Pok\xe9mon","Distant cry"}},
- {"Extra",12,{46,47,48,49,50,51,52,57,58,63,64,65},{"Visible wild Pok\xe9mon","Visible wild max","Only visible battle","Wild sprite test","HMs without learning","Save backups (3)","Log size limit","Catch info (Y)","Battle anim speed","Encounter counter","Time-of-day tint","Hidden item ping"}},
+ {"Wide",9,{42,43,44,45,59,60,61,62,67},{"Weather in strips","Edge fill","Wide menus","Mirror fill (old)","Distortion 3D depth","Distortion debris","Uneasy Pok\xe9mon","Distant cry","Distortion camera roll"}},
+ {"Extra",13,{46,47,48,49,50,51,52,57,58,63,64,65,66},{"Visible wild Pok\xe9mon","Visible wild max","Only visible battle","Wild sprite test","HMs without learning","Save backups (3)","Log size limit","Catch info (Y)","Battle anim speed","Encounter counter","Time-of-day tint","Hidden item ping","Touch quick menu"}},
  {"Ball",-3,{},{}},
  {"Menu",-1,{},{}},
  {"Map",-2,{},{}},
@@ -1155,7 +1164,7 @@ static int Present(bool){
  {extern int P3DS_HazeOn;P3DS_HazeOn=0;if(P3DS_WideHazeCfg()&&!wideFxCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000))wideHaze(display[0],GPU3D::NativeFrame);}
  P3DS_WideFxOn=0;if(wideFxCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000)){u64 tw=svcGetSystemTick();wideFx(display[0],GPU3D::NativeFrame,G3G_StripValid>=2?2:1);P3DS_WideFxOn=G3G_StripValid>=2?2:1;
   {static u64 acc;static unsigned n;acc+=svcGetSystemTick()-tw;if(++n==600){PSPNativeMemLog("[WIDE] wide_fx avg %u us/frame",(unsigned)(acc/600/268));acc=0;n=0;}}}
- {u64 nowT=svcGetSystemTick();u32*tt=(u32*)(stereo?eyeL:top);drawSaveBox(tt,nowT);if(stereo)drawSaveBox((u32*)eyeR,nowT);drawToast(tt,nowT);if(stereo)drawToast((u32*)eyeR,nowT);drawTodTint(tt);if(stereo)drawTodTint((u32*)eyeR);drawFolTalk(tt,nowT);drawFolEmote(tt,nowT);drawDwDebris(tt,0);if(stereo)drawDwDebris((u32*)eyeR,1);if(stereo)drawFolEmote((u32*)eyeR,nowT);drawSumIV(tt);drawPrompt(tt);if(stereo)drawPrompt((u32*)eyeR);if(stereo&&sumShow)drawSumIV((u32*)eyeR);if(stereo)drawFolTalk((u32*)eyeR,nowT);}
+ {u64 nowT=svcGetSystemTick();u32*tt=(u32*)(stereo?eyeL:top);drawSaveBox(tt,nowT);if(stereo)drawSaveBox((u32*)eyeR,nowT);drawToast(tt,nowT);if(stereo)drawToast((u32*)eyeR,nowT);drawTodTint(tt);if(stereo)drawTodTint((u32*)eyeR);drawDwRoll(tt);if(stereo)drawDwRoll((u32*)eyeR);drawFolTalk(tt,nowT);drawFolEmote(tt,nowT);drawDwDebris(tt,0);if(stereo)drawDwDebris((u32*)eyeR,1);if(stereo)drawFolEmote((u32*)eyeR,nowT);drawSumIV(tt);drawPrompt(tt);if(stereo)drawPrompt((u32*)eyeR);if(stereo&&sumShow)drawSumIV((u32*)eyeR);if(stereo)drawFolTalk((u32*)eyeR,nowT);}
  {static int fi;if(!fi){fi=1;fpsOn=P3DS_CfgInt("fps_counter",0)!=0;/* run 64: default 0 (clean launch) */}}/* run 55: fps_counter (menu-saved) */
  if(fpsOn){char b[24];snprintf(b,sizeof b,"%u %u.%u",fpsShown,msShown/10,msShown%10);u32*tt=(u32*)(stereo?eyeL:top);drawText(tt,2,2,b);if(stereo)drawText((u32*)eyeR,2,2,b);}
  {u64 nowS=svcGetSystemTick();if(splashActive(nowS)){drawSplash((u32*)(stereo?eyeL:top),nowS);if(stereo)drawSplash((u32*)eyeR,nowS);}}
@@ -1215,11 +1224,12 @@ static int Present(bool){
  bool cornerOpen=false;
  if(stCfg&&P3DS_InField&&appCfg()&&menuCfg()&&!P3DS_ConsoleOnBottom()){static u64 cT;static int cZone;static bool cPrev;u32 kh=hidKeysHeld();const bool tNow=(kh&KEY_TOUCH)!=0,tDown=tNow&&!cPrev;cPrev=tNow;
   if(tNow){touchPosition tp;hidTouchRead(&tp);int x,y,z=0;
-   if(touchToDS(tp.px,tp.py,&x,&y)){if(x<16&&y<16)z=1;else if(x>=224&&y<32)z=2;else if(x>=224&&y>=161)z=3;}
-   else{if(tp.px<160&&tp.py<120)z=1;else if(tp.px>=160&&tp.py<120)z=2;else if(tp.px>=160)z=3;} /* 1:1 mode: the black border around the DS screen */
+   if(touchToDS(tp.px,tp.py,&x,&y)){if(x<16&&y<16)z=1;else if(x>=224&&y<32)z=2;else if(x>=224&&y>=161)z=3;else if(x<16&&y>=161&&P3DS_CfgInt("touch_menu",0))z=4;}
+   else{if(tp.px<160&&tp.py<120)z=1;else if(tp.px>=160&&tp.py<120)z=2;else if(tp.px>=160)z=3;else if(P3DS_CfgInt("touch_menu",0))z=4;} /* 1:1 mode: the black border around the DS screen */
    if(tDown){cZone=z;cT=svcGetSystemTick();}else if(z!=cZone)cZone=0;
    if(cZone&&svcGetSystemTick()-cT>CPU_TICKS_PER_MSEC*300){const int zz=cZone;cZone=0;
     if(zz==1){cornerOpen=true;PSPNativeMemLog("[APP] opened by corner touch");}
+    else if(zz==4){cornerOpen=true;for(int t=0;t<(int)(sizeof kTabs/sizeof kTabs[0]);t++)if(kTabs[t].n==-1)appStartTab=t;PSPNativeMemLog("[APP] touch_menu: quick menu opened");} /* run 77 touch_menu */
     else{extern volatile int P3DS_StartReq;P3DS_StartReq=zz==2?1:2;PSPNativeMemLog("[APP] corner touch: open %s",zz==2?"Pokemon":"Bag");}}}
   else cZone=0;}
  {u32 kd=hidKeysDown(),kh=hidKeysHeld();bool catchY=(kd&KEY_Y)&&!(kh&(KEY_L|KEY_R|KEY_X))&&P3DS_CatchInfo[0]&&!P3DS_InField&&appCfg()&&P3DS_CfgInt("catch_overlay",0);if(catchY){for(int t=0;t<(int)(sizeof kTabs/sizeof kTabs[0]);t++)if(kTabs[t].n==-3)appStartTab=t;PSPNativeMemLog("[CATCH] Y: catch info opened");}
