@@ -1202,3 +1202,17 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Tested: settings smoke (Cheat pages, Ball tab "Only in wild battles."), 30 fps, save unchanged. Not tested: in-battle Y overlay, the anim skip, walk-walls and speed (wild-battle setup failed in the emulator).
 - Left: Underground bottom-screen fix, fast HP drain (battle_anim_speed=2), Dusk/Net ball odds.
 - SHA1 9977c2205c556fc747e05d3767f35aafb8ab5fbc
+
+## Run 76
+- Spear Pillar black screen (Dialga/Palkia appearance): the game's motion blur (ov6) shows VRAM C in "VRAM display" mode
+  and fills it by display capture (2D+3D blended with the previous capture). Capture was ignored, so the screen stayed black.
+  Now CaptureCnt (0x4000064) is passed to the melonDS soft renderer's own DoCapture (blend A/B, all sizes), the right-eye
+  copy never captures, and the enable bit is cleared after the frame. display_capture=0 = old, 2 = run-76a minimal copy.
+  Reproduced in the emulator from test_saves/coronet_1023 (Mars/Jupiter battle -> Cyrus -> Palkia line -> black).
+- Distortion World: dw_depth (default 2, eased stereo multiplier), dw_debris, dw_unease, dw_cry (off by default).
+  Spear Pillar / Distortion World count as outdoor for wide edge fill. Emulator shot of Spear Pillar shows filled strips.
+- Underground bottom screen: bottom reuse is dropped whenever a tracked VRAM page in banks C/D/H/I gets a newer
+  generation (bottom_vramgen=1, logs "[2D] bottom changed by VRAM page N"). Not reproduced in the emulator (no save there).
+- battle_anim_speed=2: also 3x HP bar drain. Ball tab: Dusk and Net odds; hunt_counter (hunt.txt, never the save).
+- tod_tint, item_ping (Poketch dowsing blip within 2 tiles), [PERF3] log line (worst frame, bottom reuse, map).
+- Skipped: fast-forward key (user said skip), Poketch touch app, fog slowdown (needs a hardware log), camera roll.

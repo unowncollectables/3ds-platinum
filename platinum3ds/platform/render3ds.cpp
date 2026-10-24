@@ -1046,6 +1046,9 @@ static int Present(bool){
  u32 hash0=stateHash();
  if(!earlyB){mapMemory();engineB.Enabled=(power&512)!=0;bindRegisters(engineB,0x1000);} /* early_b: already mapped; the worker may be reading it */
  engineA.Enabled=(power&2)!=0;bindRegisters(engineA,0);
+ /* run 76 display capture through the renderer's own DoCapture (melonDS): source A = 2D+3D composite or 3D, source B =
+    VRAM, blend A/B. Motion blur at Spear Pillar (Dialga/Palkia) shows VRAM C fed by capture; ignored it was black. */
+ {const u32 cc=reg32(0x64);const int cm=P3DS_CfgInt("display_capture",1);engineA.CaptureCnt=cm==1?cc:0;engineA.CaptureLatch=cm==1&&(cc&0x80000000u)&&engineA.Enabled;}
  /* per-vertex stereo (g3soft rendered both eyes) if it was enabled at frame start; else flat-layer fallback */
  {static unsigned diagN;if(++diagN%120==0){unsigned n=0;for(unsigned i=0;i<256*192;i++)if(GPU3D::NativeFrame[i]>>24)n++;
    printf("[3DLAYER] dispcntA %08x powcnt %04x 3D px alpha>0 %u bg0cnt %04x blend %04x/%04x\n",reg32(0),power,n,reg16(8),reg16(0x50),reg16(0x52));}}
@@ -1058,7 +1061,7 @@ static int Present(bool){
  const int gcMode0=P3DS_GpuComposeCfg();
  const bool gcSt=gcMode0==2&&stereo&&rightEye&&P3DS_InField&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
  bool rightPar=async&&par3d&&stereo&&rightEye&&!gcSt;
- if(rightPar)memcpy((void*)&engineA2,(const void*)&engineA,sizeof engineA);
+ if(rightPar){memcpy((void*)&engineA2,(const void*)&engineA,sizeof engineA);engineA2.CaptureCnt=0;engineA2.CaptureLatch=false;}
  /* run 55 stereo_2d=1 (default): outside the overworld (battles, menus, title) the right eye's 2D background layers
     get depth by BG priority: priority 3 (back) = the far-3D disparity (2 x shift), priority 2 = 1.5 x, priorities 0-1
     (text boxes, menus, HUD) and sprites stay at the screen plane. Text-mode BGs only (affine/bitmap untouched).
@@ -1095,8 +1098,9 @@ static int Present(bool){
      bank and shows that bank; unimplemented it was black. Minimal version: source A (engine A output, 8-bit -> RGB555); display_capture=0 restores the old ignore,
      no blending, written into the LCDC bank; the enable bit is cleared like on hardware. */
   volatile u32*capR=(volatile u32*)(PSPNative_GfxRegisters+0x64);const u32 cap=*capR;
-  static int capCfg=-1;if(capCfg<0)capCfg=P3DS_CfgInt("display_capture",1);
-  if(capCfg&&(cap&0x80000000u)&&display[0]){static const int hs[4]={128,64,128,192};const int bank=(cap>>16)&3,off=((cap>>18)&3)*0x8000,sz=(cap>>20)&3,w=sz?256:128,h=hs[sz];
+  const int capCfg=P3DS_CfgInt("display_capture",1);
+  if(engineA.CaptureLatch){engineA.CaptureLatch=false;*capR=cap&0x7FFFFFFFu;static unsigned cn;if(cn++%120==0)PSPNativeMemLog("[CAP] renderer capture %08x (%u)",(unsigned)cap,cn);}
+  if(capCfg==2&&(cap&0x80000000u)&&display[0]){static const int hs[4]={128,64,128,192};const int bank=(cap>>16)&3,off=((cap>>18)&3)*0x8000,sz=(cap>>20)&3,w=sz?256:128,h=hs[sz];
    u8*vb=s_HW_LCDC_VRAM+bank*0x20000;const u32*src=display[0];
    for(int y=0;y<h;y++)for(int x=0;x<w;x++){u32 c=src[y*256+x];u16 v=(u16)(((c>>3)&31)|(((c>>11)&31)<<5)|(((c>>19)&31)<<10)|0x8000);*(u16*)(vb+((off+(y*w+x)*2)&0x1FFFF))=v;}
    *capR=cap&~0x80000000u;static unsigned nc;if(!(nc++%120))PSPNativeMemLog("[CAP] display capture bank %d off %x size %d (%u)",bank,off,sz,nc);}}
