@@ -51,9 +51,18 @@ build/p3ds.specs:
 BT ?= ../../tools/bt/linux-x86_64/bannertool
 MAKEROM ?= ../../tools/makerom
 cia: platinum3ds_full.cia
+# run 82: icon + animated 3D banner from your ROM (tools/banner3d, from GabeSud0/pokeplatinum-3ds; made in build/, never
+# committed). No ROM -> the run-79 placeholder art. BANNER=flat skips the 3D banner (flat one from the ROM's DS icon).
+# A failed 3D banner falls back to the flat one. The 3D banner needs Python 3.12+ and git (fetches pycgfx once).
+ROM ?= ../../baserom/platinum_us_rev1.nds
+BANNER ?= 3d
 platinum3ds_full.cia: platinum3ds_full.elf cia/platinum3ds.rsf
-	sh cia/make_art.sh build/cia
-	$(BT) makebanner -i build/cia/banner.png -a build/cia/banner.wav -o build/cia/banner.bnr
+	@rm -f build/cia/banner3d.bnr
+	@if [ -f "$(ROM)" ]; then python3 ../../tools/home_menu_art.py "$(ROM)" build/cia; else echo "(No ROM at $(ROM): placeholder HOME Menu art.)"; sh cia/make_art.sh build/cia; fi
+	@if [ -f "$(ROM)" ] && [ "$(BANNER)" = 3d ]; then python3 ../../tools/banner3d/make_banner.py --rom "$(ROM)" --bannertool $(BT) \
+	    --chime cia/chime.wav -o build/cia/banner3d.bnr || { rm -f build/cia/banner3d.bnr; echo "(No 3D banner: see above. Using the flat one.)"; }; fi
+	if [ -f build/cia/banner3d.bnr ]; then cp build/cia/banner3d.bnr build/cia/banner.bnr; \
+	else $(BT) makebanner -i build/cia/banner.png -a build/cia/banner.wav -o build/cia/banner.bnr; fi
 	$(BT) makesmdh -s "Platinum 3DS" -l "Pokemon Platinum native 3DS port" -p "local build" -i build/cia/icon.png -o build/cia/icon.icn
 	$(MAKEROM) -f cia -o $@ -elf platinum3ds_full.elf -rsf cia/platinum3ds.rsf -icon build/cia/icon.icn -banner build/cia/banner.bnr -exefslogo -target t
 
