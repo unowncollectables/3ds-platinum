@@ -1269,3 +1269,5 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   WindowAnchor/Framed (text boxes moving to the wide edge).
 - Test: `gcc -O2 -I platinum3ds/platform tools/widecomp_test.c platinum3ds/platform/widecomp.c -o wct && ./wct` (party layout,
   passes). x86: 0.4 ms per frame for the party menu. render3ds.cpp glue NOT compiled here (no devkitARM in the cloud).
+- Settings app: Wide tab row 1 "Wide menu layouts" (wide_layouts, applies at once via P3DS_SetWideLayouts, saved to config.txt).
+  No longer needs wideview=1, only the 1.25x scale (the default). Old "Wide menus" row renamed "Side fill in menus".

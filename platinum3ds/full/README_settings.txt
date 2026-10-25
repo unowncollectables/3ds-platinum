@@ -275,4 +275,4 @@ Run 79
 Run 80
   text_hold_b=0        (1 = holding B prints text instantly and advances finished text boxes; never picks yes/no or menu choices)
   text_auto=0          (1 = text boxes advance by themselves after ~1.5 s; choices still wait for you)
-  wide_layouts=0      (run 84, test: 1 = menus laid out across the wide screen, as GabeSud0's port does. Needs wideview=1 and the 1.25x scale. Party menu first; other screens may look off)
+  wide_layouts=0      (run 84, test; settings app Wide tab "Wide menu layouts": 1 = menus laid out across the wide screen, as GabeSud0's port does, at the 1.25x scale. Party menu first; other screens may look off)
