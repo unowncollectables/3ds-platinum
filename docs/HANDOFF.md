@@ -2,6 +2,16 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-25 - Run 96 (Grok Bot), branch `run96` (on top of run95)
+
+- Stereo battles with wide_layouts: widecomp's picture is used for both eyes (the right eye is a copy), so the right-eye engine A
+  pass on core 2 and the left engine A pass were wasted. wide_early now also covers stereo (per-vertex 3D eyes): compose once,
+  skip both passes. Azahar, Spear Pillar double battle, stereo_fake=60: 7-14 fps -> 13-22 fps. wide_early=0 = old path.
+- Known, unchanged: with wide_layouts on, battles show no 3D depth (both eyes = widecomp's left picture); g3soft still renders the
+  right-eye 3D layer that is then unused (next candidate speedup).
+- CIA: build with the default `make cia` (animated 3D banner, ROM icon). BANNER=flat broke the HOME Menu banner/logo in run95.
+- wide_early pixel check: party and bag shots with wide_early 0/1 differ only in the clock overlay and the party icon animation frame.
+
 ## 2026-10-25 - Run 95 (Grok Bot), branch `run95`
 
 - New toggle `wide_early=1` (Debug tab "Wide layout early"): with `wide_layouts=1` the wide compositor runs while engine B renders

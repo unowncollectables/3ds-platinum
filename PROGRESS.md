@@ -1395,3 +1395,9 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - gpu_compose=2 readback skip: not done. gpucomp uploads the read-back NativeFrame as its 3D texture; skipping the readback needs the
   render target bound as a texture directly. Too risky for this run.
 - Not tested this run in the emulator: PC boxes, a battle, shiny_suite in an encounter, text_hold_b/text_auto in dialogue.
+
+## Run 96 (2026-10-25, Grok Bot) - stereo battle speed, CIA banner
+- wide_early extended to stereo (see docs/HANDOFF.md): Spear Pillar double battle with stereo_fake=60 in Azahar 7-14 -> 13-22 fps.
+- run95 CIA had been built with BANNER=flat (broken HOME banner/logo); run96 uses the run82 3D banner again.
+- Emulator: trainer double battle (Mars/Jupiter, Spear Pillar) with wide_layouts: battle UI fine, no crash. wide_early on/off pixel
+  diff on party and bag: identical apart from the clock and an icon animation frame.
