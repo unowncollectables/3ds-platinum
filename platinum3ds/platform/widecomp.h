@@ -21,6 +21,8 @@ typedef struct { const uint8_t *bgvram, *objvram, *bgext, *objext; const uint16_
 int WC_Plan(WcPlan *p, const uint8_t *regs, const short *parts, int n);
 /* 0 when WC_Compose can draw this screen, else why (1 forced blank, 2 not graphics mode, 3 windows, 4 alpha blending,
    5 a non-text BG, 6 BG mosaic, 7 3D layer without a frame) */
+/* 1 when a sprite crosses the DS screen's left or right edge (so a screen with no wide parts still needs WC_Compose) */
+int WC_SpritesPastEdge(const uint8_t *regs, const uint16_t *oam);
 int WC_Check(const WcPlan *p, const uint8_t *regs, int have3d);
 /* draws engine A across -32..287: centre 256x192 (melonDS 0xAABBGGRR) rewritten, strip 64x192 (32 left, 32 right) as
    0xRRGGBBAA like P3DS_WideFillBuf. Returns 0 (nothing written) when the screen uses something it does not do. */

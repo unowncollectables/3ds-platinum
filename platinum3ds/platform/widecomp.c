@@ -240,3 +240,15 @@ int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *s
     if (!composeNow(p, R, S, center, strip)) return 0;
     memcpy(cCenter, center, sizeof cCenter); memcpy(cStrip, strip, sizeof cStrip); cHash = h; cValid = 1; return 1;
 }
+
+/* a screen without any wide parts only needs this compositor when a sprite sticks out past the DS edge (a battle's status box):
+   otherwise melonDS' own picture is the same and cheaper */
+int WC_SpritesPastEdge(const uint8_t *R, const uint16_t *oam) {
+    const u32 dc = *(const u32 *)R; if (!(dc & 0x1000)) return 0;
+    for (int i = 0; i < 128; i++) { const u16 *a = oam + i * 4; if ((a[0] & 0x300) == 0x200) continue;
+        const unsigned shape = a[0] >> 14, size = a[1] >> 14; if (shape > 2) continue;
+        const int dbl = (a[0] & 0x300) == 0x300, bw = SPW[shape][size] * (dbl ? 2 : 1);
+        int x = a[1] & 0x1FF; if (x >= 256) x -= 512;
+        if ((x < 0 && x + bw > 0) || (x < 256 && x + bw > 256)) return 1; }
+    return 0;
+}
