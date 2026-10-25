@@ -103,72 +103,91 @@ static int sprTexel(const u16 *a, u32 dc, const u8 *ov, int width, int tx, int t
     return *idx != 0;
 }
 
+static const u8 SPW[3][4] = {{8, 16, 32, 64}, {16, 32, 32, 64}, {8, 8, 16, 32}}, SPH[3][4] = {{8, 16, 32, 64}, {8, 8, 16, 32}, {16, 32, 32, 64}};
+
+/* why the compositor can't draw this screen (0 = it can): 1 forced blank, 2 not graphics mode, 3 windows, 4 alpha blending,
+   5 a BG that isn't text, 6 BG mosaic, 7 no 3D frame */
+int WC_Check(const WcPlan *p, const u8 *R, int have3d) {
+    const u32 dc = *(const u32 *)R;
+    if (dc & 0x80) return 1; if (((dc >> 16) & 3) != 1) return 2; if (dc & 0xE000) return 3;
+    const u16 bc = *(const u16 *)(R + 0x50); if (((bc >> 6) & 3) == 1 && (bc & 0x3F)) return 4;
+    for (int i = 0; i < 4; i++) { const WcLayer *l = &p->L[i]; if (!l->on) continue; if (!l->text && !(i == 0 && (dc & 8))) return 5; if (l->mosaic) return 6; }
+    if ((dc & 8) && !have3d) return 7;
+    return 0;
+}
+
 /* returns 0 = something this compositor does not do (the melonDS picture stays); else the picture is written */
 int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip) {
     const u32 dc = *(const u32 *)R;
-    if ((dc & 0x80) || ((dc >> 16) & 3) != 1 || (dc & 0xE000)) return 0;                /* forced blank, not graphics mode, windows */
+    if (WC_Check(p, R, S->frame3d != 0)) return 0;
     const u16 bc = *(const u16 *)(R + 0x50); const unsigned eff = (bc >> 6) & 3;
-    if (eff == 1 && (bc & 0x3F)) return 0;                                              /* alpha blending */
-    for (int i = 0; i < 4; i++) { const WcLayer *l = &p->L[i]; if (!l->on) continue; if (!l->text && !(i == 0 && (dc & 8))) return 0; if (l->mosaic) return 0; }
-    if ((dc & 8) && !S->frame3d) return 0;
     unsigned bY = *(const u16 *)(R + 0x54) & 31; if (bY > 16) bY = 16;
     const u16 mb = *(const u16 *)(R + 0x6C); unsigned mf = mb & 31; if (mf > 16) mf = 16; const int mm = mf ? (mb >> 14) & 3 : 0;
     u32 lutB[256], lutO[256]; for (int k = 0; k < 256; k++) { lutB[k] = toM(S->bgpal[k]); lutO[k] = toM(S->objpal[k]); }
     const u32 bd = lutB[0];
-    /* sprites: where each one's middle is in a WIDE_OBJS part decides its shift; sorted by priority, then OAM order */
-    struct Sp { s16 x; s16 dx; u8 id; } order[128]; int no = 0; u8 spp[128];
-    for (int pr = 3; pr >= 0; pr--) for (int i = 127; i >= 0; i--) { const u16 *a = S->oam + i * 4; if (((a[2] >> 10) & 3) != pr) continue;
-        const int mode = (a[0] >> 10) & 3; if ((a[0] & 0x300) == 0x200 || mode >= 2) continue;
-        order[no].id = (u8)i; spp[no] = (u8)pr; no++; }
-    s16 sdx[128]; memset(sdx, 0, sizeof sdx);
+    /* sprites: where each one's middle is in a WIDE_OBJS part decides its shift (and whether it is stretched back) */
+    u8 ord[128], spp[128]; int no = 0;
+    for (int pr = 0; pr <= 3; pr++) for (int i = 0; i < 128; i++) { const u16 *a = S->oam + i * 4; if (((a[2] >> 10) & 3) != pr) continue;
+        if ((a[0] & 0x300) == 0x200 || ((a[0] >> 10) & 3) >= 2) continue; ord[no] = (u8)i; spp[no] = (u8)pr; no++; } /* front first */
+    s16 sdx[128]; u8 sst[128]; memset(sdx, 0, sizeof sdx); memset(sst, 0, sizeof sst);
     if (p->objParts) for (int i = 0; i < 128; i++) { const u16 *a = S->oam + i * 4; if ((a[0] & 0x300) == 0x200) continue;
-        static const u8 W[3][4] = {{8, 16, 32, 64}, {16, 32, 32, 64}, {8, 8, 16, 32}}, H[3][4] = {{8, 16, 32, 64}, {8, 8, 16, 32}, {16, 32, 32, 64}};
         const unsigned shape = a[0] >> 14, size = a[1] >> 14; if (shape > 2) continue;
-        const int dbl = (a[0] & 0x300) == 0x300, bw = W[shape][size] * (dbl ? 2 : 1), bh = H[shape][size] * (dbl ? 2 : 1);
+        const int dbl = (a[0] & 0x300) == 0x300, bw = SPW[shape][size] * (dbl ? 2 : 1), bh = SPH[shape][size] * (dbl ? 2 : 1);
         int x = a[1] & 0x1FF, y = a[0] & 255; if (x >= 256) x -= 512; if (y + bh > 256) y -= 256;
         const int cx = x + bw / 2, cy = y + bh / 2;
         for (int k = 0; k < p->n; k++) { const short *t = p->parts + k * 8; if (t[0] != 3) continue;
-            if (cx >= t[4] && cx < t[5] && cy >= t[2] && cy < t[3]) { sdx[i] = t[6]; break; } } }
-    int layers[4], nl = 0; for (int i = 0; i < 4; i++) if (p->L[i].on) layers[nl++] = i;
+            if (cx >= t[4] && cx < t[5] && cy >= t[2] && cy < t[3]) { sdx[i] = t[6]; sst[i] = t[7] == 1; break; } } }
+    /* layers front to back: priority, then sprites before BGs, BG0 before BG3 */
+    int lorder[4], nl = 0; for (int pr = 0; pr <= 3; pr++) for (int i = 0; i < 4; i++) if (p->L[i].on && p->L[i].prio == pr) lorder[nl++] = i;
     const int bgBld = eff >= 2 && bY ? (int)(bc & 0x3F) : 0;
     for (int y = 0; y < 192; y++) {
-        u32 row[320]; u8 lay[320], sprPr[320]; u32 spr[320]; memset(sprPr, 4, sizeof sprPr); memset(spr, 0, sizeof spr);
-        for (int X = 0; X < 320; X++) { row[X] = bd; lay[X] = 5; }
-        if (dc & 0x1000) for (int n = 0; n < no; n++) { const int i = order[n].id; const u16 *a = S->oam + i * 4; const int aff = (a[0] & 0x100) != 0, dbl = (a[0] & 0x300) == 0x300;
-            static const u8 W[3][4] = {{8, 16, 32, 64}, {16, 32, 32, 64}, {8, 8, 16, 32}}, H[3][4] = {{8, 16, 32, 64}, {8, 8, 16, 32}, {16, 32, 32, 64}};
+        u32 row[320], spr[320]; u8 lay[320], done[320], sprPr[320]; memset(done, 0, sizeof done); memset(sprPr, 4, sizeof sprPr); memset(spr, 0, sizeof spr);
+        int left = 320;
+        if (dc & 0x1000) for (int n = no - 1; n >= 0; n--) { /* back to front here: the front sprite is painted last */
+            const int i = ord[n]; const u16 *a = S->oam + i * 4; const int aff = (a[0] & 0x100) != 0, dbl = (a[0] & 0x300) == 0x300;
             const unsigned shape = a[0] >> 14, size = a[1] >> 14; if (shape > 2) continue;
-            const int width = W[shape][size], height = H[shape][size], bw = width * (dbl ? 2 : 1), bh = height * (dbl ? 2 : 1);
-            int ypos = (y - (a[0] & 255)) & 255; if (ypos >= bh) continue;
-            int xs = a[1] & 0x1FF; if (xs >= 256) xs -= 512; xs += sdx[i];
-            if (xs + bw <= -32 || xs >= 288) continue;
-            const u8 *ov = S->objvram; const int ext = (dc & 0x80000000u) != 0;
-            for (int xo = 0; xo < bw; xo++) { const int X = xs + xo + 32; if (X < 0 || X >= 320) continue; int tx, ty; u32 ci;
-                if (aff) { const int grp = (a[1] >> 9) & 31; const s16 pa = (s16)S->oam[grp * 16 + 3], pb = (s16)S->oam[grp * 16 + 7], pc = (s16)S->oam[grp * 16 + 11], pd = (s16)S->oam[grp * 16 + 15];
-                    const int rx = pa * (xo - bw / 2) + pb * (ypos - bh / 2) + (width / 2 << 8), ry = pc * (xo - bw / 2) + pd * (ypos - bh / 2) + (height / 2 << 8);
-                    tx = rx >> 8; ty = ry >> 8; if (rx < 0 || ry < 0 || tx >= width || ty >= height) continue; }
-                else { tx = (a[1] & 0x1000) ? width - 1 - xo : xo; ty = (a[1] & 0x2000) ? height - 1 - ypos : ypos; if (xo >= width) continue; }
-                if (!sprTexel(a, dc, ov, width, tx, ty, &ci)) continue;
-                spr[X] = (a[0] & 0x2000) ? (ext ? toM(*(const u16 *)(S->objext + ((a[2] >> 12) * 256 + ci) * 2)) : lutO[ci]) : lutO[(a[2] >> 12) * 16 + ci];
-                sprPr[X] = spp[n]; } }
-        for (int pr = 3; pr >= 0; pr--) {
-            for (int bi = nl - 1; bi >= 0; bi--) { const int li = layers[bi]; const WcLayer *l = &p->L[li]; if (l->prio != pr) continue;
-                if (li == 0 && (dc & 8)) { /* the 3D layer in BG0's place */
-                    for (int s = -32; s < 288; s++) { const int c = s - p->dx3d; if (c < 0 || c > 255) continue; const u32 v = S->frame3d[y * 256 + c]; if (!(v >> 24)) continue; row[s + 32] = from3D(v); lay[s + 32] = 0; }
-                    continue; }
-                const uint8_t ri = p->rowOf[li][y]; short tmp[320]; const short *map; if (ri != 255) map = p->rows[ri]; else { buildRow(p, li, y, tmp); map = tmp; }
-                const int py = (int)((y + l->vofs) & (l->h * 8 - 1)); const unsigned ty = (unsigned)(py >> 3) & (l->h - 1); const unsigned fy0 = py & 7;
-                int lastT = -1; u16 me = 0; const u8 *trow = 0;
-                for (int s = -32; s < 288; s++) { const int pc = map[s + 32]; if (pc < 0) continue; const int t = pc >> 3;
-                    if (t != lastT) { lastT = t; const unsigned tx = (unsigned)t & (l->w - 1);
-                        const unsigned ma = (l->mapb + ((tx >> 5) + (ty >> 5) * (l->w >> 5)) * 0x800 + ((ty & 31) * 32 + (tx & 31)) * 2) & 0x7FFFF;
-                        me = *(const u16 *)(S->bgvram + ma); const unsigned fy = (me & 0x800) ? 7 - fy0 : fy0;
-                        trow = S->bgvram + ((l->charb + (me & 0x3FF) * (l->bpp8 ? 64 : 32) + fy * (l->bpp8 ? 8 : 4)) & 0x7FFFF); }
-                    unsigned fx = pc & 7; if (me & 0x400) fx = 7 - fx; unsigned ci;
-                    if (l->bpp8) ci = trow[fx]; else { const u8 b = trow[fx >> 1]; ci = (fx & 1) ? b >> 4 : b & 15; }
-                    if (!ci) continue;
-                    row[s + 32] = l->extSlot >= 0 ? toM(*(const u16 *)(S->bgext + l->extSlot * 0x2000 + ((me >> 12) * 256 + ci) * 2)) : lutB[l->bpp8 ? ci : ((me >> 12) * 16 + ci)];
-                    lay[s + 32] = (u8)li; } }
-            for (int X = 0; X < 320; X++) if (spr[X] && sprPr[X] == pr) { row[X] = spr[X]; lay[X] = 4; } }
+            const int width = SPW[shape][size], height = SPH[shape][size], bw = width * (dbl ? 2 : 1), bh = height * (dbl ? 2 : 1);
+            const int ypos = (y - (a[0] & 255)) & 255; if (ypos >= bh) continue;
+            int xs0 = a[1] & 0x1FF; if (xs0 >= 256) xs0 -= 512; const int xs = xs0 + sdx[i];
+            if ((xs + bw <= -32 || xs >= 288) && !sst[i]) continue;
+            const u8 *ov = S->objvram; const int ext = (dc & 0x80000000u) != 0; const int bpp8 = (a[0] & 0x2000) != 0;
+            s16 pa = 0, pb = 0, pc = 0, pd = 0; if (aff) { const int grp = (a[1] >> 9) & 31; pa = (s16)S->oam[grp * 16 + 3]; pb = (s16)S->oam[grp * 16 + 7]; pc = (s16)S->oam[grp * 16 + 11]; pd = (s16)S->oam[grp * 16 + 15]; }
+            #define SPRCOL(XO, OUT) { int tx_, ty_; u32 ci_; OUT = 0; \
+                if (aff) { const int rx = pa * ((XO) - bw / 2) + pb * (ypos - bh / 2) + (width / 2 << 8), ry = pc * ((XO) - bw / 2) + pd * (ypos - bh / 2) + (height / 2 << 8); \
+                    tx_ = rx >> 8; ty_ = ry >> 8; if (rx < 0 || ry < 0 || tx_ >= width || ty_ >= height) tx_ = -1; } \
+                else { tx_ = (a[1] & 0x1000) ? width - 1 - (XO) : (XO); ty_ = (a[1] & 0x2000) ? height - 1 - ypos : ypos; if ((XO) >= width) tx_ = -1; } \
+                if (tx_ >= 0 && sprTexel(a, dc, ov, width, tx_, ty_, &ci_)) OUT = bpp8 ? (ext ? toM(*(const u16 *)(S->objext + ((a[2] >> 12) * 256 + ci_) * 2)) : lutO[ci_]) : lutO[(a[2] >> 12) * 16 + ci_]; }
+            for (int xo = 0; xo < bw; xo++) { const int X = xs + xo + 32; if (X < 0 || X >= 320) continue; u32 c; SPRCOL(xo, c); if (c) { spr[X] = c; sprPr[X] = spp[n]; } }
+            if (sst[i] && !aff && sdx[i]) { /* stretched: the edge column drawn back over the gap it left */
+                const int dx = sdx[i]; u32 c; if (dx > 0) { SPRCOL(0, c); for (int X = xs0 + 32; X < xs0 + dx + 32; X++) if (c && X >= 0 && X < 320) { spr[X] = c; sprPr[X] = spp[n]; } }
+                else { SPRCOL(bw - 1, c); for (int X = xs + bw + 32; X < xs0 + bw + 32; X++) if (c && X >= 0 && X < 320) { spr[X] = c; sprPr[X] = spp[n]; } } }
+            #undef SPRCOL
+        }
+        for (int li = 0; li < nl && left; li++) { const int L = lorder[li]; const WcLayer *l = &p->L[L];
+            /* sprites of this priority go in front of the BGs of the same priority */
+            if (li == 0 || p->L[lorder[li - 1]].prio != l->prio) { for (int pr = (li ? p->L[lorder[li - 1]].prio + 1 : 0); pr <= l->prio; pr++) for (int X = 0; X < 320; X++) if (!done[X] && spr[X] && sprPr[X] == pr) { row[X] = spr[X]; lay[X] = 4; done[X] = 1; left--; } }
+            if (!left) break;
+            if (L == 0 && (dc & 8)) { /* the 3D layer in BG0's place */
+                for (int s = -32; s < 288; s++) { const int X = s + 32, c = s - p->dx3d; if (done[X] || c < 0 || c > 255) continue; const u32 v = S->frame3d[y * 256 + c]; if (!(v >> 24)) continue; row[X] = from3D(v); lay[X] = 0; done[X] = 1; left--; }
+                continue; }
+            const uint8_t ri = p->rowOf[L][y]; short tmp[320]; const short *map; if (ri != 255) map = p->rows[ri]; else { buildRow(p, L, y, tmp); map = tmp; }
+            const int py = (int)((y + l->vofs) & (l->h * 8 - 1)); const unsigned ty = (unsigned)(py >> 3) & (l->h - 1); const unsigned fy0 = py & 7;
+            int lastT = -1; u16 me = 0; const u8 *trow = 0;
+            for (int X = 0; X < 320; X++) { if (done[X]) continue; const int pc = map[X]; if (pc < 0) continue; const int t = pc >> 3;
+                if (t != lastT) { lastT = t; const unsigned tx = (unsigned)t & (l->w - 1);
+                    const unsigned ma = (l->mapb + ((tx >> 5) + (ty >> 5) * (l->w >> 5)) * 0x800 + ((ty & 31) * 32 + (tx & 31)) * 2) & 0x7FFFF;
+                    me = *(const u16 *)(S->bgvram + ma); const unsigned fy = (me & 0x800) ? 7 - fy0 : fy0;
+                    trow = S->bgvram + ((l->charb + (me & 0x3FF) * (l->bpp8 ? 64 : 32) + fy * (l->bpp8 ? 8 : 4)) & 0x7FFFF); }
+                unsigned fx = pc & 7; if (me & 0x400) fx = 7 - fx; unsigned ci;
+                if (l->bpp8) ci = trow[fx]; else { const u8 b = trow[fx >> 1]; ci = (fx & 1) ? b >> 4 : b & 15; }
+                if (!ci) continue;
+                row[X] = l->extSlot >= 0 ? toM(*(const u16 *)(S->bgext + l->extSlot * 0x2000 + ((me >> 12) * 256 + ci) * 2)) : lutB[l->bpp8 ? ci : ((me >> 12) * 16 + ci)];
+                lay[X] = (u8)L; done[X] = 1; left--; } }
+        if (left) { /* sprites behind every BG, then the backdrop */
+            for (int X = 0; X < 320; X++) if (!done[X]) { if (spr[X]) { row[X] = spr[X]; lay[X] = 4; } else { row[X] = bd; lay[X] = 5; } } }
+        if (!bgBld && !mm) { memcpy(center + y * 256, row + 32, 256 * 4);
+            for (int X = 0; X < 64; X++) { const u32 c = row[X < 32 ? X : X + 256]; strip[y * 64 + X] = ((c & 255) << 24) | (((c >> 8) & 255) << 16) | (((c >> 16) & 255) << 8) | 0xFF; }
+            continue; }
         for (int X = 0; X < 320; X++) { u32 c = row[X]; unsigned r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255; const int side = X < 32 || X >= 288;
             /* BLDY brighten/darken on the first-target layers (bits 0-3 BGs, 4 sprites, 5 backdrop); in the strips a fade
                that targets BG0 comes from gpuscale (wide_fadefix), as for wide_menus */
