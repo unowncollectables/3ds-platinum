@@ -1,0 +1,23 @@
+--- a/applications__pc_boxes__ov19_021D61B0.c
++++ b/applications__pc_boxes__ov19_021D61B0.c
+@@ -47,6 +47,10 @@
+ #include "sys_task_manager.h"
+ #include "system.h"
+ 
++#ifdef SDK_PORT_3DS
++#include "port_wide_layout.h"
++#endif
++
+ struct UnkStruct_ov19_021D61B0_t {
+     SysTask *unk_00;
+     SysTask *unk_04;
+@@ -289,6 +293,9 @@
+ void BoxGraphics_Free(UnkStruct_ov19_021D61B0 *param0)
+ {
+     SetVBlankCallback(NULL, NULL);
++#ifdef SDK_PORT_3DS
++    WIDE_LAYOUT_NONE(WIDE_ENGINE_MAIN);
++#endif
+     SysTask_Done(param0->unk_00);
+     SysTask_Done(param0->unk_04);
+ 

@@ -1235,3 +1235,142 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 
 ## Run 80
 - text_hold_b / text_auto (Extra tab, default off; render_text.c): B held = instant print + advances a finished text box; auto = advance after 45 game frames (~1.5 s). Only the text-box wait (TextPrinter_Continue); yes/no and menus untouched. Boot checked; behaviour untested.
+
+## Run 81
+- speedcheck=1 (default; platform/speedcheck.c, called from main3ds.c after the save backup): at boot on a New 3DS, logs the result of the ptm:sysm 804 MHz + L2 request and times three small jobs (integer / 64-bit multiply / double divide) on core 0, 2 and 1, then a verdict line ("core 0 runs at 804 MHz" / "~268 MHz"). Until now "speed-up on" was only the call being made (run 29), never measured. Idea and job loops adapted from GabeSud0/pokeplatinum-3ds main_3ds.c (credited in THIRD_PARTY.md).
+- Core 1 reads -1: a thread can only be created there after APT_SetAppCpuTimeLimit, which the renderer requests later. Not changed on purpose (the check only observes).
+- NOT built or run: no devkitARM on the box that wrote it; host syntax check only with stub headers. Look for the [perf] lines in the next hardware log.
+
+## Run 82 (HOME Menu art from GabeSud0/pokeplatinum-3ds)
+- `make cia` now makes the icon and the animated 3D banner (portal, title-screen Giratina idle, logo, chime) from your ROM
+  (default `baserom/platinum_us_rev1.nds`, or `ROM=...`): tools/home_menu_art.py + tools/banner3d (from their repo, GPL-3.0,
+  see THIRD_PARTY.md). `BANNER=flat` = flat banner from the ROM's DS icon; no ROM = the run-79 placeholder art; a failed
+  3D banner falls back to flat. Needs Python 3.12+ and git (pycgfx fetched once into build/pycgfx). Nothing made is committed.
+- Tests: `python3 -m unittest discover -s tools -p 'test_*.py'` (13 pass in the cloud, pycgfx part included). Not built
+  into a CIA here (no devkitPro/ROM). HOME Menu caches banners: delete and reinstall the title to see the new one.
+
+## Run 83 (sharper 3D experiment)
+- res3d_test=2 (default 0): re-enables the run 46-49 "sharp 3D" path (3D at 2x, HW 2x2 downscale, 24-bit depth in linear RAM) for a hardware test. It is smoothing only (4x supersampled edges), not extra texels. Disabled since run 52 for garbage on hardware; run 49 fixed the 16-bit depth cause but was never re-tested. Look at [3DRES] / [PERF] lines.
+- Real sharpness (3D drawn at the screen's own 400x240 under a 2D overlay, as GabeSud0's port does) is a bigger project, not started: needs the 2D composite to leave 3D pixels clear and a hi-res 3D target (400x240 needs ~0.7 MB VRAM, far less than 2x).
+
+- wide_layouts (default 0, run 83 WIP): platform/wideapi.c = the game-side API of GabeSud0's wide-layout patches (WideScreenParts, WindowAdded/Removed/Anchor/Framed, WideSplitScreen...). Records only; with wide_layouts=0 NitroPort_WideScreenExtra() is 0, so patched game code behaves like the DS. Renderer part (320-wide 2D compositor) not built yet.
+
+## Run 84 (wide layouts: the display engine)
+- platform/widecomp.c (+ widecomp.h): draws a screen that has a wide layout (GabeSud0's parts, recorded by wideapi.c) across
+  DS columns -32..287. BGs that move with the sprites (WIDE_OBJS dx, 0 without one) stay in the normal melonDS pass, which is
+  placed that far right; the other BGs are switched off for that pass and drawn by WC_Compose per line from per-line column
+  maps (WIDE_MOVE / WIDE_FILL / the DS's place), in front when their priority is ahead, else only over the backdrop. Columns
+  the melonDS picture does not reach get every text BG. Centre goes back into the engine A picture, sides into the wide strips.
+  Master brightness: off for the melonDS pass, applied by WC_Compose to the centre, by gpuscale to the strips.
+- Active only with wide_layouts=1 AND wideview=1 AND the 1.25x scale, engine A on top, not the 3D overworld, and a layout set
+  (party menu first). GPU compose is skipped on those frames. Logs: "[WIDE] wide layout drawing on/off", "[WIDE] layout #N: ..."
+  (shift, melonDS BGs, drawn BGs), "[WIDE] wide layout avg N us/frame".
+- Not done: alpha blending of drawn BGs, sprite regions / stretch (one sprite shift per screen), WIDE_SHIFT3D, engine B,
+  WindowAnchor/Framed (text boxes moving to the wide edge).
+- Test: `gcc -O2 -I platinum3ds/platform tools/widecomp_test.c platinum3ds/platform/widecomp.c -o wct && ./wct` (party layout,
+  passes). x86: 0.4 ms per frame for the party menu. render3ds.cpp glue NOT compiled here (no devkitARM in the cloud).
+- Settings app: Wide tab row 1 "Wide menu layouts" (wide_layouts, applies at once via P3DS_SetWideLayouts, saved to config.txt).
+  No longer needs wideview=1, only the 1.25x scale (the default). Old "Wide menus" row renamed "Side fill in menus".
+- Settings app tidy (Nathan: old options go to the hidden Debug tab, SELECT): Debug now also has Log size limit, Split top,
+  Wide view FX, Wide haze, Edge fill, Side fill in menus, Mirror fill (old), Wild sprite test. Video = FPS counter, Wide view,
+  Scale, Camera zoom, 3D strength, Battle 3D depth. Wide = Wide menu layouts, Weather in strips + Distortion World rows.
+  Values and defaults unchanged, only where the rows are.
+
+## Run 85 (wide layouts: bag speed, party centred)
+- Hardware log (run 84): party menu layout engaged, no crash. Nathan: party panels pushed fully right with a blank left (GabeSud0's
+  reference layout does exactly that); the bag looked wide but dropped frames. Cause of the drops: the bag has 18 layout parts and a
+  new plan every frame while its list scrolls, and the plan built each line's column map column-by-column x part-by-part. Now
+  widecomp.c buildRow() fills each map by ranges (tools/widecomp_rows_test.c: identical to the old per-column result on 3000 random
+  layouts; x86 plan 1.3 ms -> 0.03 ms for an 18-part layout), and map slots cover all lines of all four BGs (WC_ROWS 384).
+- Party menu: panels, sprites and background moved 16 px instead of 32, with the background's plain left/right columns drawn
+  on beside them, so the extra width is split over both sides (work_patches applications__party_menu__main.c.patch).
+
+## Run 85b (from the photos of run 85)
+- Party: the 16 px shift was no centring at all (the wide screen already centres the 256 columns); left blank was 48 px, right 16.
+  Now background stays, the two panel columns (and sprites) spread 16 px each way, background's plain edge columns fill both sides.
+- PC boxes (photo: info panel streaky, icons misplaced): (1) CPU BG layers behind the melonDS ones were only drawn where nothing had
+  been drawn before them, which let BG3's stripes cover BG2's panel; they now check the melonDS picture only. (2) WIDE_OBJS
+  regions: WC_AdjustOam moves each sprite by (its part's dx - the picture's shift) in the OAM copy before the melonDS pass;
+  sprites that would leave the 256 columns are cut there. Still not done: WIDE_SHIFT3D (the 3D Pokemon preview), stretch sprites.
+
+## Run 86 (area-change hitches, step 1: the log names the map and the files that missed)
+- Oct 24 hardware log: 29.3 fps average, 61 [SPIKE] frames; 15 of them ROM read misses (worst 398 ms, 330 ms of it SD reads),
+  44 "loading" frames with no ROM cost. Before changing the cache or prefetcher, the log has to say where and what.
+- New `[ZONE] 3 Jubilife City -> 286 Route 202` line on every zone change (warp or walking seam), also with zone_prefetch=0.
+- Every [SPIKE] frame now gets a second line: `[SPIKE] f=N map <now> <- <before> (learned | first visit | no prefetch data,
+  +ms since the change) | missed in: fielddata/land_data/land_data.narc +812K 6x, ...` (up to 4 files, offset of the first miss
+  inside the file, misses per file). File names come from the ROM's own FAT/FNT, read once at the first spike with misses
+  (own file handle, a few tens of KiB in RAM); nothing is written and nothing ROM-derived is in git. Unnamed files show as
+  `file N` (overlays). [PERF3] also says `zone <now> <- <before>`.
+- No config key: diagnostics only, inside the existing spike_ms log (spike_ms=0 still turns [SPIKE] off). Game, save and
+  timing untouched; the extra work happens only on frames that are already over spike_ms.
+- Test (x86, synthetic ROM with nested FNT dirs): `tools/romcache_spike_test.c`.
+- Next: read a 15 minute walking log, sort the misses by file and by first visit vs learned, then pick the fix (earlier
+  prefetch near warps, whole-file read-ahead for the big archives, or a cache for the 44 loading frames).
+
+## Run 87 (wide layouts: one compositor, after the run 85 photos)
+- Run 84/85 let melonDS draw some BGs and drew the others over its picture; that cannot order the two groups (party panels lost
+  their text, PC info panel streaky, bag selection box missing). widecomp.c now has its own engine A compositor: text BGs (column
+  maps from the layout parts), sprites (normal + affine, 4/8 bpp, each moved by its WIDE_OBJS region), the 3D layer as BG0 (moved by
+  WIDE_SHIFT3D), DS priority order, BLDY fades on BG/OBJ targets, master brightness on the centre. melonDS still draws its normal
+  picture first and stays the fallback: WC_Compose returns 0 (log "[WIDE] wide layout drawing off") for windows, alpha blending,
+  mosaic, affine/bitmap BGs, bitmap sprites, forced blank. OBJ-window / semi-transparent sprites are drawn as normal sprites or
+  skipped. Stereo: the same picture goes to both eyes (menus lose their per-layer 3D depth while this is on).
+- Party layout: background and message box stay, the two panel columns (x < 123 / >= 123) and their sprites spread 16 px each way.
+- tools/widecomp_test.c checks the party layout (fills, moved tiles, moved sprite, priority, fallbacks); widecomp_rows_test.c checks
+  the row builder. render3ds.cpp glue not compiled in the cloud.
+## Run 88 (shiny hunt suite, `shiny_suite`, plan Part 2.1 items 1 to 5)
+- New key shiny_suite=0 (default off), settings app Extra tab, first row "Shiny hunt suite". Applies at once. Nothing is written to
+  platinum.sav; the save format is untouched. Counters live in sdmc:/3ds/platinum3ds/hunt.txt next to config.txt.
+- platform/hunt.c (new) owns hunt.txt for both hunt_counter (run 76) and shiny_suite. Per species: encounters, encounters since the
+  last shiny, soft resets, shinies, time spent, start date, how long the last shiny took; plus `target=` (the last species met,
+  which soft resets are tagged to). The run 76 `species=count` field stays first, so an old build still reads the counts and an old
+  hunt.txt loads in this one. Written on every encounter, every soft reset (before the relaunch), lid close, exit and every 2 min of
+  hunting, via hunt.tmp (a power cut mid-write keeps the old file).
+- Shiny flag: battle_controller_player.c now also stores the game's own Pokemon_IsShiny(foe) in P3DS_CatchInfo[18] (read-only,
+  same snapshot as the catch info). The work tree's copy of that file has to be refreshed from pspoke-patches/ before building.
+- Shiny alert (shiny_suite=1): when the command menu first opens against a shiny wild Pokemon, a two-note chime on DSP channel 1
+  (the game's audio only uses channel 0), a "Shiny!" toast and 0.9 s of white pulses with sparkles where the foe stands. Log:
+  `[HUNT] SHINY species N after X encounters`. Not yet: the overworld sparkle on wild_vis Pokemon.
+- Hunt panel: the Ball tab shows it in the field (L+R+Y, then the Ball tab) and in battle when Catch info is off (Y opens it).
+  Odds 1 in 8192 (the Gen 4 rule for wild Pokemon), chance of a shiny by now from the encounters since the last one, the 50% / 90%
+  marks (5678 / 18862). D-pad left/right = other species, X twice = reset that species' counter, A = export every hunt to
+  sdmc:/3ds/platinum3ds/hunts/hunt_YYYYMMDD_HHMM.csv. Masuda eggs and Poke Radar chains are not detected, and the panel says so.
+- Not done from the plan: shiny_rate, RNG info, party shiny count, battery warning, Masuda/Radar odds.
+- Test (x86): `gcc -O2 -I platinum3ds/platform -DHUNT_DIR='"/tmp/hunt_test/"' tools/hunt_test.c -lm -o ht && ./ht` (old file
+  format, round trip, soft resets, time with sleep gaps, periodic write, power-cut recovery, species cycling, reset, odds, CSV).
+  render3ds.cpp and the game file are not compiled in the cloud (no devkitARM / pspoke tree here).
+
+## Settings app redesign (after run 88, from Nathan's "cluttered and ugly" note)
+- Tab bar: 6 tabs instead of 9 (Video, Game, Keys, Pal, Hunt, Cheats; SELECT still adds the hidden Debug tab). Each tab is a
+  one-per-line list (8 rows a page, name left, value right between arrows, a green dot on rows changed this visit) instead of
+  the 2 x 5 grid of boxes. Up/Down (D-pad or circle pad, held = repeat) pick, Left/Right or A/X change, L/R tab, B close.
+  Touch: tab bar, a row's left half of the value = previous value, anywhere else on the row = next value, footer = next page.
+- The Ball, Map and Menu tabs left the tab bar and became pages opened from rows: Hunt > "Hunt stats" (the old Ball tab:
+  hunt panel / catch info), Hunt > "Wild Pokemon here" (the old Map tab, A or tap = next page), Keys > "Quick menu" (the old
+  Menu tab). B on a page opened from a row goes back to that row; a page opened directly (Y in battle, bottom strip, touch
+  quick menu corner) still closes on B. Reopening the app after closing on a page shows the tab that page belongs to.
+- Moves: Wide menu layouts and Time-of-day tint -> Video; the Distortion World rows and Weather in strips -> Video page 2;
+  text/battle/item rows from Extra -> Game; Touch quick menu and Bottom strip -> Keys; Shiny hunt suite, Encounter counter,
+  Catch info and the visible wild rows -> Hunt. Same items, keys, getters and setters (mItems untouched), so config.txt and
+  the save are unchanged.
+- Top screen: one title box ("Settings: <tab>  (page/pages)" + version) and a key hint box that says B back or B close.
+- Test (x86): runApp + tables compiled against stubs with ASan/UBSan and driven by a scripted key sequence (pick row, change
+  Wide menu layouts, L/R across tabs, open Hunt stats with A, B back); not built for the 3DS in the cloud.
+
+## Run 88b (catch info hook as a normal overlay patch)
+- The run 75 / run 88 hook in `BattleControllerPlayer_InitCommandSelection` (P3DS_CatchInfo snapshot, now with [18] = shiny) lived
+  only as a full-file copy in pspoke-patches/, which no script applies. A build that compiled an older copy of that file never set
+  P3DS_CatchInfo: Y did nothing, no encounter counted (Nathan's log, Oct 25). It is now also `work_patches/overlays/battle__battle_controller_player.c.patch`
+  (against pokeplatinum 47c28d53, like the other overlay edits; applies to the pristine file and reproduces the pspoke-patches copy
+  byte for byte). Apply it to native-audio-app/overlays/source/battle__battle_controller_player.c and make sure that object is rebuilt.
+- Check after a build: a wild battle's fight menu + Y opens the page, and log.txt gets `[HUNT] species N met M times`.
+
+## Run 94 (first read of the run 86 log)
+- Nathan's log (build fefa04f, ~90 s of play, mostly menus and a battle): overworld steady 29-30 fps (present 1 ms, 575 tris). Frame drops are
+  in menus: 22 fps at 3D slider 0 (present 20-24 ms vs 1 ms in the overworld, composite 8-15 ms), 13 fps with the slider up (present 41-47 ms).
+  Not area changes. Seems to be the CPU present path menus take (wide menus on); belongs to the wide menu work.
+- No [ZONE] or [PREFETCH] zone lines and `map -1` in [PERF3]: P3DS_ZoneEnter (work_patches/overlays/field_map_change.c.patch) is not in this
+  build (like the catch-info hook in run 88b, overlay patches are applied by hand), so zone_prefetch also does nothing and prefetch.bin
+  is stale (144 zones from an older build). Without it the area-change spikes cannot be named or prefetched.
+- [SPIKE]: a run of consecutive slow frames now logs its first frame and every 30th (it used all 60 lines on one slow menu at f=1454-1497).

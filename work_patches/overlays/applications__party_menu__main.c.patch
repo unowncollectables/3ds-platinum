@@ -1,0 +1,43 @@
+--- a/applications__party_menu__main.c
++++ b/applications__party_menu__main.c
+@@ -72,6 +72,20 @@
+ #include "unk_0208C098.h"
+ #endif
+ 
++#ifdef SDK_PORT_3DS
++#include "port_wide_layout.h"
++
++// The party across the 3DS remaster's wider upper screen: the panels stay where
++// the DS has them (centred), and the background's plain left and right columns
++// are drawn on beside them. (The first part sets the sprites' own shift to the
++// background's: none.)
++static const short sPartyMenuWideLayout[][8] = {
++    WIDE_OBJS(0, 0, 0, 0, 0),
++    WIDE_FILL(WIDE_BG(3), 0, 192, -32, 0, 0),
++    WIDE_FILL(WIDE_BG(3), 0, 192, 256, 288, 255),
++};
++#endif
++
+ FS_EXTERN_OVERLAY(party_menu_form_change);
+ 
+ typedef struct MemberPanelTemplate {
+@@ -299,6 +313,9 @@
+     PartyMenu_AddWindows(application);
+     PartyMenu_InitSpriteResources(application);
+     PartyMenu_InitSprites(application);
++#ifdef SDK_PORT_3DS
++    WIDE_LAYOUT(WIDE_ENGINE_MAIN, sPartyMenuWideLayout);
++#endif
+ 
+     SetupRequestedMode(application);
+     SetupRequestedModePanels(application);
+@@ -677,6 +694,9 @@
+     u32 v1;
+ 
+     SetVBlankCallback(NULL, NULL);
++#ifdef SDK_PORT_3DS
++    WIDE_LAYOUT_NONE(WIDE_ENGINE_MAIN);
++#endif
+     PartyMenu_CleanupSprites(v0);
+     PartyMenu_RemoveWindows(v0);
+     sub_0207EA24(v0->bgConfig);

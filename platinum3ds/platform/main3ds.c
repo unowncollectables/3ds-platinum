@@ -63,6 +63,7 @@ extern void P3DS_ShutdownThreads(void); extern void P3DS_ShutdownSDL(void);
 static void hardExit(int code) {
     static int once; if (once++) exit(code);
     quitting = 1; PSPNativeMemLog("[3DS] exit: stopping threads");
+    { extern void P3DS_HuntFlush(void); P3DS_HuntFlush(); } /* run 88: hunt time since the last write */
     P3DS_ShutdownThreads(); P3DS_ShutdownSDL();
     extern BOOL PSPNative_CloseBackup(void); PSPNative_CloseBackup();
     PSPNativeMemLog("[3DS] exit: clean");
@@ -148,6 +149,7 @@ extern int __system_argc; extern char **__system_argv;
 void P3DS_SoftReset(unsigned param) {
     extern int P3DS_CfgSoftReset(void);
     int how = 0;
+    { extern void P3DS_HuntSoftReset(void), P3DS_HuntFlush(void); P3DS_HuntSoftReset(); P3DS_HuntFlush(); } /* run 88 shiny_suite: count it before the relaunch */
     if (!envIsHomebrew()) { aptSetChainloaderToSelf(); how = 1; }
     else if (__system_argc > 0 && __system_argv && __system_argv[0] && !strncmp(__system_argv[0], "sdmc:/", 6)) {
         Handle h = 0;
@@ -181,6 +183,7 @@ void P3DS_FrameHook(void) {
     if (lidEvt) { int e = lidEvt; lidEvt = 0; static int ls = -1; extern int P3DS_CfgInt(const char *, int); extern int P3DS_InField;
         if (ls < 0) ls = P3DS_CfgInt("lid_sound", 1) != 0;
         if (ls && P3DS_InField) { extern void P3DS_PlayLidSE(int); P3DS_PlayLidSE(e == 2); }
+        if (e == 1) { extern void P3DS_HuntFlush(void); P3DS_HuntFlush(); } /* run 88: lid closed -> hunt.txt up to date */
         PSPNativeMemLog("[3DS] lid %s (sound %d)", e == 1 ? "closed" : "opened", ls && P3DS_InField); }
 }
 static int touchPrev;
@@ -265,6 +268,7 @@ int main(void) {
           rename("sdmc:/3ds/platinum3ds/platinum.sav.bak1", "sdmc:/3ds/platinum3ds/platinum.sav.bak2");
           FILE *o = fopen("sdmc:/3ds/platinum3ds/platinum.sav.bak1", "wb"); size_t w = o ? fwrite(sb, 1, n, o) : 0; if (o) fclose(o);
           PSPNativeMemLog("[SAVE] backup platinum.sav -> .bak1 (%s, 3 kept)", w == n ? "ok" : "FAILED"); } } }
+    { extern void P3DS_SpeedCheck(void); P3DS_SpeedCheck(); } /* run 81: log whether 804 MHz/L2 is really on + per-core speed (speedcheck=0 skips); adapted from GabeSud0/pokeplatinum-3ds */
     STEP("Save (platinum.sav)", PSPNative_OpenBackup("sdmc:/3ds/platinum3ds/platinum.sav"), "platinum.sav invalid: must be exactly 512 KiB");
     { extern int P3DS_GameFontLoad(void); P3DS_GameFontLoad(); } /* run 64: game font from the ROM for port UI */
     PSPNativeStackProbeInit(); STEP("Stack probe", 1, "");

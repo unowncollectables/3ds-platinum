@@ -1,0 +1,57 @@
+--- a/render_window.c
++++ b/render_window.c
+@@ -29,6 +29,14 @@
+ #include "res/graphics/signposts/field_board.naix"
+ #include "res/graphics/windows/pl_winframe.naix"
+ 
++#ifdef SDK_PORT_3DS
++// The 3DS remaster draws the upper screen wider than the DS's: a menu by
++// the DS's edge goes to the wider screen's edge, a text box's frame across
++// its width. The port needs to know which windows have a frame drawn round
++// them, and which kind (3ds_port/nitro/include/nitro_port_wide.h).
++extern void NitroPort_WindowFramed(const void *window, int frame);
++#endif
++
+ #define SIGNPOST_BORDER_LEFT_SIZE  1
+ #define SIGNPOST_BORDER_RIGHT_SIZE 2
+ #define SIGNPOST_BORDER_Y_SIZE     1
+@@ -212,6 +220,9 @@
+ 
+ void Window_DrawStandardFrame(Window *window, u8 skipTransfer, u16 tile, u8 palette)
+ {
++#ifdef SDK_PORT_3DS
++    NitroPort_WindowFramed(window, 1);
++#endif
+     DrawStandardWindowFrame(window->bgConfig,
+         Window_GetBgLayer(window),
+         Window_GetXPos(window),
+@@ -228,6 +239,9 @@
+ 
+ void Window_EraseStandardFrame(Window *window, u8 skipTransfer)
+ {
++#ifdef SDK_PORT_3DS
++    NitroPort_WindowFramed(window, 0);
++#endif
+     Bg_FillTilemapRect(window->bgConfig,
+         Window_GetBgLayer(window),
+         0,
+@@ -305,6 +319,9 @@
+ 
+ void Window_DrawMessageBox(Window *window, u32 tile, u32 palette)
+ {
++#ifdef SDK_PORT_3DS
++    NitroPort_WindowFramed(window, 2);
++#endif
+     DrawMessageBoxFrame(window->bgConfig,
+         Window_GetBgLayer(window),
+         Window_GetXPos(window),
+@@ -328,6 +345,9 @@
+ 
+ void Window_EraseMessageBox(Window *window, u8 skipTransfer)
+ {
++#ifdef SDK_PORT_3DS
++    NitroPort_WindowFramed(window, 0);
++#endif
+     Bg_FillTilemapRect(window->bgConfig,
+         Window_GetBgLayer(window),
+         0,

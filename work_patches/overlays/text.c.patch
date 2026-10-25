@@ -1,22 +1,25 @@
 --- a/text.c
 +++ b/text.c
-@@ -237,7 +237,18 @@
-         printer->callbackParam = 0;
-         Text_GenerateFontHalfRowLookupTable(printer->template.fgColor, printer->template.bgColor, printer->template.shadowColor);
+@@ -275,10 +275,20 @@
+             }
+         }
  
+-        switch (result) {
+ #else
 -        switch (TextPrinter_Render(printer)) {
-+        enum RenderResult p3dsRes = TextPrinter_Render(printer);
++        enum RenderResult result = TextPrinter_Render(printer);
+ #endif
 +        { /* run 64 fast_text=N (default 0 = off, 2..4): up to N characters per frame while the printer is just
 +             printing characters (stops at any wait / scroll / button prompt, so no page can be skipped). */
 +            extern int P3DS_FastTextCfg(void); int extra = P3DS_FastTextCfg() - 1;
-+            while (extra-- > 0 && p3dsRes == RENDER_PRINT && printer->state == 0) {
++            while (extra-- > 0 && result == RENDER_PRINT && printer->state == 0) {
 +                printer->delayCounter = 0;
 +                enum RenderResult r2 = TextPrinter_Render(printer);
-+                if (r2 == RENDER_FINISH) { Window_CopyToVRAM(printer->template.window); p3dsRes = r2; break; }
++                if (r2 == RENDER_FINISH) { Window_CopyToVRAM(printer->template.window); result = r2; break; }
 +                if (r2 != RENDER_PRINT) break;
 +            }
 +        }
-+        switch (p3dsRes) {
++        switch (result) {
          case RENDER_PRINT:
              Window_CopyToVRAM(printer->template.window);
              // fall-through

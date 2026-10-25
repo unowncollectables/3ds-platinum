@@ -243,7 +243,7 @@ void G3G_Begin(u32 nativeClear, unsigned clearDepth16, int stereo) {
     clearRGBA = ((r << 2 | r >> 4) << 24) | ((g << 2 | g >> 4) << 16) | ((b << 2 | b >> 4) << 8) | (a * 255 / 31);
     clearD = clearDepth16 / 65535.0f; eyes = stereo ? 2 : 1; vn[0] = vn[1] = bn[0] = bn[1] = 0;
     { const int want = G3G_Wide && !wideFail && !G3G_Async && rbSyncOn() ? 320 : 256;
-      if (res3dCfg < 0) { res3dCfg = 0; PSPNativeMemLog("[3DRES] res3d disabled (run 52: broken on hardware; config res3d ignored)"); }
+      if (res3dCfg < 0) { extern int P3DS_CfgInt(const char *, int); res3dCfg = P3DS_CfgInt("res3d_test", 0) == 2 ? 2 : 0; PSPNativeMemLog(res3dCfg ? "[3DRES] res3d_test=2: sharp 3D ON for testing (run 83; run 52 had it disabled)" : "[3DRES] res3d disabled (run 52: broken on hardware; res3d_test=2 in config.txt tries it)"); }
       const int wantHi = res3dCfg == 2 && !res3dFail && !G3G_Async && rbSyncOn() ? 1 : 0;
       if ((want != curW || wantHi != curHi) && ok == 1) setTargets(want, wantHi);
       wideFrame = curW == 320; hiFrame = curHi == 1; }

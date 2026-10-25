@@ -77,7 +77,7 @@ PICTURE
                     continued into the side areas (tint measured from the picture's own edges, applied by the GPU;
                     ~0.1 ms). 0 = off. Default 1. (Menu: WIDE HAZE)  [run 61]
   battle_monobj_hide=1  fixes the Pokemon showing twice while a Poke Ball is thrown in battle. 0 = off. Default 1.
-  (res3d / res3d_lindepth: sharp 3D is DISABLED since run 52 - broken on hardware; these lines are ignored.)
+  res3d_test=0        (2 = try the 2x-supersampled "sharp 3D" again (smoother 3D edges); it was disabled in run 52 after garbage on hardware; run 49 fixed the depth cause. Test only; needs a restart. Look at [3DRES] lines in log.txt)
   tex_postvblank=1  3D sprites pick up their new picture in the same frame (fixes the one-frame coloured box
                     when getting on the bike, and late sprite frames). 0 = off. Default 1.
   stereo_depth=1    3D-slider depth for the 3D scene. 0 = flat 3D layer. Default 1.
@@ -153,6 +153,10 @@ LOGGING
                     Default 1. (Menu: GPU COMPOSE 3D)  [run 61]
   menu_audio=1      music and sounds keep playing while the L+R+Y settings menu is open (the game itself stays
                     paused). 0 = frozen like before. Default 1. (Menu: MENU MUSIC)  [run 61]
+  speedcheck=1      at boot (New 3DS only), log.txt gets [perf] lines saying whether the 804 MHz / L2 speed-up request was
+                    accepted and how long the same small jobs take on core 0, core 2 and core 1 (integer job: ~35 ms at
+                    804 MHz, ~105 ms at 268 MHz), plus a verdict line. Costs ~0.3 s at boot at 804 MHz (~1 s at 268).
+                    Core 1 shows -1 (no thread yet: its share is only requested later). 0 = skip. Default 1.  [run 81]
   log_level=1       1 = short log.txt; 2 = detailed diagnostics (writes much more to the SD card and can cost
                     some speed - only for bug hunting). Default 1.
 
@@ -271,3 +275,6 @@ Run 79
 Run 80
   text_hold_b=0        (1 = holding B prints text instantly and advances finished text boxes; never picks yes/no or menu choices)
   text_auto=0          (1 = text boxes advance by themselves after ~1.5 s; choices still wait for you)
+  wide_layouts=0      (run 84, test; settings app Wide tab "Wide menu layouts": 1 = menus laid out across the wide screen, as GabeSud0's port does, at the 1.25x scale. Party menu first; other screens may look off)
+Run 88
+  shiny_suite=0        (settings app Extra tab "Shiny hunt suite": 1 = shiny hunt counters in hunt.txt (encounters, since last shiny, soft resets, time, shinies), a chime + flash when a wild shiny appears, and a hunt panel on the Ball tab: Left/Right species, X twice reset, A export CSV to hunts/)

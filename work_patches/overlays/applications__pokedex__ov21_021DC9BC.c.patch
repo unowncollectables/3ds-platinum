@@ -1,0 +1,48 @@
+--- a/applications__pokedex__ov21_021DC9BC.c
++++ b/applications__pokedex__ov21_021DC9BC.c
+@@ -32,6 +32,28 @@
+ #include "res/graphics/pokedex/zukan.naix"
+ #include "res/text/bank/pokedex.h"
+ 
++#ifdef SDK_PORT_3DS
++#include "port_wide_layout.h"
++
++// The area page on the wider screen, as the info page's picture has it
++// (2026-10-23): the header bar on to the edges, the background's pattern
++// (8 pixels wide, its right end's plain columns) beside the DS's screen.
++static const short sPokedexAreaWideLayout[][8] = {
++    WIDE_MOVE(WIDE_BG(2), 0, 17, 0, 256, 0),
++    WIDE_FILL(WIDE_BG(2), 0, 17, -32, 0, 0),
++    WIDE_FILL(WIDE_BG(2), 0, 17, 256, 288, 255),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 0, 256, 0),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 248, 256, -280),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 248, 256, -272),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 248, 256, -264),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 248, 256, -256),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 248, 256, 8),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 248, 256, 16),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 248, 256, 24),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 248, 256, 32),
++};
++#endif
++
+ #define TERMINALVALUE      0xffff
+ #define POKEDEXMAPXSCALE   5
+ #define POKEDEXMAPYSCALE   5
+@@ -477,10 +499,16 @@
+     ov21_021DD2E0(mapDisplay, param1, param2, heapID);
+     ov21_021DDA48(mapDisplay, param2->encounterTime);
+     ov21_021DDCF4(param1, param2);
++#ifdef SDK_PORT_3DS
++    WIDE_LAYOUT(WIDE_ENGINE_MAIN, sPokedexAreaWideLayout);
++#endif
+ }
+ 
+ static void ov21_021DCE20(PokedexMapDisplay *mapDisplay, UnkStruct_ov21_021DCAE0 *param1)
+ {
++#ifdef SDK_PORT_3DS
++    WIDE_LAYOUT_NONE(WIDE_ENGINE_MAIN);
++#endif
+     ov21_021DD6C0(mapDisplay, param1);
+     ov21_021DD3FC(mapDisplay);
+     PokedexMapDisplay_DeleteCellActors(mapDisplay);

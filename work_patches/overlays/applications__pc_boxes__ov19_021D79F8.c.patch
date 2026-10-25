@@ -1,0 +1,127 @@
+--- a/applications__pc_boxes__ov19_021D79F8.c
++++ b/applications__pc_boxes__ov19_021D79F8.c
+@@ -26,6 +26,10 @@
+ #include "sys_task_manager.h"
+ #include "text.h"
+ 
++#ifdef SDK_PORT_3DS
++#include "port_wide_layout.h"
++#endif
++
+ static const struct {
+     u8 unk_00;
+     u8 unk_01;
+@@ -102,6 +106,78 @@
+     10,
+ };
+ 
++#ifdef SDK_PORT_3DS
++// The boxes on the wider screen (2026-10-16, from a reference drawing of
++// them): the panel of the Pokémon looked at (BG2's left, its sprite in 3D,
++// the sprites under it) at the screen's left edge; the box (its wallpaper,
++// BG3, the boxes sliding past behind the panel's edge as they change; the
++// party's tray, BG2's right; the icons, the hand and the buttons) at the
++// right edge; between them, the wallpaper's edge (its stripes) widened.
++// The panels the game puts across the screen (BG1: the boxes to jump to,
++// an item's description) stay in the middle, their sprites with them.
++static short sBoxWideStripes = -1;
++static enum BoxWidePanel sBoxWidePanel;
++
++static void BoxWide_Apply(void)
++{
++    short layout[][8] = {
++        WIDE_OBJS(0, 0, 0, 0, 0), // (the panel's sprites, below)
++        WIDE_FILL(WIDE_BG(3) | WIDE_SCREEN_COLUMNS, 0, 192, -32, 288, 0),
++        WIDE_MOVE(WIDE_BG(3) | WIDE_SCREEN_COLUMNS, 0, 192, 88, 256, 32),
++        WIDE_MOVE(WIDE_BG(2), 0, 192, 0, 112, -32),
++        WIDE_MOVE(WIDE_BG(2), 0, 192, 112, 256, 32),
++        WIDE_OBJS(-64, 160, -64, 72, -32),
++        WIDE_OBJS(-64, 160, 72, 400, 32),
++        WIDE_OBJS(160, 256, -64, 108, -32),
++        WIDE_OBJS(160, 256, 108, 400, 32),
++        WIDE_SHIFT3D(-32),
++    };
++
++    if (sBoxWideStripes < 0) {
++        return;
++    }
++
++    switch (sBoxWidePanel) {
++    case BOX_WIDE_PANEL_JUMP: // (the boxes to jump to)
++        layout[0][2] = 40;
++        layout[0][3] = 120;
++        layout[0][4] = -64;
++        layout[0][5] = 400;
++        break;
++    case BOX_WIDE_PANEL_ITEM: // (the item's icon, at x 18)
++        layout[0][2] = 136;
++        layout[0][3] = 256;
++        layout[0][4] = 0;
++        layout[0][5] = 21;
++        break;
++    default:
++        break;
++    }
++
++    layout[1][7] = sBoxWideStripes;
++    WIDE_LAYOUT(WIDE_ENGINE_MAIN, layout);
++}
++
++static void BoxWide_SetLayout(UnkStruct_ov19_021D8318 *param0)
++{
++    if (BoxApp_GetBoxMode(param0->unk_58F8) == PC_MODE_COMPARE) {
++        sBoxWideStripes = -1;
++        return;
++    }
++
++    // (the stripes: the left edge of the box's wallpaper, where it is
++    // drawn in BG3's picture)
++    sBoxWideStripes = (short)((param0->unk_01 * 8 + 1) & 511);
++    BoxWide_Apply();
++}
++
++void BoxWide_SetPanel(enum BoxWidePanel panel)
++{
++    sBoxWidePanel = panel;
++    BoxWide_Apply();
++}
++#endif
++
+ BOOL ov19_021D79F8(UnkStruct_ov19_021D8318 *param0, UnkStruct_ov19_021D61B0 *param1, const BoxApplication *param2, BgConfig *param3, SpriteList *param4)
+ {
+     param0->boxID = param2->customization.boxID;
+@@ -110,6 +186,13 @@
+     param0->unk_585C = ov19_021D7820(param1);
+     param0->unk_5854 = 72 + param0->unk_585C;
+     param0->unk_5858 = (256 + 16) + param0->unk_585C;
++#ifdef SDK_PORT_3DS
++    // (on the wider screen the panel isn't over the box's left edge: its
++    // icons go as they slide out of the box rather than under the panel)
++    if (NitroPort_WideScreenExtra() > 0 && BoxApp_GetBoxMode(param2) != PC_MODE_COMPARE) {
++        param0->unk_5854 = 100 + param0->unk_585C;
++    }
++#endif
+     param0->unk_58F0 = ov19_021D77D8(param1);
+ 
+     ov19_021DA3CC(param0->unk_58F0, param0->unk_A8[0], (5 * 6));
+@@ -136,6 +219,10 @@
+ 
+     Bg_SetOffset(param0->unk_58F4, BG_LAYER_MAIN_3, 0, param0->unk_0C);
+     Bg_FillTilemapRect(param0->unk_58F4, 3, 0x18, 0, 0, 64, 32, 9);
++#ifdef SDK_PORT_3DS
++    sBoxWidePanel = BOX_WIDE_PANEL_NONE;
++    BoxWide_SetLayout(param0);
++#endif
+ }
+ 
+ static void ov19_021D7AF4(const UnkStruct_ov19_021D8318 *param0, int param1, u32 *param2, u32 *param3, u32 *param4)
+@@ -258,6 +345,9 @@
+     param0->unk_01 += ((21 + 2) * boxChangeDirection);
+     param0->unk_01 &= 63;
+     param0->unk_02 ^= 1;
++#ifdef SDK_PORT_3DS
++    BoxWide_SetLayout(param0);
++#endif
+ 
+     {
+         ov19_021D813C(param0, customization->boxID);

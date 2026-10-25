@@ -49,3 +49,6 @@ emerald3ds/
 refs/
 __pycache__/
 *.pyc
+# run 82: borrowed HOME Menu banner art/sound (project art, not game data)
+!tools/banner3d/art/*.png
+!platinum3ds/full/cia/chime.wav

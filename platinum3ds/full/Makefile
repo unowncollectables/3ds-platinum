@@ -11,7 +11,7 @@ A      := $(W)/native-audio-app
 DEFS   := -O2 -DSDK_PORT -DSDK_X86 -DSDK_TS -DSDK_4M -DSDK_FINALROM -DNNS_FINALROM -DSDK_VERSION_MAJOR=4 -DSDL_MAIN_HANDLED -DMELONDS_PSP -DPSP_NATIVE_RGBA_OUTPUT=1 -DPOKEPLATINUM_GENERATED_ENUM -ffunction-sections -fdata-sections
 INC    := -I$(W)/native-probe/backing/include -I$(W)/native-graphics/alias-proof/include -I$(W)/native-probe/generated -I$(W)/native-graphics/libntr/include -I$(W)/../melon -I$(W)/native-render-opt -I$(A)/overlays/include
 PLAT   := ../platform
-POBJS  := build/main3ds.o build/logring.o build/psp_ctru.o build/sdl_ctru.o build/stubs3ds.o build/render3ds.o build/g3soft.o $(if $(filter 1,$(CRUMBS)),build/ov5crumbs.o) build/gpuscale.o build/blit_shbin.o build/g3gpu.o build/g3_shbin.o build/gpucomp.o build/romcache3ds.o build/p3ds_gamefont.o build/p3ds_foltalk.o
+POBJS  := build/main3ds.o build/logring.o build/psp_ctru.o build/sdl_ctru.o build/stubs3ds.o build/render3ds.o build/g3soft.o $(if $(filter 1,$(CRUMBS)),build/ov5crumbs.o) build/gpuscale.o build/blit_shbin.o build/g3gpu.o build/g3_shbin.o build/gpucomp.o build/romcache3ds.o build/p3ds_gamefont.o build/p3ds_foltalk.o build/wideapi.o build/widecomp.o build/speedcheck.o build/hunt.o
 APPOBJS:= sas_out.o vram_dirty.o stackprobe.o ctrdg_absent.o search_disabled.o wm_absent.o fx_mtx_native.o cadence.o audio_bank.o audio_loader.o audio_out.o audio_backend.o audio_seq.o audio_exchannel.o audio_channel.o audio_engine.o mic_pm.o os_sync.o offline.o gx_dma.o frame.o owner_lock.o threads.o alarms.o overlay.o config.o platform.o input.o romfs.o backup.o backing.o graphics_registers.o trainer_ai.o mi_memory.o mi_dma.o memprobe.o power.o
 RENDER := $(W)/native-render-opt/native_gpu.o $(W)/native-render-opt/GPU2D_Soft.o $(W)/native-stack-render/g3_handler.o $(W)/native-stack-render/frontend.o
 LIBS   := -Wl,--start-group $(A)/overlays/libplatinum-overlays.a $(A)/overlays/libinternal-overlays.a $(W)/native-probe/libnetwork-probe.a $(A)/libsdk-filtered.a -Wl,--end-group
@@ -51,9 +51,18 @@ build/p3ds.specs:
 BT ?= ../../tools/bt/linux-x86_64/bannertool
 MAKEROM ?= ../../tools/makerom
 cia: platinum3ds_full.cia
+# run 82: icon + animated 3D banner from your ROM (tools/banner3d, from GabeSud0/pokeplatinum-3ds; made in build/, never
+# committed). No ROM -> the run-79 placeholder art. BANNER=flat skips the 3D banner (flat one from the ROM's DS icon).
+# A failed 3D banner falls back to the flat one. The 3D banner needs Python 3.12+ and git (fetches pycgfx once).
+ROM ?= ../../baserom/platinum_us_rev1.nds
+BANNER ?= 3d
 platinum3ds_full.cia: platinum3ds_full.elf cia/platinum3ds.rsf
-	sh cia/make_art.sh build/cia
-	$(BT) makebanner -i build/cia/banner.png -a build/cia/banner.wav -o build/cia/banner.bnr
+	@rm -f build/cia/banner3d.bnr
+	@if [ -f "$(ROM)" ]; then python3 ../../tools/home_menu_art.py "$(ROM)" build/cia; else echo "(No ROM at $(ROM): placeholder HOME Menu art.)"; sh cia/make_art.sh build/cia; fi
+	@if [ -f "$(ROM)" ] && [ "$(BANNER)" = 3d ]; then python3 ../../tools/banner3d/make_banner.py --rom "$(ROM)" --bannertool $(BT) \
+	    --chime cia/chime.wav -o build/cia/banner3d.bnr || { rm -f build/cia/banner3d.bnr; echo "(No 3D banner: see above. Using the flat one.)"; }; fi
+	if [ -f build/cia/banner3d.bnr ]; then cp build/cia/banner3d.bnr build/cia/banner.bnr; \
+	else $(BT) makebanner -i build/cia/banner.png -a build/cia/banner.wav -o build/cia/banner.bnr; fi
 	$(BT) makesmdh -s "Platinum 3DS" -l "Pokemon Platinum native 3DS port" -p "local build" -i build/cia/icon.png -o build/cia/icon.icn
 	$(MAKEROM) -f cia -o $@ -elf platinum3ds_full.elf -rsf cia/platinum3ds.rsf -icon build/cia/icon.icn -banner build/cia/banner.bnr -exefslogo -target t
 
