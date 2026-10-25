@@ -1,35 +1,27 @@
 --- a/applications__party_menu__main.c
 +++ b/applications__party_menu__main.c
-@@ -72,6 +72,28 @@
+@@ -72,6 +72,20 @@
  #include "unk_0208C098.h"
  #endif
  
 +#ifdef SDK_PORT_3DS
 +#include "port_wide_layout.h"
 +
-+// The party across the 3DS remaster's wider upper screen. GabeSud0's reference
-+// (2026-10-16) puts everything 32 pixels right, leaving a plain strip on the
-+// left. Here (platinum3ds run 85) the two columns of panels (and their
-+// sprites) are spread apart instead, 16 pixels each way, so the panels reach
-+// toward both edges, with the background's plain left and right columns drawn
-+// on beside it and a little more of it between the columns; the background
-+// and the message box (BG0) stay where they are. (The first part sets the
-+// sprites' own shift to the background's: none.)
++// The party across the 3DS remaster's wider upper screen: the panels stay where
++// the DS has them (centred), and the background's plain left and right columns
++// are drawn on beside them. (The first part sets the sprites' own shift to the
++// background's: none.)
 +static const short sPartyMenuWideLayout[][8] = {
 +    WIDE_OBJS(0, 0, 0, 0, 0),
 +    WIDE_FILL(WIDE_BG(3), 0, 192, -32, 0, 0),
 +    WIDE_FILL(WIDE_BG(3), 0, 192, 256, 288, 255),
-+    WIDE_MOVE(WIDE_BG(1) | WIDE_BG(2), 0, 192, 0, 123, -16),
-+    WIDE_MOVE(WIDE_BG(1) | WIDE_BG(2), 0, 192, 123, 256, 16),
-+    WIDE_OBJS(0, 192, -128, 123, -16),
-+    WIDE_OBJS(0, 192, 123, 384, 16),
 +};
 +#endif
 +
  FS_EXTERN_OVERLAY(party_menu_form_change);
  
  typedef struct MemberPanelTemplate {
-@@ -299,6 +321,9 @@
+@@ -299,6 +313,9 @@
      PartyMenu_AddWindows(application);
      PartyMenu_InitSpriteResources(application);
      PartyMenu_InitSprites(application);
@@ -39,7 +31,7 @@
  
      SetupRequestedMode(application);
      SetupRequestedModePanels(application);
-@@ -677,6 +702,9 @@
+@@ -677,6 +694,9 @@
      u32 v1;
  
      SetVBlankCallback(NULL, NULL);
