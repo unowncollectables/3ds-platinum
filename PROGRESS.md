@@ -1391,7 +1391,7 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 
 ## Run 96 (select_reset: hold SELECT in a wild battle = soft reset)
 - Nathan's START button is worn. New key select_reset=0 (default off; settings app Hunt tab "Hold SELECT = reset (battle)", applies within
-  ~2 s): holding SELECT alone for 20 polls (~1/3 s) in a WILD battle (P3DS_CatchInfo[0], not in the field) calls P3DS_SoftReset, the same
+  ~2 s): holding SELECT alone for 20 polls (~0.2 s, 6 polls; run 98 was 20) in a WILD battle (P3DS_CatchInfo[0], not in the field) calls P3DS_SoftReset, the same
   path as L+R+START+SELECT (counts the soft reset for the hunt, then relaunches; with reset_skip_intro=1 it lands on Continue).
   Ignored with L, R or START held, in the overworld, menus and trainer battles. Log: `[BOOT] select_reset: ...`. Untested on hardware.
 
@@ -1401,3 +1401,10 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   (was 3 / 37) to catch that moment within a few polls instead of up to 40. The port's 2 s credits splash is skipped on a skip-intro reset.
   Log now says `[BOOT] skip intro done: stage 2 after N polls, M ms from the first poll` (M = time from the first game poll, so it excludes
   the app relaunch and ROM / overlay loading). Untested on hardware; the relaunch itself is unchanged.
+
+## Run 98 (select_reset: shorter press, diagnostic)
+- Nathan's log (run97 build, select_reset=1, one wild battle): no `[BOOT] select_reset` line, i.e. no SELECT hold of 20 polls (~0.7 s) was seen in a
+  wild battle. Now 6 polls (~0.2 s, close to a tap) and the first 6 SELECT presses log `[BOOT] SELECT pressed: select_reset=N catchInfo=N inField=N`
+  so the next log shows which condition failed. Same log: skip-intro reaches the menu 10858 ms after the first poll, with START tapped every
+  6 polls, so the opening's own loading (not the tapping) is the wait; the frame drops (fps 16-23) are in composite/present (menu, title,
+  battle screens, tris 0), game = 0.0 ms.
