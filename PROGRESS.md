@@ -1340,3 +1340,20 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Test (x86): `gcc -O2 -I platinum3ds/platform -DHUNT_DIR='"/tmp/hunt_test/"' tools/hunt_test.c -lm -o ht && ./ht` (old file
   format, round trip, soft resets, time with sleep gaps, periodic write, power-cut recovery, species cycling, reset, odds, CSV).
   render3ds.cpp and the game file are not compiled in the cloud (no devkitARM / pspoke tree here).
+
+## Settings app redesign (after run 88, from Nathan's "cluttered and ugly" note)
+- Tab bar: 6 tabs instead of 9 (Video, Game, Keys, Pal, Hunt, Cheats; SELECT still adds the hidden Debug tab). Each tab is a
+  one-per-line list (8 rows a page, name left, value right between arrows, a green dot on rows changed this visit) instead of
+  the 2 x 5 grid of boxes. Up/Down (D-pad or circle pad, held = repeat) pick, Left/Right or A/X change, L/R tab, B close.
+  Touch: tab bar, a row's left half of the value = previous value, anywhere else on the row = next value, footer = next page.
+- The Ball, Map and Menu tabs left the tab bar and became pages opened from rows: Hunt > "Hunt stats" (the old Ball tab:
+  hunt panel / catch info), Hunt > "Wild Pokemon here" (the old Map tab, A or tap = next page), Keys > "Quick menu" (the old
+  Menu tab). B on a page opened from a row goes back to that row; a page opened directly (Y in battle, bottom strip, touch
+  quick menu corner) still closes on B. Reopening the app after closing on a page shows the tab that page belongs to.
+- Moves: Wide menu layouts and Time-of-day tint -> Video; the Distortion World rows and Weather in strips -> Video page 2;
+  text/battle/item rows from Extra -> Game; Touch quick menu and Bottom strip -> Keys; Shiny hunt suite, Encounter counter,
+  Catch info and the visible wild rows -> Hunt. Same items, keys, getters and setters (mItems untouched), so config.txt and
+  the save are unchanged.
+- Top screen: one title box ("Settings: <tab>  (page/pages)" + version) and a key hint box that says B back or B close.
+- Test (x86): runApp + tables compiled against stubs with ASan/UBSan and driven by a scripted key sequence (pick row, change
+  Wide menu layouts, L/R across tabs, open Hunt stats with A, B back); not built for the 3DS in the cloud.
