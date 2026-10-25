@@ -1254,3 +1254,18 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Real sharpness (3D drawn at the screen's own 400x240 under a 2D overlay, as GabeSud0's port does) is a bigger project, not started: needs the 2D composite to leave 3D pixels clear and a hi-res 3D target (400x240 needs ~0.7 MB VRAM, far less than 2x).
 
 - wide_layouts (default 0, run 83 WIP): platform/wideapi.c = the game-side API of GabeSud0's wide-layout patches (WideScreenParts, WindowAdded/Removed/Anchor/Framed, WideSplitScreen...). Records only; with wide_layouts=0 NitroPort_WideScreenExtra() is 0, so patched game code behaves like the DS. Renderer part (320-wide 2D compositor) not built yet.
+
+## Run 84 (wide layouts: the display engine)
+- platform/widecomp.c (+ widecomp.h): draws a screen that has a wide layout (GabeSud0's parts, recorded by wideapi.c) across
+  DS columns -32..287. BGs that move with the sprites (WIDE_OBJS dx, 0 without one) stay in the normal melonDS pass, which is
+  placed that far right; the other BGs are switched off for that pass and drawn by WC_Compose per line from per-line column
+  maps (WIDE_MOVE / WIDE_FILL / the DS's place), in front when their priority is ahead, else only over the backdrop. Columns
+  the melonDS picture does not reach get every text BG. Centre goes back into the engine A picture, sides into the wide strips.
+  Master brightness: off for the melonDS pass, applied by WC_Compose to the centre, by gpuscale to the strips.
+- Active only with wide_layouts=1 AND wideview=1 AND the 1.25x scale, engine A on top, not the 3D overworld, and a layout set
+  (party menu first). GPU compose is skipped on those frames. Logs: "[WIDE] wide layout drawing on/off", "[WIDE] layout #N: ..."
+  (shift, melonDS BGs, drawn BGs), "[WIDE] wide layout avg N us/frame".
+- Not done: alpha blending of drawn BGs, sprite regions / stretch (one sprite shift per screen), WIDE_SHIFT3D, engine B,
+  WindowAnchor/Framed (text boxes moving to the wide edge).
+- Test: `gcc -O2 -I platinum3ds/platform tools/widecomp_test.c platinum3ds/platform/widecomp.c -o wct && ./wct` (party layout,
+  passes). x86: 0.4 ms per frame for the party menu. render3ds.cpp glue NOT compiled here (no devkitARM in the cloud).

@@ -637,6 +637,8 @@ static void wideFill(const u32*C){static u16 acc[3][64*192];
    Other layers are left out of the strips (a panel touching the edge just ends there). Nothing visible -> backdrop.
    No mirroring, no blur, no stretching; fades come from gpuscale strips() (wide_fadefix). OBJs are not drawn in the
    strips. 0 = old behaviour (black bars, or wide_fill=1). */
+#include "widecomp.h"
+extern "C" { int P3DS_WideLayoutsOn(void); int P3DS_WideGetParts(int,short*); }
 static int wideMenusV=-1;extern "C" int P3DS_WideMenusCfg(void){if(wideMenusV<0){wideMenusV=P3DS_CfgInt("wide_menus",1)!=0;PSPNativeMemLog("[WIDE] wide_menus=%d",wideMenusV);}return wideMenusV;}
 static unsigned wnUs,wnN,wnLay[5];
 static void wideNative(){const u64 t0=svcGetSystemTick();
@@ -1056,6 +1058,15 @@ static int Present(bool){
  u32 hash0=stateHash();
  if(!earlyB){mapMemory();engineB.Enabled=(power&512)!=0;bindRegisters(engineB,0x1000);} /* early_b: already mapped; the worker may be reading it */
  engineA.Enabled=(power&2)!=0;bindRegisters(engineA,0);
+ /* run 84 wide_layouts (widecomp.c): a screen with a wide layout (party menu, ...) is drawn across the wide view. The BGs
+    the layout moves differently from the sprites are switched off for the melonDS pass and drawn by WC_Compose after it;
+    master brightness too (WC_Compose applies it to the centre, gpuscale to the strips). No GPU compose on those frames. */
+ static WcPlan wcPlan;bool wlNow=false;
+ if(P3DS_WideLayoutsOn()&&wideCfg>0&&P3DS_ScaleMode()==1&&(power&0x8000)&&engineA.Enabled&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)){
+  static short wlParts[WC_MAX_PARTS*8];const int n=P3DS_WideGetParts(0,wlParts);
+  if(n>0&&WC_Plan(&wcPlan,PSPNative_GfxRegisters,wlParts,n)){wlNow=true;engineA.DispCnt&=~((u32)wcPlan.cpuMask<<8);engineA.MasterBrightness=0;
+   if(wcPlan.changed){wcPlan.changed=0;static unsigned nPl;if(++nPl<=20||nPl%600==0)PSPNativeMemLog("[WIDE] layout #%u: %d parts, sprites/melonDS shift %d (%d sprite parts), melonDS BGs %x, drawn BGs %x (in front %x)",nPl,wcPlan.n,wcPlan.D,wcPlan.objParts,wcPlan.mMask,wcPlan.cpuMask,wcPlan.frontMask);}}}
+ {static int lastWl=-1;if((int)wlNow!=lastWl){lastWl=wlNow;PSPNativeMemLog("[WIDE] wide layout drawing %s",wlNow?"on":"off");}}
  /* run 76 display capture through the renderer's own DoCapture (melonDS): source A = 2D+3D composite or 3D, source B =
     VRAM, blend A/B. Motion blur at Spear Pillar (Dialga/Palkia) shows VRAM C fed by capture; ignored it was black. */
  {const u32 cc=reg32(0x64);const int cm=P3DS_CfgInt("display_capture",1);engineA.CaptureCnt=cm==1?cc:0;engineA.CaptureLatch=cm==1&&(cc&0x80000000u)&&engineA.Enabled;}
@@ -1069,7 +1080,7 @@ static int Present(bool){
  bool async=engineBAsync();
  static int par3d=-1;if(par3d<0){par3d=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");int x;char l[64];if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"stereo2d_par=%d",&x)==1)par3d=x!=0;fclose(f);}PSPNativeMemLog("[2D] stereo right eye on core 2: %d",par3d);}
  const int gcMode0=P3DS_GpuComposeCfg();
- const bool gcSt=gcMode0==2&&stereo&&rightEye&&P3DS_InField&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
+ const bool gcSt=!wlNow&&gcMode0==2&&stereo&&rightEye&&P3DS_InField&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
  bool rightPar=async&&par3d&&stereo&&rightEye&&!gcSt;
  if(rightPar){memcpy((void*)&engineA2,(const void*)&engineA,sizeof engineA);engineA2.CaptureCnt=0;engineA2.CaptureLatch=false;}
  /* run 55 stereo_2d=1 (default): outside the overworld (battles, menus, title) the right eye's 2D background layers
@@ -1088,7 +1099,7 @@ static int Present(bool){
  bClaim=0;const bool stealNow=async&&stealCfg==1&&rightPar&&!onC1&&!earlyB;
  if(splitCfg<0){splitCfg=1;/* run 57: default 1 (Azahar: identical images overworld/battle/menus, mono composite -37%) */FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"split_top=%d",&x)==1)splitCfg=x!=0;fclose(f);}PSPNativeMemLog("[2D] split_top=%d",splitCfg);}
  const int gcMode=P3DS_GpuComposeCfg();if(gcMode>=2)gcFrames++;
- const bool gcOK=gcMode==2&&(!stereo||gcSt)&&!rightPar&&engineA.Enabled&&(gcSt||gcEligible());
+ const bool gcOK=!wlNow&&gcMode==2&&(!stereo||gcSt)&&!rightPar&&engineA.Enabled&&(gcSt||gcEligible());
  const bool splitNow=!gcOK&&splitCfg&&async&&!stereo&&!rightPar&&!onC1&&!stealNow&&engineA.Enabled&&((a>>16)&3)==1&&!(reg32(0x64)&0x80000000u);
  if(splitNow){memcpy((void*)&engineAS,(const void*)&engineA,sizeof engineA);line0Done=false;bSplit=true;splitN++;}
  if(async)bPost();
@@ -1119,7 +1130,7 @@ static int Present(bool){
  P3DS_Crumb("b-ok",0);
  {midChecks++;if(stateHash()!=hash0)midWrites++;if(midChecks>=600){PSPNativeMemLog("[2D] game state (OAM/palette/2D regs) changed DURING composite in %u of %u frames (comp_excl=%d)",midWrites,midChecks,(int)excl);midChecks=midWrites=0;}}
  if(excl)svcSetThreadPriority(CUR_THREAD_HANDLE,oldPrio);
- if(gcMode==3&&!stereo&&engineA.Enabled&&gcEligible()){if(!gcScratch)gcScratch=(u32*)linearMemAlign(256*256*4,0x80);
+ if(!wlNow&&gcMode==3&&!stereo&&engineA.Enabled&&gcEligible()){if(!gcScratch)gcScratch=(u32*)linearMemAlign(256*256*4,0x80);
   if(gcScratch&&gcCompose(gcScratch)){gcVer++;unsigned bad=0;for(unsigned i=0;i<256*192;i++)if((gcScratch[i]^display[0][i])&0xFFFFFF)bad++;
    if(bad){gcVerBad++;gcBadPx+=bad;static int dumps;if(dumps<3){char fn[96];snprintf(fn,sizeof fn,"sdmc:/3ds/platinum3ds/gpuc_mm%d_cpu.bmp",dumps);dumpBmp(fn,display[0],false);snprintf(fn,sizeof fn,"sdmc:/3ds/platinum3ds/gpuc_mm%d_gpu.bmp",dumps);dumpBmp(fn,gcScratch,false);
      unsigned fi=0;while(fi<256*192&&!((gcScratch[fi]^display[0][fi])&0xFFFFFF))fi++;PSPNativeMemLog("[GPUC] verify mismatch #%d frame %u: %u px, first at (%u,%u) cpu %08x gpu %08x",dumps,frames,bad,fi%256,fi/256,display[0][fi],gcScratch[fi]);dumps++;}}
@@ -1159,7 +1170,11 @@ static int Present(bool){
  /* run 54 wide_fx: before the save box / toast / fps overlay are drawn onto the centre */
  static bool fillReady;fillReady=false;
  static bool wnReady;wnReady=false;
- if(wideCfg>0&&P3DS_ScaleMode()==1&&P3DS_WideMenusCfg()&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)&&(power&0x8000)&&engineA.Enabled){wideNative();wnReady=true;}
+ if(wlNow){const u64 tw=svcGetSystemTick();u32*c0=(u32*)(stereo?eyeL:top);
+  WC_Compose(&wcPlan,PSPNative_GfxRegisters,GPU::VRAMFlat_ABG,(const u16*)GPU::Palette,GPU::VRAMFlat_ABGExtPal,c0,P3DS_WideFillBuf);
+  if(stereo&&eyeR&&eyeR!=c0)WC_Compose(&wcPlan,PSPNative_GfxRegisters,GPU::VRAMFlat_ABG,(const u16*)GPU::Palette,GPU::VRAMFlat_ABGExtPal,(u32*)eyeR,P3DS_WideFillBuf);
+  wnReady=true;{static u64 acc;static unsigned n;acc+=svcGetSystemTick()-tw;if(++n==600){PSPNativeMemLog("[WIDE] wide layout avg %u us/frame",(unsigned)(acc/600/CPU_TICKS_PER_USEC));acc=0;n=0;}}}
+ else if(wideCfg>0&&P3DS_ScaleMode()==1&&P3DS_WideMenusCfg()&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)&&(power&0x8000)&&engineA.Enabled){wideNative();wnReady=true;}
  else if(wideCfg>0&&P3DS_ScaleMode()==1&&wideFillCfg()&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)&&(power&0x8000)){wideFill(display[0]);fillReady=true;}
  P3DS_WeatherOn=0;if(wideWeatherCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000))wideWeatherRun();
  {extern int P3DS_HazeOn;P3DS_HazeOn=0;if(P3DS_WideHazeCfg()&&!wideFxCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000))wideHaze(display[0],GPU3D::NativeFrame);}
