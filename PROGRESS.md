@@ -1271,3 +1271,7 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   passes). x86: 0.4 ms per frame for the party menu. render3ds.cpp glue NOT compiled here (no devkitARM in the cloud).
 - Settings app: Wide tab row 1 "Wide menu layouts" (wide_layouts, applies at once via P3DS_SetWideLayouts, saved to config.txt).
   No longer needs wideview=1, only the 1.25x scale (the default). Old "Wide menus" row renamed "Side fill in menus".
+- Settings app tidy (Nathan: old options go to the hidden Debug tab, SELECT): Debug now also has Log size limit, Split top,
+  Wide view FX, Wide haze, Edge fill, Side fill in menus, Mirror fill (old), Wild sprite test. Video = FPS counter, Wide view,
+  Scale, Camera zoom, 3D strength, Battle 3D depth. Wide = Wide menu layouts, Weather in strips + Distortion World rows.
+  Values and defaults unchanged, only where the rows are.

@@ -901,17 +901,17 @@ static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 extern "C" volatile int P3DS_CatchInfo[20];static int appStartTab=-1;
 struct ATab{const char*name;int n;int it[16];const char*nm[16];};
 static const ATab kTabs[]={
- {"Video",9,{0,1,2,7,9,10,20,21,13},{"FPS counter","Wide view","Scale","Wide view FX","Camera zoom","3D strength","Battle 3D depth","Wide haze","Split top (mono)"}},
+ {"Video",6,{0,1,2,9,10,20},{"FPS counter","Wide view","Scale","Camera zoom","3D strength","Battle 3D depth"}},
  {"Game",12,{22,23,3,4,5,6,14,16,17,18,25,26},{"Fast text","Reusable TMs","C-stick","ZL run toggle","ZR = item (Y)","Circle pad D-pad","Following Pok\xe9mon","Follower slot","Follower talk","Menu music","Repel prompt","IV/EV on summary"}},
  {"Cheat",11,{24,27,28,29,30,31,32,53,54,55,56},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99","Infinite PP","Fast running (B)","Walls: hold R","Time of day"}},
  {"Pal",9,{33,34,35,36,37,38,39,40,41},{"Area talk","Follower cry","Follower finds items","Ball pop-out","Emote bubbles","Friendship talk","Idle look-around","Follower gap","Behind player"}},
- {"Wide",10,{71,42,43,44,45,59,60,61,62,67},{"Wide menu layouts","Weather in strips","Edge fill","Side fill in menus","Mirror fill (old)","Distortion 3D depth","Distortion debris","Uneasy Pok\xe9mon","Distant cry","Distortion camera roll"}},
- {"Extra",16,{46,47,48,49,50,51,52,57,58,63,64,65,66,68,69,70},{"Visible wild Pok\xe9mon","Visible wild max","Only visible battle","Wild sprite test","HMs without learning","Save backups (3)","Log size limit","Catch info (Y)","Battle anim speed","Encounter counter","Time-of-day tint","Hidden item ping","Touch quick menu","Bottom button strip","Hold B: fast text","Auto-advance text"}},
+ {"Wide",7,{71,42,59,60,61,62,67},{"Wide menu layouts","Weather in strips","Distortion 3D depth","Distortion debris","Uneasy Pok\xe9mon","Distant cry","Distortion camera roll"}},
+ {"Extra",14,{46,47,48,50,51,57,58,63,64,65,66,68,69,70},{"Visible wild Pok\xe9mon","Visible wild max","Only visible battle","HMs without learning","Save backups (3)","Catch info (Y)","Battle anim speed","Encounter counter","Time-of-day tint","Hidden item ping","Touch quick menu","Bottom button strip","Hold B: fast text","Auto-advance text"}},
  {"Ball",-3,{},{}},
  {"Menu",-1,{},{}},
  {"Map",-2,{},{}},
  /* run 67: the old Speed tab, hidden: only shown when SELECT is held while the settings app opens */
- {"Debug",5,{11,12,15,19,8},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail"}},
+ {"Debug",13,{11,12,15,19,8,52,13,7,21,43,44,45,49},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail","Log size limit","Split top (mono)","Wide view FX","Wide haze","Edge fill","Side fill in menus","Mirror fill (old)","Wild sprite test"}},
 };
 static void prettyLab(char*d,const char*s,int n){/* run 64: "WIDE VIEW FX" -> "Wide view FX" (acronyms kept) */
  static const char*const acr[]={"FPS","GPU","ZL","ZR","FX","3D","1X","2X","25X","5X","ROM","IV","EV","TM","HM","LED","UI","OK","KB","MB","Y","X","A","B","L","R"};
