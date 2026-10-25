@@ -1365,3 +1365,12 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   (against pokeplatinum 47c28d53, like the other overlay edits; applies to the pristine file and reproduces the pspoke-patches copy
   byte for byte). Apply it to native-audio-app/overlays/source/battle__battle_controller_player.c and make sure that object is rebuilt.
 - Check after a build: a wild battle's fight menu + Y opens the page, and log.txt gets `[HUNT] species N met M times`.
+
+## Run 94 (first read of the run 86 log)
+- Nathan's log (build fefa04f, ~90 s of play, mostly menus and a battle): overworld steady 29-30 fps (present 1 ms, 575 tris). Frame drops are
+  in menus: 22 fps at 3D slider 0 (present 20-24 ms vs 1 ms in the overworld, composite 8-15 ms), 13 fps with the slider up (present 41-47 ms).
+  Not area changes. Seems to be the CPU present path menus take (wide menus on); belongs to the wide menu work.
+- No [ZONE] or [PREFETCH] zone lines and `map -1` in [PERF3]: P3DS_ZoneEnter (work_patches/overlays/field_map_change.c.patch) is not in this
+  build (like the catch-info hook in run 88b, overlay patches are applied by hand), so zone_prefetch also does nothing and prefetch.bin
+  is stale (144 zones from an older build). Without it the area-change spikes cannot be named or prefetched.
+- [SPIKE]: a run of consecutive slow frames now logs its first frame and every 30th (it used all 60 lines on one slow menu at f=1454-1497).
