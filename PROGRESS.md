@@ -1252,3 +1252,5 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 ## Run 83 (sharper 3D experiment)
 - res3d_test=2 (default 0): re-enables the run 46-49 "sharp 3D" path (3D at 2x, HW 2x2 downscale, 24-bit depth in linear RAM) for a hardware test. It is smoothing only (4x supersampled edges), not extra texels. Disabled since run 52 for garbage on hardware; run 49 fixed the 16-bit depth cause but was never re-tested. Look at [3DRES] / [PERF] lines.
 - Real sharpness (3D drawn at the screen's own 400x240 under a 2D overlay, as GabeSud0's port does) is a bigger project, not started: needs the 2D composite to leave 3D pixels clear and a hi-res 3D target (400x240 needs ~0.7 MB VRAM, far less than 2x).
+
+- wide_layouts (default 0, run 83 WIP): platform/wideapi.c = the game-side API of GabeSud0's wide-layout patches (WideScreenParts, WindowAdded/Removed/Anchor/Framed, WideSplitScreen...). Records only; with wide_layouts=0 NitroPort_WideScreenExtra() is 0, so patched game code behaves like the DS. Renderer part (320-wide 2D compositor) not built yet.

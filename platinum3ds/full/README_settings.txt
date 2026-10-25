@@ -275,3 +275,4 @@ Run 79
 Run 80
   text_hold_b=0        (1 = holding B prints text instantly and advances finished text boxes; never picks yes/no or menu choices)
   text_auto=0          (1 = text boxes advance by themselves after ~1.5 s; choices still wait for you)
+  wide_layouts=0      (run 83, work in progress: 1 = menus laid out across the wide screen, as GabeSud0's port does. The display part is not built yet: leave at 0)
