@@ -1374,3 +1374,24 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   build (like the catch-info hook in run 88b, overlay patches are applied by hand), so zone_prefetch also does nothing and prefetch.bin
   is stale (144 zones from an older build). Without it the area-change spikes cannot be named or prefetched.
 - [SPIKE]: a run of consecutive slow frames now logs its first frame and every 30th (it used all 60 lines on one slow menu at f=1454-1497).
+
+## Run 95 (2026-10-25, Grok Bot) - menu stutter with wide_layouts, [PERF4]
+
+- [PERF4] (1 in 10 lines): game-thread time blocked in OS_WaitVBlankIntr / OS_WaitIrq. The overworld is capped at 30 fps by the game's
+  own 2 V-blank waits; in Azahar ~11-12 ms of the 33 ms frame is that wait, ~15-16 ms real work.
+- [SPIKE] has a second line with per-stage ms (bind | widePlan | engineA | B-wait | capture..tComp | wideCompose | overlays | wide/app | present | game-wait).
+- Hitch found: with wide_layouts=1 every non-field top screen (title, party, bag, boxes...) was drawn by melonDS engine A (~16 ms)
+  and then completely redrawn by widecomp (WC_Compose ~55-65 ms in the emulator), after waiting for engine B (~23 ms).
+  widecomp never reads engine A's picture, so wide_early=1 (default, Debug tab) runs it right after engine B is posted to the
+  worker and skips engine A when it succeeds. Same pixels (widecomp writes every centre pixel either way); falls back to the old
+  order if widecomp declines. Azahar, title screen: engineA+B-wait+compose 105 ms -> 64 ms per frame (15 -> 20 fps); party
+  44.5 -> 38.5 ms/frame (22 -> 25 fps); bag 43.0 -> 40.1 ms/frame. 592 of 601 eligible frames composed early.
+  WC_Compose itself (~1 ms on x86, ~55 ms on the 3DS CPU) is now the remaining cost; next step would be dirty-row compose.
+- A frame-level cache of the composed picture (wide_cache) was tried and dropped: WC_Compose already caches by input hash,
+  and animated menus change every frame.
+- "layout #1-#4: 0 parts" is expected: wide_layouts runs widecomp on every non-field 2D screen; screens without a WIDE_LAYOUT
+  table (title, intro) get a 0-part plan (edge extension only). Bag (3 parts) and party (21 parts) plans appear later in the log
+  ([WIDE] parts set: diag line, first 40 calls).
+- gpu_compose=2 readback skip: not done. gpucomp uploads the read-back NativeFrame as its 3D texture; skipping the readback needs the
+  render target bound as a texture directly. Too risky for this run.
+- Not tested this run in the emulator: PC boxes, a battle, shiny_suite in an encounter, text_hold_b/text_auto in dialogue.

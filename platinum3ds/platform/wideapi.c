@@ -37,6 +37,7 @@ void NitroPort_WindowFramed(const void *w, int frame) { Win *p = find(w); if (p)
 uint32_t NitroPort_WideWindowsSerial(void) { return winSerial; }
 
 void NitroPort_WideScreenParts(int engine, const short *rows, int count) {
+    { static int nl; if (nl < 40) { nl++; PSPNativeMemLog("[WIDE] parts set: engine %d, %d rows", engine, rows ? count : 0); } } /* run 95 diag */
     if (engine < 0 || engine > 1) return;
     if (!rows || count <= 0) { nParts[engine] = 0; return; }
     if (count > MAX_PARTS) count = MAX_PARTS;
