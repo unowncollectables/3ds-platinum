@@ -19,6 +19,8 @@ int WC_Plan(WcPlan *p, const uint8_t *regs, const short *parts, int n);
 /* center: the engine A picture (256x192, melonDS 0xAABBGGRR) drawn with cpuMask's BGs off and no master brightness;
    rewritten in place. strip: 64x192 (32 left, 32 right), 0xRRGGBBAA, as P3DS_WideFillBuf. */
 void WC_Compose(const WcPlan *p, const uint8_t *regs, const uint8_t *vram, const uint16_t *pal, const uint8_t *ext, uint32_t *center, uint32_t *strip);
+/* the engine A OAM copy (128 x 4 u16): moves each sprite as the layout's WIDE_OBJS parts say, before the melonDS pass */
+void WC_AdjustOam(const WcPlan *p, uint16_t *oam);
 #ifdef __cplusplus
 }
 #endif

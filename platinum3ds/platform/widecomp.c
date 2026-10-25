@@ -104,12 +104,12 @@ int WC_Plan(WcPlan *p, const u8 *R, const short *parts, int n) {
 
 /* one layer's pixels for DS columns s0..s1-1 of line y into row[] (index s+32) where opaque; onlyOver: only where row
    still holds that colour (the backdrop) */
-static void drawLayer(const WcPlan *p, int li, int y, int s0, int s1, const u8 *vram, const u32 *lut, const u8 *ext, u32 *row, u8 *lay, int onlyIf, u32 bdM) {
+static void drawLayer(const WcPlan *p, int li, int y, int s0, int s1, const u8 *vram, const u32 *lut, const u8 *ext, u32 *row, u8 *lay, const u8 *onlyIf, u32 bdM) { (void)bdM;
     const WcLayer *l = &p->L[li]; const int py = (int)((y + l->vofs) & (l->h * 8 - 1)); const uint8_t ri = p->rowOf[li][y];
     short tmp[320]; const short *map; if (ri != 255) map = p->rows[ri]; else { buildRow(p, li, y, tmp); map = tmp; }
     int lastT = -1; u16 me = 0; const u8 *trow = 0;
     const unsigned ty = (unsigned)(py >> 3) & (l->h - 1); unsigned fy0 = py & 7;
-    for (int s = s0; s < s1; s++) { const int X = s + 32; if (onlyIf && row[X] != bdM) continue;
+    for (int s = s0; s < s1; s++) { const int X = s + 32; if (onlyIf && onlyIf[X]) continue;
         const int pc = map ? map[X] : srcCol(p, li, y, s); if (pc < 0) continue;
         const int t = pc >> 3;
         if (t != lastT) { lastT = t; const unsigned tx = (unsigned)t & (l->w - 1);
@@ -132,12 +132,12 @@ void WC_Compose(const WcPlan *p, const u8 *R, const u8 *vram, const u16 *pal, co
     const u16 mb = *(const u16 *)(R + 0x6C); unsigned mf = mb & 31; if (mf > 16) mf = 16; const int mm = mf ? (mb >> 14) & 3 : 0;
     const int D = p->D, c0 = D > -32 ? D : -32, c1 = D + 256 < 288 ? D + 256 : 288; /* DS columns the melonDS picture covers */
     for (int y = 0; y < 192; y++) {
-        u32 row[320]; u8 lay[320];
-        for (int s = -32; s < 288; s++) { if (s >= c0 && s < c1) { row[s + 32] = center[y * 256 + s - D]; lay[s + 32] = 4; } else { row[s + 32] = bdM; lay[s + 32] = 5; } }
+        u32 row[320]; u8 lay[320], mel[320]; /* mel: the melonDS picture has a pixel there */
+        for (int s = -32; s < 288; s++) { if (s >= c0 && s < c1) { row[s + 32] = center[y * 256 + s - D]; lay[s + 32] = 4; mel[s + 32] = row[s + 32] != bdM; } else { row[s + 32] = bdM; lay[s + 32] = 5; mel[s + 32] = 0; } }
         for (int oi = 0; oi < no; oi++) { const int li = order[oi];
             if (c0 > -32) drawLayer(p, li, y, -32, c0, vram, lut, ext, row, lay, 0, bdM);
             if (c1 < 288) drawLayer(p, li, y, c1, 288, vram, lut, ext, row, lay, 0, bdM);
-            if (p->cpuMask & (1 << li)) drawLayer(p, li, y, c0, c1, vram, lut, ext, row, lay, !(p->frontMask & (1 << li)), bdM); }
+            if (p->cpuMask & (1 << li)) drawLayer(p, li, y, c0, c1, vram, lut, ext, row, lay, (p->frontMask & (1 << li)) ? 0 : mel, bdM); }
         if (!eff && !mm) { memcpy(center + y * 256, row + 32, 256 * 4);
             for (int X = 0; X < 64; X++) { const u32 c = row[X < 32 ? X : X + 256]; strip[y * 64 + X] = ((c & 255) << 24) | (((c >> 8) & 255) << 16) | (((c >> 16) & 255) << 8) | 0xFF; }
             continue; }
@@ -150,4 +150,21 @@ void WC_Compose(const WcPlan *p, const u8 *R, const u8 *vram, const u16 *pal, co
             else { if (mm == 1) { r += (255 - r) * mf / 16; g += (255 - g) * mf / 16; b += (255 - b) * mf / 16; } else if (mm == 2) { r -= r * mf / 16; g -= g * mf / 16; b -= b * mf / 16; }
                 center[y * 256 + X - 32] = r | (g << 8) | (b << 16) | 0xFF000000u; } }
     }
+}
+
+/* WIDE_OBJS parts: a sprite whose middle is in a part's region (first part that has it) ends up dx right of where the
+   DS has it; the melonDS picture is placed D right as a whole, so the sprite itself moves dx - D in the OAM copy first.
+   A sprite that would leave the 256 columns melonDS draws is cut there (no sprite pass of our own yet). */
+void WC_AdjustOam(const WcPlan *p, u16 *oam) {
+    if (!p->objParts) return;
+    static const u8 W[3][4] = {{8, 16, 32, 64}, {16, 32, 32, 64}, {8, 8, 16, 32}}, H[3][4] = {{8, 16, 32, 64}, {8, 8, 16, 32}, {16, 32, 32, 64}};
+    for (int i = 0; i < 128; i++) { const u16 a0 = oam[i * 4], a1 = oam[i * 4 + 1]; if ((a0 & 0x300) == 0x200) continue;
+        const unsigned shape = a0 >> 14, size = a1 >> 14; if (shape > 2) continue;
+        const int dbl = (a0 & 0x300) == 0x300, bw = W[shape][size] * (dbl ? 2 : 1), bh = H[shape][size] * (dbl ? 2 : 1);
+        int x = a1 & 0x1FF, y = a0 & 255; if (x >= 256) x -= 512; if (y + bh > 256) y -= 256;
+        const int cx = x + bw / 2, cy = y + bh / 2, ex = 0; int dx = 0; (void)ex;
+        for (int k = 0; k < p->n; k++) { const short *t = p->parts + k * 8; if (t[0] != 3) continue;
+            if (cx >= t[4] && cx < t[5] && cy >= t[2] && cy < t[3]) { dx = t[6]; break; } }
+        const int rel = dx - p->D; if (!rel) continue;
+        oam[i * 4 + 1] = (u16)((a1 & ~0x1FF) | ((x + rel) & 0x1FF)); }
 }

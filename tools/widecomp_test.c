@@ -45,6 +45,18 @@ int main(void) {
     static const short moveOnly[][8] = { WIDE_MOVE(WIDE_BG(1), 0, 192, 0, 256, 16) };
     static WcPlan p2; WC_Plan(&p2, R, &moveOnly[0][0], 1);
     check(p2.D == 0, "D2", p2.D, 0); check(p2.mMask == 0xD, "mMask2", p2.mMask, 0xD); check(p2.cpuMask == 2, "cpuMask2", p2.cpuMask, 2);
+    /* run 85 party layout: columns spread 16 each way, background in place, sprites per column */
+    static const short party2[][8] = { WIDE_OBJS(0, 0, 0, 0, 0), WIDE_FILL(WIDE_BG(3), 0, 192, -32, 0, 0), WIDE_FILL(WIDE_BG(3), 0, 192, 256, 288, 255),
+        WIDE_MOVE(WIDE_BG(1) | WIDE_BG(2), 0, 192, 0, 123, -16), WIDE_MOVE(WIDE_BG(1) | WIDE_BG(2), 0, 192, 123, 256, 16),
+        WIDE_OBJS(0, 192, -128, 123, -16), WIDE_OBJS(0, 192, 123, 384, 16) };
+    static WcPlan p3; WC_Plan(&p3, R, &party2[0][0], 7);
+    check(p3.D == 0, "D3", p3.D, 0); check(p3.mMask == 0x9, "mMask3", p3.mMask, 9); check(p3.cpuMask == 6, "cpuMask3", p3.cpuMask, 6);
+    uint16_t oam[512]; memset(oam, 0, sizeof oam); for (int i = 0; i < 128; i++) oam[i * 4] = 0x200; /* all disabled */
+    oam[0] = 40; oam[1] = 10;  /* 8x8 sprite at x 10, y 40: left column */
+    oam[4] = 40; oam[5] = 200; /* x 200: right column */
+    WC_AdjustOam(&p3, oam);
+    check((oam[1] & 0x1FF) == 0x1FA, "oam left sprite", oam[1] & 0x1FF, 0x1FA); check((oam[5] & 0x1FF) == 216, "oam right sprite", oam[5] & 0x1FF, 216);
+    /* BG2 (cpu, behind BG1? no: here prio 2) over BG3 (cpu in another layout) is not hidden by it: PC-box style, two cpu layers, no melonDS BG in front */
     printf(fails ? "%d checks FAILED\n" : "all widecomp checks passed\n", fails);
     return fails != 0;
 }

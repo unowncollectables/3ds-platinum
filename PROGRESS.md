@@ -1284,3 +1284,11 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   layouts; x86 plan 1.3 ms -> 0.03 ms for an 18-part layout), and map slots cover all lines of all four BGs (WC_ROWS 384).
 - Party menu: panels, sprites and background moved 16 px instead of 32, with the background's plain left/right columns drawn
   on beside them, so the extra width is split over both sides (work_patches applications__party_menu__main.c.patch).
+
+## Run 85b (from the photos of run 85)
+- Party: the 16 px shift was no centring at all (the wide screen already centres the 256 columns); left blank was 48 px, right 16.
+  Now background stays, the two panel columns (and sprites) spread 16 px each way, background's plain edge columns fill both sides.
+- PC boxes (photo: info panel streaky, icons misplaced): (1) CPU BG layers behind the melonDS ones were only drawn where nothing had
+  been drawn before them, which let BG3's stripes cover BG2's panel; they now check the melonDS picture only. (2) WIDE_OBJS
+  regions: WC_AdjustOam moves each sprite by (its part's dx - the picture's shift) in the OAM copy before the melonDS pass;
+  sprites that would leave the 256 columns are cut there. Still not done: WIDE_SHIFT3D (the 3D Pokemon preview), stretch sprites.
