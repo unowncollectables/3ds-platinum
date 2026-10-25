@@ -1060,15 +1060,14 @@ static int Present(bool){
  u32 hash0=stateHash();
  if(!earlyB){mapMemory();engineB.Enabled=(power&512)!=0;bindRegisters(engineB,0x1000);} /* early_b: already mapped; the worker may be reading it */
  engineA.Enabled=(power&2)!=0;bindRegisters(engineA,0);
- /* run 84 wide_layouts (widecomp.c): a screen with a wide layout (party menu, ...) is drawn across the wide view. The BGs
-    the layout moves differently from the sprites are switched off for the melonDS pass and drawn by WC_Compose after it;
-    master brightness too (WC_Compose applies it to the centre, gpuscale to the strips). No GPU compose on those frames. */
+ /* run 84-86 wide_layouts (widecomp.c): a screen with a wide layout (party menu, bag, boxes, ...) is drawn across the wide view by
+    widecomp's own compositor from the same VRAM / registers / OAM, after the normal melonDS pass (which stays as the fallback
+    picture when the screen uses something widecomp does not do). No GPU compose on those frames. */
  static WcPlan wcPlan;bool wlNow=false;
  if(P3DS_WideLayoutsOn()&&P3DS_ScaleMode()==1&&(power&0x8000)&&engineA.Enabled&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)){
   static short wlParts[WC_MAX_PARTS*8];const int n=P3DS_WideGetParts(0,wlParts);
-  if(n>0&&WC_Plan(&wcPlan,PSPNative_GfxRegisters,wlParts,n)){wlNow=true;engineA.DispCnt&=~((u32)wcPlan.cpuMask<<8);engineA.MasterBrightness=0;WC_AdjustOam(&wcPlan,(u16*)GPU::OAM);
-   if(wcPlan.changed){wcPlan.changed=0;static unsigned nPl;if(++nPl<=20||nPl%600==0)PSPNativeMemLog("[WIDE] layout #%u: %d parts, sprites/melonDS shift %d (%d sprite parts), melonDS BGs %x, drawn BGs %x (in front %x)",nPl,wcPlan.n,wcPlan.D,wcPlan.objParts,wcPlan.mMask,wcPlan.cpuMask,wcPlan.frontMask);}}}
- {static int lastWl=-1;if((int)wlNow!=lastWl){lastWl=wlNow;PSPNativeMemLog("[WIDE] wide layout drawing %s",wlNow?"on":"off");}}
+  if(n>0&&WC_Plan(&wcPlan,PSPNative_GfxRegisters,wlParts,n)){wlNow=true;
+   if(wcPlan.changed){wcPlan.changed=0;static unsigned nPl;if(++nPl<=20||nPl%600==0)PSPNativeMemLog("[WIDE] layout #%u: %d parts, %d sprite parts, 3D shift %d",nPl,wcPlan.n,wcPlan.objParts,wcPlan.dx3d);}}}
  /* run 76 display capture through the renderer's own DoCapture (melonDS): source A = 2D+3D composite or 3D, source B =
     VRAM, blend A/B. Motion blur at Spear Pillar (Dialga/Palkia) shows VRAM C fed by capture; ignored it was black. */
  {const u32 cc=reg32(0x64);const int cm=P3DS_CfgInt("display_capture",1);engineA.CaptureCnt=cm==1?cc:0;engineA.CaptureLatch=cm==1&&(cc&0x80000000u)&&engineA.Enabled;}
@@ -1172,10 +1171,14 @@ static int Present(bool){
  /* run 54 wide_fx: before the save box / toast / fps overlay are drawn onto the centre */
  static bool fillReady;fillReady=false;
  static bool wnReady;wnReady=false;
+ bool wlDone=false;
  if(wlNow){const u64 tw=svcGetSystemTick();u32*c0=(u32*)(stereo?eyeL:top);
-  WC_Compose(&wcPlan,PSPNative_GfxRegisters,GPU::VRAMFlat_ABG,(const u16*)GPU::Palette,GPU::VRAMFlat_ABGExtPal,c0,P3DS_WideFillBuf);
-  if(stereo&&eyeR&&eyeR!=c0)WC_Compose(&wcPlan,PSPNative_GfxRegisters,GPU::VRAMFlat_ABG,(const u16*)GPU::Palette,GPU::VRAMFlat_ABGExtPal,(u32*)eyeR,P3DS_WideFillBuf);
-  wnReady=true;{static u64 acc;static unsigned n;acc+=svcGetSystemTick()-tw;if(++n==600){PSPNativeMemLog("[WIDE] wide layout avg %u us/frame",(unsigned)(acc/600/CPU_TICKS_PER_USEC));acc=0;n=0;}}}
+  WcSrc ws={GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,GPU::VRAMFlat_ABGExtPal,GPU::VRAMFlat_AOBJExtPal,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,GPU3D::NativeFrame};
+  wlDone=WC_Compose(&wcPlan,PSPNative_GfxRegisters,&ws,c0,P3DS_WideFillBuf)!=0;
+  if(wlDone&&stereo&&eyeR&&eyeR!=c0)WC_Compose(&wcPlan,PSPNative_GfxRegisters,&ws,(u32*)eyeR,P3DS_WideFillBuf);
+  {static int lastOk=-1;if((int)wlDone!=lastOk){lastOk=wlDone;PSPNativeMemLog("[WIDE] wide layout drawing %s",wlDone?"on":"off (screen uses windows / blending / affine BGs: normal picture)");}}
+  if(wlDone){wnReady=true;static u64 acc;static unsigned n;acc+=svcGetSystemTick()-tw;if(++n==600){PSPNativeMemLog("[WIDE] wide layout avg %u us/frame",(unsigned)(acc/600/CPU_TICKS_PER_USEC));acc=0;n=0;}}}
+ if(wlDone){}
  else if(wideCfg>0&&P3DS_ScaleMode()==1&&P3DS_WideMenusCfg()&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)&&(power&0x8000)&&engineA.Enabled){wideNative();wnReady=true;}
  else if(wideCfg>0&&P3DS_ScaleMode()==1&&wideFillCfg()&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)&&(power&0x8000)){wideFill(display[0]);fillReady=true;}
  P3DS_WeatherOn=0;if(wideWeatherCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000))wideWeatherRun();

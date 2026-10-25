@@ -1307,3 +1307,15 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Test (x86, synthetic ROM with nested FNT dirs): `tools/romcache_spike_test.c`.
 - Next: read a 15 minute walking log, sort the misses by file and by first visit vs learned, then pick the fix (earlier
   prefetch near warps, whole-file read-ahead for the big archives, or a cache for the 44 loading frames).
+
+## Run 87 (wide layouts: one compositor, after the run 85 photos)
+- Run 84/85 let melonDS draw some BGs and drew the others over its picture; that cannot order the two groups (party panels lost
+  their text, PC info panel streaky, bag selection box missing). widecomp.c now has its own engine A compositor: text BGs (column
+  maps from the layout parts), sprites (normal + affine, 4/8 bpp, each moved by its WIDE_OBJS region), the 3D layer as BG0 (moved by
+  WIDE_SHIFT3D), DS priority order, BLDY fades on BG/OBJ targets, master brightness on the centre. melonDS still draws its normal
+  picture first and stays the fallback: WC_Compose returns 0 (log "[WIDE] wide layout drawing off") for windows, alpha blending,
+  mosaic, affine/bitmap BGs, bitmap sprites, forced blank. OBJ-window / semi-transparent sprites are drawn as normal sprites or
+  skipped. Stereo: the same picture goes to both eyes (menus lose their per-layer 3D depth while this is on).
+- Party layout: background and message box stay, the two panel columns (x < 123 / >= 123) and their sprites spread 16 px each way.
+- tools/widecomp_test.c checks the party layout (fills, moved tiles, moved sprite, priority, fallbacks); widecomp_rows_test.c checks
+  the row builder. render3ds.cpp glue not compiled in the cloud.
