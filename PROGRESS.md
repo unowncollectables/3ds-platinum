@@ -1357,3 +1357,11 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Top screen: one title box ("Settings: <tab>  (page/pages)" + version) and a key hint box that says B back or B close.
 - Test (x86): runApp + tables compiled against stubs with ASan/UBSan and driven by a scripted key sequence (pick row, change
   Wide menu layouts, L/R across tabs, open Hunt stats with A, B back); not built for the 3DS in the cloud.
+
+## Run 88b (catch info hook as a normal overlay patch)
+- The run 75 / run 88 hook in `BattleControllerPlayer_InitCommandSelection` (P3DS_CatchInfo snapshot, now with [18] = shiny) lived
+  only as a full-file copy in pspoke-patches/, which no script applies. A build that compiled an older copy of that file never set
+  P3DS_CatchInfo: Y did nothing, no encounter counted (Nathan's log, Oct 25). It is now also `work_patches/overlays/battle__battle_controller_player.c.patch`
+  (against pokeplatinum 47c28d53, like the other overlay edits; applies to the pristine file and reproduces the pspoke-patches copy
+  byte for byte). Apply it to native-audio-app/overlays/source/battle__battle_controller_player.c and make sure that object is rebuilt.
+- Check after a build: a wild battle's fight menu + Y opens the page, and log.txt gets `[HUNT] species N met M times`.
