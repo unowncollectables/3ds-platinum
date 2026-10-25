@@ -18,5 +18,7 @@ make $APP
 psp-objcopy --weaken-symbol=getlocalhost offline.o
 make -C ../native-render-opt native_gpu.o GPU2D_Soft.o
 make -C ../native-stack-render g3_handler.o frontend.o
-cd /workspace/platinum3ds/platinum3ds/full && rm -rf build/*.o && make
+# The final link is the builder's relink step, after work_patches are applied: they define
+# symbols the platform code needs (P3DS_SpkRomTicks, __wrap_G3X_GetVectorMtx, ...), so linking here fails.
+cd /workspace/platinum3ds/platinum3ds/full && rm -rf build/*.o platinum3ds_full.elf
 echo REBUILD-ALL-DONE

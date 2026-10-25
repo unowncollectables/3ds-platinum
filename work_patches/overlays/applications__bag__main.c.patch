@@ -1,9 +1,9 @@
 --- a/applications__bag__main.c
 +++ b/applications__bag__main.c
-@@ -2314,6 +2314,7 @@
- 
-     u32 stepCount = Item_LoadParam(item, ITEM_PARAM_EFFECT_PARAM, HEAP_ID_BAG);
-     SetRepelSteps(controller, stepCount);
+@@ -2321,6 +2321,7 @@
+         gPSPQoLLastRepel = item;
+     }
+ #endif
 +    { extern volatile int P3DS_RepelLast; P3DS_RepelLast = item; } /* run 64 repel_prompt: remember the kind used */
      controller->selectedItemCount = 1;
      Sound_PlayEffect(SEQ_SE_DP_CARD2_sseq);
