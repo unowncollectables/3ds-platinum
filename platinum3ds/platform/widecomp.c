@@ -48,6 +48,24 @@ static int srcCol(const WcPlan *p, int li, int y, int s) {
     return res;
 }
 
+/* the whole line of srcCol() at once (r[s+32], s = -32..287), by ranges: a few parts x a few hundred columns, not
+   every column x every part (the bag has 18 parts and a plan every frame while its list scrolls) */
+static void buildRow(const WcPlan *p, int li, int y, short *r) {
+    const WcLayer *l = &p->L[li]; const int W = l->w * 8, H = l->h * 8, py = (int)((y + l->vofs) & (H - 1)), M = W - 1;
+    uint8_t act[WC_MAX_PARTS]; int na = 0;
+    for (int k = 0; k < p->n; k++) { const short *t = p->parts + k * 8; if ((t[0] != 1 && t[0] != 2) || !(t[1] & (1 << li))) continue;
+        const int ln = (t[1] & 0x10) ? y : py; if (ln >= t[2] && ln < t[3]) act[na++] = (uint8_t)k; }
+    for (int s = -32; s < 288; s++) r[s + 32] = -1;
+    if (!na) { for (int s = 0; s < 256; s++) r[s + 32] = (short)((s + l->h0) & M); return; }
+    for (int s = 0; s < 256; s++) r[s + 32] = (short)((s + l->h0) & M);
+    for (int a = 0; a < na; a++) { const short *t = p->parts + act[a] * 8; if (t[0] != 1) continue;
+        const int scr = (t[1] & 0x10) != 0, a0 = scr ? t[4] : t[4] - l->h0, a1 = scr ? t[5] : t[5] - l->h0; /* columns vacated, as s */
+        for (int s = a0 < 0 ? 0 : a0; s < a1 && s < 256; s++) r[s + 32] = -1; }
+    for (int a = 0; a < na; a++) { const short *t = p->parts + act[a] * 8; const int scr = (t[1] & 0x10) != 0;
+        if (t[0] == 1) { for (int c = t[4]; c < t[5]; c++) { const int s = scr ? c + t[6] : c - l->h0 + t[6]; if (s >= -32 && s < 288) r[s + 32] = (short)((scr ? c + l->h0 : c) & M); } }
+        else { for (int c = t[4]; c < t[5]; c++) { const int s = scr ? c : c - l->h0; if (s >= -32 && s < 288) r[s + 32] = (short)(t[7] & M); } } }
+}
+
 /* RGB555 -> the melonDS output format (0xAABBGGRR, same rounding as GPU2D_Soft's final conversion) */
 static u32 toM(u16 c) { u32 r = (c & 31) << 3, g = ((c >> 5) & 31) << 3, b = ((c >> 10) & 31) << 3;
     r |= r >> 6; g |= g >> 6; b |= b >> 6; return r | (g << 8) | (b << 16) | 0xFF000000u; }
@@ -70,7 +88,7 @@ int WC_Plan(WcPlan *p, const u8 *R, const short *parts, int n) {
             if (y && na == np && !memcmp(act, prev, na) && p->rowOf[i][y - 1] != 255) { p->rowOf[i][y] = p->rowOf[i][y - 1]; continue; }
             memcpy(prev, act, na); np = na;
             if (p->nRows >= WC_ROWS) continue;
-            short *r = p->rows[p->nRows]; for (int s = -32; s < 288; s++) r[s + 32] = (short)srcCol(p, i, y, s);
+            buildRow(p, i, y, p->rows[p->nRows]);
             p->rowOf[i][y] = (uint8_t)p->nRows++; } }
     for (int i = 0; i < 4; i++) { const WcLayer *l = &p->L[i]; if (!l->on) continue;
         int m = 1; if (l->text) { const int W = l->w * 8, s0 = D > -32 ? D : -32, s1 = D + 256 < 288 ? D + 256 : 288;
@@ -88,7 +106,8 @@ int WC_Plan(WcPlan *p, const u8 *R, const short *parts, int n) {
    still holds that colour (the backdrop) */
 static void drawLayer(const WcPlan *p, int li, int y, int s0, int s1, const u8 *vram, const u32 *lut, const u8 *ext, u32 *row, u8 *lay, int onlyIf, u32 bdM) {
     const WcLayer *l = &p->L[li]; const int py = (int)((y + l->vofs) & (l->h * 8 - 1)); const uint8_t ri = p->rowOf[li][y];
-    const short *map = ri != 255 ? p->rows[ri] : 0; int lastT = -1; u16 me = 0; const u8 *trow = 0;
+    short tmp[320]; const short *map; if (ri != 255) map = p->rows[ri]; else { buildRow(p, li, y, tmp); map = tmp; }
+    int lastT = -1; u16 me = 0; const u8 *trow = 0;
     const unsigned ty = (unsigned)(py >> 3) & (l->h - 1); unsigned fy0 = py & 7;
     for (int s = s0; s < s1; s++) { const int X = s + 32; if (onlyIf && row[X] != bdM) continue;
         const int pc = map ? map[X] : srcCol(p, li, y, s); if (pc < 0) continue;

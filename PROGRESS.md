@@ -1275,3 +1275,12 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   Wide view FX, Wide haze, Edge fill, Side fill in menus, Mirror fill (old), Wild sprite test. Video = FPS counter, Wide view,
   Scale, Camera zoom, 3D strength, Battle 3D depth. Wide = Wide menu layouts, Weather in strips + Distortion World rows.
   Values and defaults unchanged, only where the rows are.
+
+## Run 85 (wide layouts: bag speed, party centred)
+- Hardware log (run 84): party menu layout engaged, no crash. Nathan: party panels pushed fully right with a blank left (GabeSud0's
+  reference layout does exactly that); the bag looked wide but dropped frames. Cause of the drops: the bag has 18 layout parts and a
+  new plan every frame while its list scrolls, and the plan built each line's column map column-by-column x part-by-part. Now
+  widecomp.c buildRow() fills each map by ranges (tools/widecomp_rows_test.c: identical to the old per-column result on 3000 random
+  layouts; x86 plan 1.3 ms -> 0.03 ms for an 18-part layout), and map slots cover all lines of all four BGs (WC_ROWS 384).
+- Party menu: panels, sprites and background moved 16 px instead of 32, with the background's plain left/right columns drawn
+  on beside them, so the extra width is split over both sides (work_patches applications__party_menu__main.c.patch).
