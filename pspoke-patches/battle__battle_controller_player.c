@@ -297,6 +297,7 @@ static void BattleControllerPlayer_InitCommandSelection(BattleSystem *battleSys,
             P3DS_CatchInfo[15] = SpeciesData_GetSpeciesValue(bm->species, SPECIES_DATA_CATCH_RATE);
             P3DS_CatchInfo[16] = BattleSystem_HasCaughtSpecies(battleSys, bm->species);
             P3DS_CatchInfo[17] = battleCtx->totalTurns;
+            P3DS_CatchInfo[18] = Pokemon_IsShiny(mon); /* run 88 shiny_suite: the game's own shiny check */
             P3DS_CatchInfo[0] = 1;
         } else {
             P3DS_CatchInfo[0] = 0;

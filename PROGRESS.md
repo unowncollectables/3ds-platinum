@@ -1319,3 +1319,24 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Party layout: background and message box stay, the two panel columns (x < 123 / >= 123) and their sprites spread 16 px each way.
 - tools/widecomp_test.c checks the party layout (fills, moved tiles, moved sprite, priority, fallbacks); widecomp_rows_test.c checks
   the row builder. render3ds.cpp glue not compiled in the cloud.
+## Run 88 (shiny hunt suite, `shiny_suite`, plan Part 2.1 items 1 to 5)
+- New key shiny_suite=0 (default off), settings app Extra tab, first row "Shiny hunt suite". Applies at once. Nothing is written to
+  platinum.sav; the save format is untouched. Counters live in sdmc:/3ds/platinum3ds/hunt.txt next to config.txt.
+- platform/hunt.c (new) owns hunt.txt for both hunt_counter (run 76) and shiny_suite. Per species: encounters, encounters since the
+  last shiny, soft resets, shinies, time spent, start date, how long the last shiny took; plus `target=` (the last species met,
+  which soft resets are tagged to). The run 76 `species=count` field stays first, so an old build still reads the counts and an old
+  hunt.txt loads in this one. Written on every encounter, every soft reset (before the relaunch), lid close, exit and every 2 min of
+  hunting, via hunt.tmp (a power cut mid-write keeps the old file).
+- Shiny flag: battle_controller_player.c now also stores the game's own Pokemon_IsShiny(foe) in P3DS_CatchInfo[18] (read-only,
+  same snapshot as the catch info). The work tree's copy of that file has to be refreshed from pspoke-patches/ before building.
+- Shiny alert (shiny_suite=1): when the command menu first opens against a shiny wild Pokemon, a two-note chime on DSP channel 1
+  (the game's audio only uses channel 0), a "Shiny!" toast and 0.9 s of white pulses with sparkles where the foe stands. Log:
+  `[HUNT] SHINY species N after X encounters`. Not yet: the overworld sparkle on wild_vis Pokemon.
+- Hunt panel: the Ball tab shows it in the field (L+R+Y, then the Ball tab) and in battle when Catch info is off (Y opens it).
+  Odds 1 in 8192 (the Gen 4 rule for wild Pokemon), chance of a shiny by now from the encounters since the last one, the 50% / 90%
+  marks (5678 / 18862). D-pad left/right = other species, X twice = reset that species' counter, A = export every hunt to
+  sdmc:/3ds/platinum3ds/hunts/hunt_YYYYMMDD_HHMM.csv. Masuda eggs and Poke Radar chains are not detected, and the panel says so.
+- Not done from the plan: shiny_rate, RNG info, party shiny count, battery warning, Masuda/Radar odds.
+- Test (x86): `gcc -O2 -I platinum3ds/platform -DHUNT_DIR='"/tmp/hunt_test/"' tools/hunt_test.c -lm -o ht && ./ht` (old file
+  format, round trip, soft resets, time with sleep gaps, periodic write, power-cut recovery, species cycling, reset, odds, CSV).
+  render3ds.cpp and the game file are not compiled in the cloud (no devkitARM / pspoke tree here).

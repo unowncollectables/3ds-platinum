@@ -63,6 +63,7 @@ extern void P3DS_ShutdownThreads(void); extern void P3DS_ShutdownSDL(void);
 static void hardExit(int code) {
     static int once; if (once++) exit(code);
     quitting = 1; PSPNativeMemLog("[3DS] exit: stopping threads");
+    { extern void P3DS_HuntFlush(void); P3DS_HuntFlush(); } /* run 88: hunt time since the last write */
     P3DS_ShutdownThreads(); P3DS_ShutdownSDL();
     extern BOOL PSPNative_CloseBackup(void); PSPNative_CloseBackup();
     PSPNativeMemLog("[3DS] exit: clean");
@@ -148,6 +149,7 @@ extern int __system_argc; extern char **__system_argv;
 void P3DS_SoftReset(unsigned param) {
     extern int P3DS_CfgSoftReset(void);
     int how = 0;
+    { extern void P3DS_HuntSoftReset(void), P3DS_HuntFlush(void); P3DS_HuntSoftReset(); P3DS_HuntFlush(); } /* run 88 shiny_suite: count it before the relaunch */
     if (!envIsHomebrew()) { aptSetChainloaderToSelf(); how = 1; }
     else if (__system_argc > 0 && __system_argv && __system_argv[0] && !strncmp(__system_argv[0], "sdmc:/", 6)) {
         Handle h = 0;
@@ -181,6 +183,7 @@ void P3DS_FrameHook(void) {
     if (lidEvt) { int e = lidEvt; lidEvt = 0; static int ls = -1; extern int P3DS_CfgInt(const char *, int); extern int P3DS_InField;
         if (ls < 0) ls = P3DS_CfgInt("lid_sound", 1) != 0;
         if (ls && P3DS_InField) { extern void P3DS_PlayLidSE(int); P3DS_PlayLidSE(e == 2); }
+        if (e == 1) { extern void P3DS_HuntFlush(void); P3DS_HuntFlush(); } /* run 88: lid closed -> hunt.txt up to date */
         PSPNativeMemLog("[3DS] lid %s (sound %d)", e == 1 ? "closed" : "opened", ls && P3DS_InField); }
 }
 static int touchPrev;
