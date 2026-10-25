@@ -1,0 +1,11 @@
+--- a/rtc.c
++++ b/rtc.c
+@@ -152,6 +152,8 @@
+ 
+ enum TimeOfDay TimeOfDayForHour(int hour)
+ {
++    { extern int P3DS_CfgInt(const char *, int); int ct; static const u8 hr[5] = { 0, 7, 12, 18, 22 }; /* run 75 cheat_time: view-only time-of-day override */
++      ct = P3DS_CfgInt("cheat_time", 0); if (ct > 0 && ct < 5) hour = hr[ct]; }
+     static const u8 lookup[24] = {
+         TIMEOFDAY_LATE_NIGHT,
+         TIMEOFDAY_LATE_NIGHT,

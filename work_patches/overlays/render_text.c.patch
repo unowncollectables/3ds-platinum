@@ -1,0 +1,36 @@
+--- a/render_text.c
++++ b/render_text.c
+@@ -46,6 +46,9 @@
+ 
+     switch (printer->state) {
+     case RENDER_STATE_HANDLE_CHAR:
++        if (JOY_HELD(PAD_BUTTON_B) && P3DS_CfgInt("text_hold_b", 0)) { /* run 80 text_hold_b: B held = instant print */
++            substruct->speedUp = TRUE;
++        }
+         if ((JOY_HELD(PAD_BUTTON_A | PAD_BUTTON_B) && substruct->speedUp) || SPEED_UP_ON_TOUCH_HOLD) {
+             printer->delayCounter = 0;
+ 
+@@ -377,12 +380,23 @@
+     Bg_CopyTilemapBufferToVRAM(printer->template.window->bgConfig, bgID);
+ }
+ 
++int P3DS_CfgInt(const char *, int);
+ static BOOL TextPrinter_Continue(TextPrinter *printer)
+ {
++    /* run 80: text_hold_b (B held advances a finished text box) and text_auto (advance after ~1.5 s). Only this
++       "waiting on a text box" path; yes/no and menus are separate and never auto-picked. Off = unchanged. */
++    static int p3dsWait;
++    if ((JOY_HELD(PAD_BUTTON_B) && P3DS_CfgInt("text_hold_b", 0)) || (P3DS_CfgInt("text_auto", 0) && ++p3dsWait >= 45)) {
++        p3dsWait = 0;
++        Sound_PlayEffect(SE_CONFIRM_sseq_3);
++        sRenderControlFlags.waitBattle = TRUE;
++        return TRUE;
++    }
+     if (JOY_NEW(PAD_BUTTON_A | PAD_BUTTON_B)
+         || (gSystem.touchPressed && sRenderControlFlags.speedUpOnTouch)) {
+         Sound_PlayEffect(SE_CONFIRM_sseq_3);
+         sRenderControlFlags.waitBattle = TRUE;
++        p3dsWait = 0;
+         return TRUE;
+     }
+ 

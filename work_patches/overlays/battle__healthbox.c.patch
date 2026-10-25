@@ -1,6 +1,27 @@
 --- a/battle__healthbox.c
 +++ b/battle__healthbox.c
-@@ -1772,8 +1772,47 @@
+@@ -166,6 +166,7 @@
+ };
+ 
+ static s32 HealthBox_DrawGauge(HealthBox *healthbox, enum HealthBoxGaugeType gaugeType);
++int P3DS_CfgInt(const char *, int);
+ static s32 UpdateGauge(s32 max, s32 cur, s32 diff, s32 *temp, u8 size, u16 fillOffset);
+ static u8 FillCells(s32 max, s32 cur, s32 diff, s32 *temp, u8 *cells, u8 cellNum);
+ static u32 CalcGaugeFill(s32 curVal, s32 diff, s32 maxVal, u8 gaugeSize);
+@@ -1459,6 +1460,12 @@
+ 
+     if (gaugeType == HEALTHBOX_GAUGE_HP) {
+         result = UpdateGauge(healthbox->maxHP, healthbox->curHP, healthbox->damage, &healthbox->hpTemp, HEALTHBOX_HP_CELL_COUNT, 1);
++        /* run 76 battle_anim_speed=2: HP bar drains 3x faster (same end value, display only) */
++        if (result != -1 && P3DS_CfgInt("battle_anim_speed", 0) >= 2) {
++            for (int p3k = 0; p3k < 2 && result != -1; p3k++) {
++                result = UpdateGauge(healthbox->maxHP, healthbox->curHP, healthbox->damage, &healthbox->hpTemp, HEALTHBOX_HP_CELL_COUNT, 1);
++            }
++        }
+     } else {
+         fillOffset = CalcGaugeFill(healthbox->curExp, healthbox->expReward, healthbox->maxExp, HEALTHBOX_EXP_CELL_COUNT);
+ 
+@@ -1772,8 +1779,47 @@
   * @return      Address of the SpriteTemplate struct which applies to this
   *              healthbox type.
   */

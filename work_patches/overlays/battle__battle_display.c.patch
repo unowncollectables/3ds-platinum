@@ -1,0 +1,18 @@
+--- a/battle__battle_display.c
++++ b/battle__battle_display.c
+@@ -4876,6 +4876,15 @@
+             PokemonSpriteManager_HideShadows(BattleSystem_GetPokemonSpriteManager(setMoveAnimationData->battleSys));
+         }
+ 
++        { /* run 75 battle_anim_speed=1: skip plain move animations (damage, HP bar and text unchanged). Moves whose animation
++             hides/changes sprites (Fly, Dig, Dive, Bounce, Shadow Force, Transform, Substitute, Minimize) always play. */
++            extern int P3DS_CfgInt(const char *, int); int mv = setMoveAnimationData->moveAnim.move;
++            if (setMoveAnimationData->moveAnim.animMode == 0 && P3DS_CfgInt("battle_anim_speed", 0) >= 1 && mv != MOVE_FLY && mv != MOVE_DIG && mv != MOVE_DIVE
++                && mv != MOVE_BOUNCE && mv != MOVE_SHADOW_FORCE && mv != MOVE_TRANSFORM && mv != MOVE_SUBSTITUTE && mv != MOVE_MINIMIZE) {
++                setMoveAnimationData->state = 6;
++                break;
++            }
++        }
+         BattleDisplay_PlayMoveAnimation(setMoveAnimationData->battleSys, setMoveAnimationData->battlerData, setMoveAnimationData->battleAnimSys, &setMoveAnimationData->moveAnim);
+         setMoveAnimationData->state++;
+         break;
