@@ -280,5 +280,6 @@ Run 80
   wide_stereo=1       (run 97, Debug tab "Wide layout 3D depth": with wide_layouts and the 3D slider up, the right eye gets its own wide picture with the right-eye 3D layer, so battles keep slider depth. 0 = right eye copies the left (run 96: flat, a little faster))
   wide_stereo_par=1   (run 97: that right-eye picture is composed on core 2 while the main thread does the left eye. 0 = both on the main thread)
   wide_dirty=1        (run 98, Debug tab "Wide redraw changed lines": widecomp redraws only lines whose inputs changed, plus a rolling 8-line refresh. 2 = verify against a full redraw (slow, logs mismatches), 0 = full redraw (run 97))
+  wide_early_check=1  (run 99: wide_early is only used when widecomp will accept the frame; a declined frame in stereo (Poke Ball send-out) no longer falls to the slow serial right-eye redraw. 0 = run 98)
 Run 88
   shiny_suite=0        (settings app Extra tab "Shiny hunt suite": 1 = shiny hunt counters in hunt.txt (encounters, since last shiny, soft resets, time, shinies), a chime + flash when a wild shiny appears, and a hunt panel on the Ball tab: Left/Right species, X twice reset, A export CSV to hunts/)

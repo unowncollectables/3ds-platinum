@@ -2,6 +2,17 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-25 - Run 99 (Grok Bot), branch `run99`
+
+- Hardware log (run 98): battles 23-30 fps in stereo, composite 12-24 ms/frame; wide_dirty averages 58-108 of 192 lines per compose,
+  13-35% full redraws, 0 verify mismatches logged (verify mode off on hardware).
+- Hitch 1, Poke Ball send-out (f=2172, f=2610): 75-84 ms frames, 48-57 ms in "capture..tComp". widecomp declines those frames
+  (windows), but run 96-98 had already turned off the parallel right eye, so the right eye was redrawn serially on the main thread.
+  Fix: wide_early_check=1 (default) checks WC_Check first; declined frames keep the normal parallel stereo path (run 95 behaviour).
+- Hitch 2, battle end (f=2253 / f=2691): 112 ms frame, 87-88 ms game-side, while overlay 5 + gFieldMapTemplate load (no ROM reads,
+  no texture work), then a 78 ms frame. It is the game's own field reload on the game thread; not fixed this run.
+- Emulator: build only (the user tests on hardware).
+
 ## 2026-10-25 - Run 98 (Grok Bot), branch `run98`
 
 - wide_dirty=1 (Debug tab): widecomp hashes each line's inputs (registers/palettes/plan, BG map entries + sampled tile rows,

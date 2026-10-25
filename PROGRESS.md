@@ -1425,3 +1425,7 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - README: the builder is now the recommended way to build; the hand build follows the builder's steps; troubleshooting section.
 - Not compiled in the cloud (no devkitARM / generated tree). On an existing tree the builder reverts the old healthbox /
   player_move patches and applies the new ones; on a tree that already has the copies' edits it just records them.
+
+## Run 99 (2026-10-25, Grok Bot) - Poke Ball send-out hitch
+- wide_early_check=1: declined widecomp frames in stereo keep the parallel right-eye path (send-out hitch 48-57 ms in the hw log).
+- Battle-end hitch (87 ms game-side during the field reload) analysed, not fixed. See docs/HANDOFF.md.
