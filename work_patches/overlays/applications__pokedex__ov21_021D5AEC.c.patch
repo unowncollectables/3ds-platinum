@@ -1,0 +1,65 @@
+--- a/applications__pokedex__ov21_021D5AEC.c
++++ b/applications__pokedex__ov21_021D5AEC.c
+@@ -35,6 +35,35 @@
+ #include "res/graphics/pokedex/zukan.naix"
+ #include "res/text/bank/pokedex.h"
+ 
++#ifdef SDK_PORT_3DS
++#include "port_wide_layout.h"
++
++// The Pokédex's list on the wider screen (2026-10-16, from a reference
++// drawing of it): the header's label and the picture's frame (its Pokémon
++// in 3D) toward the left edge, the list's rows and its scroll bar toward
++// the right, the counts under them apart (seen left, obtained right); the
++// bars' plain middles and the background between them widened.
++static const short sPokedexListWideLayout[][8] = {
++    WIDE_FILL(WIDE_BG(2), 0, 192, -32, 288, 200),
++    WIDE_MOVE(WIDE_BG(2), 0, 192, 0, 8, -33),
++    WIDE_MOVE(WIDE_BG(2), 0, 23, 8, 160, -33),
++    WIDE_MOVE(WIDE_BG(2), 144, 192, 8, 160, -33),
++    WIDE_MOVE(WIDE_BG(2), 0, 192, 200, 256, 38),
++    WIDE_FILL(WIDE_BG(3), 0, 192, -32, 288, 150),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 0, 256, 0),
++    WIDE_FILL(WIDE_BG(3), 0, 192, 0, 120, 140),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 0, 120, -17),
++    WIDE_FILL(WIDE_BG(3), 0, 192, 240, 272, 150),
++    WIDE_MOVE(WIDE_BG(3), 0, 192, 240, 256, 32),
++    WIDE_MOVE(WIDE_BG(1), 144, 192, 0, 120, -33),
++    WIDE_MOVE(WIDE_BG(1), 144, 192, 120, 256, 39),
++    WIDE_OBJS(-64, 256, -64, 100, -17),
++    WIDE_OBJS(-64, 256, 100, 240, 30),
++    WIDE_OBJS(-64, 256, 240, 320, 32),
++    WIDE_SHIFT3D(-17),
++};
++#endif
++
+ typedef struct {
+     int unk_00;
+     int unk_04;
+@@ -632,10 +661,16 @@
+     ov21_021D6BB0(param0, param2);
+     ov21_021D6C44(param0, param1, param2, heapID);
+     ov21_021D6F20(param0, param1, param2);
++#ifdef SDK_PORT_3DS
++    WIDE_LAYOUT(WIDE_ENGINE_MAIN, sPokedexListWideLayout);
++#endif
+ }
+ 
+ static void ov21_021D61D8(UnkStruct_ov21_021D71A8 *param0, PokedexGraphicData *param1)
+ {
++#ifdef SDK_PORT_3DS
++    WIDE_LAYOUT_NONE(WIDE_ENGINE_MAIN);
++#endif
+     ov21_021D695C(param0);
+     ov21_021D6580(param0);
+     ov21_021D6940(param0);
+@@ -675,6 +710,9 @@
+     ov21_021D6BB0(param0, param2);
+     ov21_021D6C44(param0, param1, param2, heapID);
+     ov21_021D6F20(param0, param1, param2);
++#ifdef SDK_PORT_3DS
++    WIDE_LAYOUT(WIDE_ENGINE_MAIN, sPokedexListWideLayout);
++#endif
+ }
+ 
+ static void ov21_021D62E4(PokedexGraphicData *param0, enum HeapID heapID)

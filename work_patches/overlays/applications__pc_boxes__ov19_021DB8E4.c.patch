@@ -1,0 +1,53 @@
+--- a/applications__pc_boxes__ov19_021DB8E4.c
++++ b/applications__pc_boxes__ov19_021DB8E4.c
+@@ -28,6 +28,10 @@
+ #include "sys_task_manager.h"
+ #include "text.h"
+ 
++#ifdef SDK_PORT_3DS
++#include "applications/pc_boxes/ov19_021D79F8.h"
++#endif
++
+ typedef struct {
+     UnkStruct_ov19_021DBA9C *unk_00;
+     u8 unk_04;
+@@ -194,6 +198,9 @@
+ 
+ void ov19_021DBB48(UnkStruct_ov19_021DBA9C *param0)
+ {
++#ifdef SDK_PORT_3DS
++    BoxWide_SetPanel(BOX_WIDE_PANEL_JUMP);
++#endif
+     param0->unk_E0 = BoxApp_GetBoxSelectionBoxID(param0->unk_0C);
+     ov19_021DBDF4(param0);
+     ov19_021DC034(param0, 0);
+@@ -215,6 +222,9 @@
+ 
+ void ov19_021DBB94(UnkStruct_ov19_021DBA9C *param0)
+ {
++#ifdef SDK_PORT_3DS
++    BoxWide_SetPanel(BOX_WIDE_PANEL_NONE);
++#endif
+     ov19_021DC034(param0, 1);
+ }
+ 
+@@ -594,6 +604,9 @@
+     if (v0) {
+         u32 v1 = BoxApp_GetCursorOrPreviewedItem(param0->unk_0C);
+ 
++#ifdef SDK_PORT_3DS
++        BoxWide_SetPanel(BOX_WIDE_PANEL_ITEM);
++#endif
+         Bg_SetOffset(param0->unk_04, BG_LAYER_MAIN_1, 3, 0);
+         Bg_LoadToTilemapRect(param0->unk_04, 1, param0->unk_38->rawData, 0, 24, 32, 7);
+         Window_FillTilemap(&param0->unk_10[2], 4);
+@@ -671,6 +684,9 @@
+     if (param0->unk_DC == NULL) {
+         Bg_SetOffset(param0->unk_04, BG_LAYER_MAIN_1, 3, 0);
+         ov19_021DC5E0(param0);
++#ifdef SDK_PORT_3DS
++        BoxWide_SetPanel(BOX_WIDE_PANEL_NONE);
++#endif
+         return 1;
+     }
+ 

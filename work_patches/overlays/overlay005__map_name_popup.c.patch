@@ -1,0 +1,36 @@
+--- a/overlay005__map_name_popup.c
++++ b/overlay005__map_name_popup.c
+@@ -19,6 +19,13 @@
+ #include "sys_task_manager.h"
+ #include "text.h"
+ 
++#ifdef SDK_PORT_3DS
++// The 3DS remaster draws the upper screen wider than the DS's: the place
++// name sign goes to its left edge while it shows
++// (3ds_port/nitro/include/nitro_port_wide.h).
++extern void NitroPort_WindowAnchor(const void *window, int side, int widthTiles);
++#endif
++
+ #define POPUP_WIDTH_TILES  17
+ #define POPUP_HEIGHT_TILES 5
+ #define POPUP_SIZE_TILES   (POPUP_WIDTH_TILES * POPUP_HEIGHT_TILES)
+@@ -97,6 +104,9 @@
+ 
+     Window_CopyToVRAM(&mapPopUp->window);
+     Heap_Free(mapPopUp->tiles);
++#ifdef SDK_PORT_3DS
++    NitroPort_WindowAnchor(&mapPopUp->window, -1, POPUP_WIDTH_TILES);
++#endif
+ }
+ 
+ static void MapNamePopUp_Reset(MapNamePopUp *mapPopUp)
+@@ -259,6 +269,9 @@
+     }
+ 
+     Window_ClearAndCopyToVRAM(&mapPopUp->window);
++#ifdef SDK_PORT_3DS
++    NitroPort_WindowAnchor(&mapPopUp->window, 0, 0);
++#endif
+     Bg_SetOffset(mapPopUp->bgConfig, BG_LAYER_MAIN_3, BG_OFFSET_UPDATE_SET_Y, 0);
+ 
+     BgConfig *bgConfig = mapPopUp->bgConfig;

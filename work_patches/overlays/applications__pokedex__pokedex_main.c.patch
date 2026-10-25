@@ -1,0 +1,23 @@
+--- a/applications__pokedex__pokedex_main.c
++++ b/applications__pokedex__pokedex_main.c
+@@ -62,6 +62,10 @@
+ 
+ #include "res/text/bank/pokedex.h"
+ 
++#ifdef SDK_PORT_3DS
++#include "port_wide_layout.h"
++#endif
++
+ enum PokedexState {
+     POKEDEX_STATE_TRANSITION_IN,
+     POKEDEX_STATE_USE,
+@@ -161,6 +165,9 @@
+     ApplicationManager_Data(appMan);
+ 
+     SetVBlankCallback(NULL, NULL);
++#ifdef SDK_PORT_3DS
++    WIDE_LAYOUT_NONE(WIDE_ENGINE_MAIN);
++#endif
+ 
+     GF_ASSERT(DisableTouchPad() == TRUE);
+ 

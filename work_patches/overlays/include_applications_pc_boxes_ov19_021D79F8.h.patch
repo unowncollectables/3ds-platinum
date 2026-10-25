@@ -1,0 +1,18 @@
+--- a/include/applications/pc_boxes/ov19_021D79F8.h
++++ b/include/applications/pc_boxes/ov19_021D79F8.h
+@@ -31,4 +31,15 @@
+ void BoxGraphics_ApplyMultiSelectMonShading(UnkStruct_ov19_021D8318 *param0);
+ void ov19_021D8B14(UnkStruct_ov19_021D8318 *param0);
+ 
++#ifdef SDK_PORT_3DS
++// (the wider screen) A panel across the screen shown, its sprites kept in
++// the middle with it, or none.
++enum BoxWidePanel {
++    BOX_WIDE_PANEL_NONE,
++    BOX_WIDE_PANEL_JUMP,
++    BOX_WIDE_PANEL_ITEM,
++};
++void BoxWide_SetPanel(enum BoxWidePanel panel);
++#endif
++
+ #endif // POKEPLATINUM_OV19_021D79F8_H
