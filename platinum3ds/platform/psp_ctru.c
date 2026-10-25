@@ -209,6 +209,7 @@ void P3DS_CfgWrite(const char *key, int val) {
 int P3DS_CtlZr = -1, P3DS_CtlZl, P3DS_CtlCp;   /* run 55: file scope so the settings menu can change them live */
 int P3DS_CfgSoftReset(void) { static int v = -1; if (v < 0) v = P3DS_CfgInt("soft_reset", 1) != 0; return v; }
 volatile int P3DS_RunToggle;
+volatile int P3DS_SkipIntro, P3DS_BootStage; /* run 95 reset_skip_intro */
 volatile unsigned P3DS_InjectKeys; volatile int P3DS_InjectFrames; volatile int P3DS_StartReq = -1, P3DS_StartReqFound;
 volatile int P3DS_SumIV[6], P3DS_SumEV[6], P3DS_SumAlive;
 /* run 64 repel_prompt: port Yes/No (0 closed, 1 asking, 2 answered; result 1 yes 0 no). Keys handled here on the game
@@ -264,6 +265,10 @@ int sceCtrlPeekBufferPositive(SceCtrlData *d, int n) {
 #undef zr
 #undef zl
 #undef cp
+    /* run 95 reset_skip_intro: after a soft reset the new process taps START (3 polls on, 37 off) until the game enters its
+       Continue / New Game menu (MainMenu_Init sets P3DS_BootStage = 2) or the field, 3000 polls at most. Only START is sent
+       (never B+UP+SELECT, the save-delete combo). */
+    if (P3DS_SkipIntro) { static unsigned sn; if (P3DS_BootStage >= 2 || ++sn > 3000) { P3DS_SkipIntro = 0; PSPNativeMemLog("[BOOT] skip intro done: stage %d after %u polls", P3DS_BootStage, sn); } else if (sn % 40 < 3) k |= KEY_START; }
     if (P3DS_InjectFrames > 0) { k |= P3DS_InjectKeys; P3DS_InjectFrames--; } /* run 64: touch Start menu app (one press) */
     for (unsigned i = 0; i < sizeof map / sizeof map[0]; i++) if (k & map[i][0]) b |= map[i][1];
     circlePosition c; hidCircleRead(&c);

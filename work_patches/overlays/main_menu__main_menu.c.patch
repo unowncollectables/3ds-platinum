@@ -1,0 +1,10 @@
+--- a/main_menu__main_menu.c
++++ b/main_menu__main_menu.c
+@@ -1132,6 +1132,7 @@
+     appData->alertsState = MAIN_MENU_ALERTS_STATE_WAIT;
+ 
+     MainMenuUtil_Init(HEAP_ID_MAIN_MENU);
++    { extern volatile int P3DS_BootStage; P3DS_BootStage = 2; } /* run 95 reset_skip_intro: the Continue / New Game menu is up */
+ 
+     if (!SaveData_DataExists(appData->saveData)) {
+         appData->isNewGame = TRUE;

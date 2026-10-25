@@ -1374,3 +1374,17 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   build (like the catch-info hook in run 88b, overlay patches are applied by hand), so zone_prefetch also does nothing and prefetch.bin
   is stale (144 zones from an older build). Without it the area-change spikes cannot be named or prefetched.
 - [SPIKE]: a run of consecutive slow frames now logs its first frame and every 30th (it used all 60 lines on one slow menu at f=1454-1497).
+
+## Run 95 (reset_skip_intro: soft reset lands on Continue / New Game)
+- New key reset_skip_intro=0 (default off; settings app Hunt tab, row "Skip intro on reset"; applies on the next reset). Off = a soft
+  reset behaves exactly as before (logos, title, then the menu). On = the relaunched process taps START (3 polls on / 37 off, only
+  START, never the B+UP+SELECT save-delete combo) until the game's Continue / New Game menu starts; then it stops, so you still press
+  A on Continue yourself.
+- How it knows: P3DS_SoftReset writes sdmc:/3ds/platinum3ds/skipintro.tmp (the time) when the key is on; the next boot reads and deletes
+  it and only skips if the file is under 30 s old (a stale file from a failed relaunch is ignored). The menu is detected by the game
+  itself: work_patches/overlays/main_menu__main_menu.c.patch (against pokeplatinum 47c28d53, src/main_menu/main_menu.c) sets
+  P3DS_BootStage = 2 in MainMenu_Init (overlay 97 in the log). No patch applied = it taps for 3000 polls (~50 s worst case) then stops.
+  Apply the patch to native-audio-app/overlays/source/main_menu__main_menu.c and rebuild that object like the battle file.
+- Log: `[BOOT] soft reset marker, age N s, reset_skip_intro=1 -> skip 1` and `[BOOT] skip intro done: stage 2 after N polls`.
+- NOT done: the in-process reset / boot step timings of plan "run 84" (the relaunch itself is still a full app start; the skip only
+  removes the logo and title waiting). Untested on hardware, not compiled in the cloud.

@@ -278,3 +278,5 @@ Run 80
   wide_layouts=0      (run 84, test; settings app Wide tab "Wide menu layouts": 1 = menus laid out across the wide screen, as GabeSud0's port does, at the 1.25x scale. Party menu first; other screens may look off)
 Run 88
   shiny_suite=0        (settings app Extra tab "Shiny hunt suite": 1 = shiny hunt counters in hunt.txt (encounters, since last shiny, soft resets, time, shinies), a chime + flash when a wild shiny appears, and a hunt panel on the Ball tab: Left/Right species, X twice reset, A export CSV to hunts/)
+Run 95
+  reset_skip_intro=0   (settings app Hunt tab "Skip intro on reset": 1 = after a soft reset (L+R+START+SELECT) the game skips the logos and title and stops at Continue / New Game. 0 = the original reset)
