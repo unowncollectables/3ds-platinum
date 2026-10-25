@@ -100,10 +100,12 @@ extern "C" void P3DS_Crumb(const char*,void*);
    forever ("game stalled ... main last: b-wait"). A pending-work counter makes the hand-off lossless. */
 static volatile int bPend;
 static void bPost(){__atomic_add_fetch(&bPend,1,__ATOMIC_SEQ_CST);LightEvent_Signal(&bStart);}
+static volatile bool bWideR,bWideROk;static void wideRJob(); /* run 97: right-eye wide compose on core 2 */
 static void engineBWorker(void*){for(;;){while(!__atomic_load_n(&bPend,__ATOMIC_SEQ_CST)&&!bQuit)LightEvent_Wait(&bStart);if(bQuit)break;__atomic_sub_fetch(&bPend,1,__ATOMIC_SEQ_CST);P3DS_Crumb(bEarly?"w-early":"w-job",0);
   if(bEarly){drawEngineB();bEarly=false;P3DS_Crumb("w-early-sig",0);LightEvent_Signal(&bEarlyDone);continue;}
   const bool steal=stealCfg==1&&bRightSrc;
   if(!bSkipB&&!steal)drawEngineB();
+  if(bWideR){wideRJob();bWideR=false;}
   if(bRightSrc){/* stereo: right-eye top screen = engine A again (snapshot copy) with the right-eye 3D layer */
    P3DS_3DSrc=bRightSrc;rendererR.SetFramebuffer(rawR,rawR);
    for(unsigned line=0;line<192;line++){engineA2.CheckWindows(line);rendererR.DrawSprites(line,&engineA2);rendererR.DrawScanline(line,&engineA2);}
@@ -649,6 +651,9 @@ static void wideFill(const u32*C){static u16 acc[3][64*192];
    No mirroring, no blur, no stretching; fades come from gpuscale strips() (wide_fadefix). OBJs are not drawn in the
    strips. 0 = old behaviour (black bars, or wide_fill=1). */
 #include "widecomp.h"
+extern "C" unsigned dStatRace;extern "C" int dBadRow,dBadMask;
+static WcPlan wcPlanG;static WcSrc wideRSrc;static u32 wideRStrip[64*192];static const u8*wideRRegs;
+static void wideRJob(){bWideROk=WC_ComposeEye(&wcPlanG,wideRRegs,&wideRSrc,rawR,wideRStrip,1)!=0;}
 extern "C" { int P3DS_WideLayoutsOn(void); void P3DS_SetWideLayouts(int); int P3DS_WideGetParts(int,short*); }
 static int wideMenusV=-1;extern "C" int P3DS_WideMenusCfg(void){if(wideMenusV<0){wideMenusV=P3DS_CfgInt("wide_menus",1)!=0;PSPNativeMemLog("[WIDE] wide_menus=%d",wideMenusV);}return wideMenusV;}
 static unsigned wnUs,wnN,wnLay[5];
@@ -838,12 +843,12 @@ static const MItem mItems[]={
  {"INFINITE MONEY","cheat_money",2,{"OFF","ON"}},{"ALWAYS CATCH","cheat_catch",2,{"OFF","ON"}},{"SHINY WILD","cheat_shiny",2,{"OFF","ON"}},
  {"FAST EGGS","cheat_eggs",2,{"OFF","ON"}},{"EXP BOOST","cheat_exp",3,{"OFF","2X","3X"}},{"RARE CANDY 99","cheat_candy",2,{"OFF","ON"}},
  /* run 74: 33.. generic config rows (value = label index; log_max_kb mapped). Most apply after a restart. */
- {"FOLLOWER_AREA_TALK","follower_area_talk",2,{"OFF","ON"}},{"FOLLOWER_CRY","follower_cry",2,{"OFF","ON"}},{"FOLLOWER_ITEMS","follower_items",2,{"OFF","ON"}},{"FOLLOWER_BALLPOP","follower_ballpop",2,{"OFF","ON"}},{"FOLLOWER_EMOTES","follower_emotes",2,{"OFF","ON"}},{"FOLLOWER_FRIEND_TALK","follower_friend_talk",2,{"OFF","ON"}},{"FOLLOWER_IDLE","follower_idle",2,{"OFF","ON"}},{"FOLLOWER_GAP","follower_gap",2,{"OFF","ON"}},{"FOLLOWER_BEHIND","follower_behind",2,{"OFF","ON"}},{"WIDE_WEATHER","wide_weather",2,{"OFF","ON"}},{"WIDE_EDGEFILL","wide_edgefill",2,{"OFF","ON"}},{"WIDE_MENUS","wide_menus",2,{"OFF","ON"}},{"WIDE_FILL","wide_fill",2,{"OFF","ON"}},{"WILD_VIS","wild_vis",2,{"OFF","ON"}},{"WILD_VIS_MAX","wild_vis_max",5,{"0","1","2","3","4"}},{"WILD_VIS_REPLACE","wild_vis_replace",2,{"OFF","ON"}},{"WILD_VIS_TEST","wild_vis_test",2,{"OFF","ON"}},{"HM_FREE","hm_free",2,{"OFF","ON"}},{"SAVE_BACKUP","save_backup",2,{"OFF","ON"}},{"LOG_MAX_KB","log_max_kb",4,{"OFF","512 KB","1 MB","2 MB"}},{"CHEAT_PP","cheat_pp",2,{"OFF","ON"}},{"CHEAT_SPEED","cheat_speed",2,{"OFF","ON"}},{"CHEAT_WALK_WALLS","cheat_walk_walls",2,{"OFF","ON"}},{"CHEAT_TIME","cheat_time",5,{"OFF","MORNING","DAY","EVENING","NIGHT"}},{"CATCH_OVERLAY","catch_overlay",2,{"OFF","ON"}},{"BATTLE_ANIM_SPEED","battle_anim_speed",3,{"OFF","SKIP MOVES","SKIP + FAST HP"}},{"DW_DEPTH","dw_depth",4,{"OFF","SUBTLE","MODERATE","STRONG"}},{"DW_DEBRIS","dw_debris",2,{"OFF","ON"}},{"DW_UNEASE","dw_unease",2,{"OFF","ON"}},{"DW_CRY","dw_cry",2,{"OFF","ON"}},{"HUNT_COUNTER","hunt_counter",2,{"OFF","ON"}},{"TOD_TINT","tod_tint",2,{"OFF","ON"}},{"ITEM_PING","item_ping",2,{"OFF","ON"}},{"TOUCH_MENU","touch_menu",2,{"OFF","ON"}},{"DW_ROLL","dw_roll",2,{"OFF","ON"}},{"BOTTOM_STRIP","bottom_strip",2,{"OFF","ON"}},{"TEXT_HOLD_B","text_hold_b",2,{"OFF","ON"}},{"TEXT_AUTO","text_auto",2,{"OFF","ON"}},{"WIDE_LAYOUTS","wide_layouts",2,{"OFF","ON"}},{"SHINY_SUITE","shiny_suite",2,{"OFF","ON"}},{"WIDE_EARLY","wide_early",2,{"OFF","ON"}},
+ {"FOLLOWER_AREA_TALK","follower_area_talk",2,{"OFF","ON"}},{"FOLLOWER_CRY","follower_cry",2,{"OFF","ON"}},{"FOLLOWER_ITEMS","follower_items",2,{"OFF","ON"}},{"FOLLOWER_BALLPOP","follower_ballpop",2,{"OFF","ON"}},{"FOLLOWER_EMOTES","follower_emotes",2,{"OFF","ON"}},{"FOLLOWER_FRIEND_TALK","follower_friend_talk",2,{"OFF","ON"}},{"FOLLOWER_IDLE","follower_idle",2,{"OFF","ON"}},{"FOLLOWER_GAP","follower_gap",2,{"OFF","ON"}},{"FOLLOWER_BEHIND","follower_behind",2,{"OFF","ON"}},{"WIDE_WEATHER","wide_weather",2,{"OFF","ON"}},{"WIDE_EDGEFILL","wide_edgefill",2,{"OFF","ON"}},{"WIDE_MENUS","wide_menus",2,{"OFF","ON"}},{"WIDE_FILL","wide_fill",2,{"OFF","ON"}},{"WILD_VIS","wild_vis",2,{"OFF","ON"}},{"WILD_VIS_MAX","wild_vis_max",5,{"0","1","2","3","4"}},{"WILD_VIS_REPLACE","wild_vis_replace",2,{"OFF","ON"}},{"WILD_VIS_TEST","wild_vis_test",2,{"OFF","ON"}},{"HM_FREE","hm_free",2,{"OFF","ON"}},{"SAVE_BACKUP","save_backup",2,{"OFF","ON"}},{"LOG_MAX_KB","log_max_kb",4,{"OFF","512 KB","1 MB","2 MB"}},{"CHEAT_PP","cheat_pp",2,{"OFF","ON"}},{"CHEAT_SPEED","cheat_speed",2,{"OFF","ON"}},{"CHEAT_WALK_WALLS","cheat_walk_walls",2,{"OFF","ON"}},{"CHEAT_TIME","cheat_time",5,{"OFF","MORNING","DAY","EVENING","NIGHT"}},{"CATCH_OVERLAY","catch_overlay",2,{"OFF","ON"}},{"BATTLE_ANIM_SPEED","battle_anim_speed",3,{"OFF","SKIP MOVES","SKIP + FAST HP"}},{"DW_DEPTH","dw_depth",4,{"OFF","SUBTLE","MODERATE","STRONG"}},{"DW_DEBRIS","dw_debris",2,{"OFF","ON"}},{"DW_UNEASE","dw_unease",2,{"OFF","ON"}},{"DW_CRY","dw_cry",2,{"OFF","ON"}},{"HUNT_COUNTER","hunt_counter",2,{"OFF","ON"}},{"TOD_TINT","tod_tint",2,{"OFF","ON"}},{"ITEM_PING","item_ping",2,{"OFF","ON"}},{"TOUCH_MENU","touch_menu",2,{"OFF","ON"}},{"DW_ROLL","dw_roll",2,{"OFF","ON"}},{"BOTTOM_STRIP","bottom_strip",2,{"OFF","ON"}},{"TEXT_HOLD_B","text_hold_b",2,{"OFF","ON"}},{"TEXT_AUTO","text_auto",2,{"OFF","ON"}},{"WIDE_LAYOUTS","wide_layouts",2,{"OFF","ON"}},{"SHINY_SUITE","shiny_suite",2,{"OFF","ON"}},{"WIDE_EARLY","wide_early",2,{"OFF","ON"}},{"WIDE_STEREO","wide_stereo",2,{"OFF","ON"}},{"WIDE_DIRTY","wide_dirty",3,{"OFF","ON","VERIFY"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
 static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
@@ -904,7 +909,7 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
    B / START / L+R+Y close. Drawn in the game's font + message box frame (port font fallback). The top screen shows
    the dimmed game picture with the title and the build/version string. */
 #ifndef P3DS_VERSION
-#define P3DS_VERSION "run96"
+#define P3DS_VERSION "run98"
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"
@@ -929,7 +934,7 @@ static const ATab kTabs[]={
  {"Cheats",11,{24,27,28,29,30,31,32,53,54,55,56},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99","Infinite PP",
   "Fast running (B)","Walls: hold R","Time of day"}},
  /* run 67: the old Speed tab, hidden: only shown after SELECT is pressed in the settings app */
- {"Debug",14,{11,12,15,19,8,52,13,7,21,43,44,45,49,73},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail","Log size limit","Split top (mono)","Wide view FX","Wide haze","Edge fill","Side fill in menus","Mirror fill (old)","Wild sprite test","Wide layout early"}},
+ {"Debug",16,{11,12,15,19,8,52,13,7,21,43,44,45,49,73,74,75},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail","Log size limit","Split top (mono)","Wide view FX","Wide haze","Edge fill","Side fill in menus","Mirror fill (old)","Wild sprite test","Wide layout early","Wide layout 3D depth","Wide redraw changed lines"}},
  /* pages (not in the tab bar) */
  {"Hunt stats",-3,{},{}},
  {"Wild Pok\xe9mon here",-2,{},{}},
@@ -1126,7 +1131,11 @@ static int Present(bool){
  /* run 84-86 wide_layouts (widecomp.c): a screen with a wide layout (party menu, bag, boxes, ...) is drawn across the wide view by
     widecomp's own compositor from the same VRAM / registers / OAM, after the normal melonDS pass (which stays as the fallback
     picture when the screen uses something widecomp does not do). No GPU compose on those frames. */
- static WcPlan wcPlan;bool wlNow=false;
+ WcPlan&wcPlan=wcPlanG;bool wlNow=false;
+ /* run 98 wide_dirty=1 (default): widecomp redraws only the lines whose inputs changed (see widecomp.c); 2 = verify against a full
+    redraw and count mismatches; 0 = full redraw every changed frame (run 97). */
+ {static int wd=-1;if(wd<0){wd=P3DS_CfgInt("wide_dirty",1);PSPNativeMemLog("[WIDE] wide_dirty=%d",wd);}WC_SetDirty(wd);
+  static unsigned dn;if(++dn%600==0&&wd){unsigned fr,rw,fu,bad;WC_DirtyStats(&fr,&rw,&fu,&bad);if(fr)PSPNativeMemLog("[WIDE] wide_dirty: %u composes, %u lines/compose avg, %u full, %u verify mismatches (%u races; last bad line %d dirty %d)",fr,rw/fr,fu,bad,dStatRace,dBadRow,dBadMask);dStatRace=0;}}
  if(P3DS_WideLayoutsOn()&&P3DS_ScaleMode()==1&&(power&0x8000)&&engineA.Enabled&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)){
   static short wlParts[WC_MAX_PARTS*8];const int n=P3DS_WideGetParts(0,wlParts);
   if(n>=0&&WC_Plan(&wcPlan,PSPNative_GfxRegisters,wlParts,n)){wlNow=true;
@@ -1178,6 +1187,12 @@ static int Present(bool){
  bool wlEarly=false;
  const bool splitNow=!wlEarlyWant&&!gcOK&&splitCfg&&async&&!stereo&&!rightPar&&!onC1&&!stealNow&&engineA.Enabled&&((a>>16)&3)==1&&!(reg32(0x64)&0x80000000u);
  if(splitNow){memcpy((void*)&engineAS,(const void*)&engineA,sizeof engineA);line0Done=false;bSplit=true;splitN++;}
+ /* run 97 wide_stereo_par=1: with wide_early in stereo, the right eye's wide compose runs on core 2 (after engine B) while
+    the main thread composes the left eye: both eyes keep their own 3D layer at about the cost of one. */
+ bWideROk=false;{static int wsp=-1;if(wsp<0){wsp=P3DS_CfgInt("wide_stereo_par",1);PSPNativeMemLog("[WIDE] wide_stereo_par=%d",wsp);}
+  static int wsc2=-1;if(wsc2<0)wsc2=P3DS_CfgInt("wide_stereo",1);
+  if(wsp&&wsc2&&wlEarlyWant&&stereo&&rightEye&&(PSPNative_GfxRegisters[0]&8)){wideRRegs=PSPNative_GfxRegisters;
+   wideRSrc={GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,GPU::VRAMFlat_ABGExtPal,GPU::VRAMFlat_AOBJExtPal,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,rightEye};bWideR=true;}}
  if(async)bPost();
  if(wlEarlyWant){WcSrc ws={GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,GPU::VRAMFlat_ABGExtPal,GPU::VRAMFlat_AOBJExtPal,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,GPU3D::NativeFrame};
   wlEarly=WC_Compose(&wcPlan,PSPNative_GfxRegisters,&ws,display[0],P3DS_WideFillBuf)!=0;if(wlEarly)line0Done=true;
@@ -1237,7 +1252,7 @@ static int Present(bool){
  /* run 55 stereo blob diag (stereo_blobdiag=1, default): every 60 stereo frames, 16x16 cells where one eye is black
     (rgb < 8) on > 60% of the cell and the other eye is not -> one log line; the first hit dumps both eyes and both 3D
     layers to sdmc:/3ds/platinum3ds/stereo_blob_{L,R,3dL,3dR}.bmp for the next report. */
- if(stereo&&eyeL&&eyeR){static int cfg=-1;static unsigned n,hits;static bool dumpedB;if(cfg<0){cfg=P3DS_CfgInt("stereo_blobdiag",1)!=0;}
+ if(stereo&&eyeL&&eyeR&&!wlEarly){/* run 97: not with wide_early (eyeR is only filled by the wide block below; the first battle hit dumped 4 BMPs = 2.7 s freeze) */static int cfg=-1;static unsigned n,hits;static bool dumpedB;if(cfg<0){cfg=P3DS_CfgInt("stereo_blobdiag",1)!=0;}
   if(cfg&&++n%60==0&&hits<40){int bestN=0,bx=0,by=0,beye=0;
    for(int cy=0;cy<12;cy++)for(int cx=1;cx<15;cx++){int l=0,r=0;for(int y=cy*16;y<cy*16+16;y++)for(int x=cx*16;x<cx*16+16;x++){u32 a=eyeL[y*256+x]&0xF8F8F8u,b=eyeR[y*256+x]&0xF8F8F8u;if(!a&&b)l++;else if(a&&!b)r++;}
     if(l>bestN){bestN=l;bx=cx;by=cy;beye=0;}if(r>bestN){bestN=r;bx=cx;by=cy;beye=1;}}
@@ -1255,7 +1270,13 @@ static int Present(bool){
   WcSrc ws={GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,GPU::VRAMFlat_ABGExtPal,GPU::VRAMFlat_AOBJExtPal,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,GPU3D::NativeFrame};
   if(wlEarly)wlDone=true; /* run 95 wide_early: already composed while engine B rendered */
   else wlDone=WC_Compose(&wcPlan,PSPNative_GfxRegisters,&ws,c0,P3DS_WideFillBuf)!=0;
-  if(wlDone&&stereo&&eyeR&&eyeR!=c0)memcpy((u32*)eyeR,c0,256*192*4); /* same inputs, same picture: not drawn twice */
+  /* run 97 wide_stereo=1 (default): the right eye is composed again with the right-eye 3D layer, so battles (3D BG0) keep
+     their slider depth (run 96 copied the left picture: no depth). 2D layers are the same in both eyes, as in wide_early's
+     source. 0 = copy (faster, flat). */
+  if(wlDone&&stereo&&eyeR&&eyeR!=c0){static int wsc=-1;if(wsc<0){wsc=P3DS_CfgInt("wide_stereo",1);PSPNativeMemLog("[WIDE] wide_stereo=%d",wsc);}
+   static u32 stripR[64*192];bool okR=false;
+   if(bWideROk)okR=true;else if(wsc&&rightEye&&(PSPNative_GfxRegisters[0]&8)){WcSrc wr=ws;wr.frame3d=rightEye;okR=WC_ComposeEye(&wcPlan,PSPNative_GfxRegisters,&wr,(u32*)eyeR,stripR,1)!=0;}
+   if(!okR)memcpy((u32*)eyeR,c0,256*192*4);}
   {static int lastOk=-1;const int why=WC_Check(&wcPlan,PSPNative_GfxRegisters,GPU3D::NativeFrame!=nullptr);const int key=wlDone?0:why+1;if(key!=lastOk){lastOk=key;PSPNativeMemLog("[WIDE] wide layout drawing %s (reason %d, DISPCNT %08X BLDCNT %04X)",wlDone?"on":"off",why,*(const u32*)PSPNative_GfxRegisters,*(const u16*)(PSPNative_GfxRegisters+0x50));}}
   if(wlDone){wnReady=true;static u64 acc;static unsigned n;acc+=svcGetSystemTick()-tw;if(++n==600){PSPNativeMemLog("[WIDE] wide layout avg %u us/frame",(unsigned)(acc/600/CPU_TICKS_PER_USEC));acc=0;n=0;}}}
  P3DS_St[6]=svcGetSystemTick();if(wlDone){}

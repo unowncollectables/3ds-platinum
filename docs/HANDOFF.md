@@ -2,6 +2,30 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-25 - Run 98 (Grok Bot), branch `run98`
+
+- wide_dirty=1 (Debug tab): widecomp hashes each line's inputs (registers/palettes/plan, BG map entries + sampled tile rows,
+  sprites covering the line, the 3D row) and redraws only changed lines, plus 8 rolling lines a frame. Verify mode (=2) in Azahar, Spear
+  Pillar stereo battle: 2 one-line mismatches in 1200 composes (cause not found); the rolling refresh bounds any such stale line
+  to < 24 frames. Verify was not re-run after adding the refresh. Battle averages 71 of 192 lines per compose; about 23% of composes are still full (camera moves).
+- Sprite pass scans only the line's sprite span (identical output, host test hash unchanged).
+- Azahar stereo battle fps: run96 flat 13-22, run97 11-19, run98 10-23 (noisy; the emulator CPU is far slower than hardware for this
+  code). For reference wide_layouts=0 gives 10-17 in the same battle, so battle cost in the emulator is mostly the 2D path itself.
+  30 fps in stereo battles is NOT confirmed; needs a hardware log ([PERF] composite, [WIDE] wide_dirty lines).
+- Battles use a 0-part wide plan (plain edge extension). Next ideas: GPU compose for 0-part plans with alpha blending, splitting
+  the left-eye compose across cores in mono.
+
+## 2026-10-25 - Run 97 (Grok Bot), branch `run97` (on top of run96)
+
+- Hardware log (run 96): battles 22-29 fps with the slider at 1.00. Per frame: g3soft 16-23 ms (3D GPU draw + readback 7-14 ms),
+  composite 13-25 ms. One 2.7 s freeze at the first battle: the stereo blob diag saw an empty right eye (with wide_early the
+  right eye is only filled after the diag) and wrote 4 BMPs to SD. Fixed: the diag skips wide_early frames.
+- Depth was lost in battles (run 96 copied the left eye). wide_stereo=1 composes the right eye with the right-eye 3D layer;
+  wide_stereo_par=1 does it on core 2 alongside the left eye. Both eyes dumped in Azahar differ by about 3-4.5k px (3D layer shifted).
+- Azahar, Spear Pillar double battle, stereo_fake=60: run 96 (flat) 13-22 fps, run 97 serial 6-17, run 97 parallel 11-19.
+  Azahar's CPU is slower than hardware for widecomp, so hardware numbers are needed. Not a steady 30 yet.
+- Next: make widecomp itself cheaper (it is the battle cost), e.g. recompose only rows whose inputs changed, or GPU compose for wide layouts.
+
 ## 2026-10-25 - Run 96 (Grok Bot), branch `run96` (on top of run95)
 
 - Stereo battles with wide_layouts: widecomp's picture is used for both eyes (the right eye is a copy), so the right-eye engine A
