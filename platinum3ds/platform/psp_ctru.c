@@ -265,7 +265,7 @@ int sceCtrlPeekBufferPositive(SceCtrlData *d, int n) {
 #undef zr
 #undef zl
 #undef cp
-    /* run 95 reset_skip_intro: after a soft reset the new process taps START (3 polls on, 37 off) until the game enters its
+    /* run 95 reset_skip_intro: after a soft reset the new process taps START (2 polls on, 4 off: the opening only accepts it once its skip flag is set) until the game enters its
        Continue / New Game menu (MainMenu_Init sets P3DS_BootStage = 2) or the field, 3000 polls at most. Only START is sent
        (never B+UP+SELECT, the save-delete combo). */
     /* run 96 select_reset=0 (default off): hold SELECT for ~1/3 s in a wild battle = the game's own soft reset (for a worn START
@@ -273,7 +273,7 @@ int sceCtrlPeekBufferPositive(SceCtrlData *d, int n) {
     { static int sr; static unsigned sh, sc; extern volatile int P3DS_CatchInfo[20]; extern int P3DS_InField; extern void P3DS_SoftReset(unsigned);
       if (!(sc++ % 120)) sr = P3DS_CfgInt("select_reset", 0); /* re-read twice a second at most: a settings change applies at once */
       if (sr && P3DS_CatchInfo[0] && !P3DS_InField && (hidKeysHeld() & KEY_SELECT) && !(hidKeysHeld() & (KEY_L | KEY_R | KEY_START))) { if (++sh == 20) { PSPNativeMemLog("[BOOT] select_reset: SELECT held in a wild battle -> soft reset"); P3DS_SoftReset(0); } } else sh = 0; }
-    if (P3DS_SkipIntro) { static unsigned sn; if (P3DS_BootStage >= 2 || ++sn > 3000) { P3DS_SkipIntro = 0; PSPNativeMemLog("[BOOT] skip intro done: stage %d after %u polls", P3DS_BootStage, sn); } else if (sn % 40 < 3) k |= KEY_START; }
+    if (P3DS_SkipIntro) { static unsigned sn; static u64 t0; if (!t0) t0 = svcGetSystemTick(); if (P3DS_BootStage >= 2 || ++sn > 3000) { P3DS_SkipIntro = 0; PSPNativeMemLog("[BOOT] skip intro done: stage %d after %u polls, %u ms from the first poll", P3DS_BootStage, sn, (unsigned)((svcGetSystemTick() - t0) / CPU_TICKS_PER_MSEC)); } else if (sn % 6 < 2) k |= KEY_START; }
     if (P3DS_InjectFrames > 0) { k |= P3DS_InjectKeys; P3DS_InjectFrames--; } /* run 64: touch Start menu app (one press) */
     for (unsigned i = 0; i < sizeof map / sizeof map[0]; i++) if (k & map[i][0]) b |= map[i][1];
     circlePosition c; hidCircleRead(&c);

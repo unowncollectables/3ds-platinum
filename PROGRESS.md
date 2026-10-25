@@ -1394,3 +1394,10 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   ~2 s): holding SELECT alone for 20 polls (~1/3 s) in a WILD battle (P3DS_CatchInfo[0], not in the field) calls P3DS_SoftReset, the same
   path as L+R+START+SELECT (counts the soft reset for the hunt, then relaunches; with reset_skip_intro=1 it lands on Continue).
   Ignored with L, R or START held, in the overworld, menus and trainer battles. Log: `[BOOT] select_reset: ...`. Untested on hardware.
+
+## Run 97 (faster boot after a skip-intro reset)
+- Nathan's run95 log: the first game app is gOpeningCutsceneAppTemplate (overlay 77), the title at game frame 277, the Continue menu 6
+  frames later. The opening only accepts START/A once its own flag (unk_2A8, ov77_021D2D94) is set, so START is now tapped 2 polls on / 4 off
+  (was 3 / 37) to catch that moment within a few polls instead of up to 40. The port's 2 s credits splash is skipped on a skip-intro reset.
+  Log now says `[BOOT] skip intro done: stage 2 after N polls, M ms from the first poll` (M = time from the first game poll, so it excludes
+  the app relaunch and ROM / overlay loading). Untested on hardware; the relaunch itself is unchanged.

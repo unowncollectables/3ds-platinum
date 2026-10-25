@@ -435,7 +435,7 @@ static void drawFolTalk(u32*img,u64 now){if(!folAt||!folText[0]||now-folAt>(u64)
 static int splashCfg=-1,splashMs=2000;static u64 splashT0,splashEnd;static bool splashDone;
 static u32 scaleCol(u32 c,int a){return ((((c&255)*a)>>8)&255)|(((((c>>8)&255)*a)>>8)<<8)|(((((c>>16)&255)*a)>>8)<<16);}
 static bool splashActive(u64 now){if(splashDone)return false;
- if(splashCfg<0){splashCfg=P3DS_CfgInt("credits_splash",1)!=0;splashMs=P3DS_CfgInt("splash_ms",2000);if(splashMs<300)splashMs=300;if(splashMs>5000)splashMs=5000;PSPNativeMemLog("[SPLASH] credits_splash=%d splash_ms=%d font=%d",splashCfg,splashMs,P3DS_GameFontReady());}
+ extern volatile int P3DS_SkipIntro;if(splashCfg<0){splashCfg=P3DS_CfgInt("credits_splash",1)!=0&&!P3DS_SkipIntro;/* run 97: no credits splash on a skip-intro reset */splashMs=P3DS_CfgInt("splash_ms",2000);if(splashMs<300)splashMs=300;if(splashMs>5000)splashMs=5000;PSPNativeMemLog("[SPLASH] credits_splash=%d splash_ms=%d font=%d",splashCfg,splashMs,P3DS_GameFontReady());}
  if(!splashCfg){splashDone=true;return false;}
  const u64 ms=CPU_TICKS_PER_MSEC;if(!splashT0){splashT0=now;splashEnd=now+(u64)splashMs*ms;}
  if(!(splashEnd-now<(u64)250*ms)&&(hidKeysHeld()&KEY_A)){splashEnd=now+(u64)250*ms;PSPNativeMemLog("[SPLASH] skipped (A)");}
