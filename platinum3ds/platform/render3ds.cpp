@@ -1128,7 +1128,7 @@ static int Present(bool){
  static WcPlan wcPlan;bool wlNow=false;
  if(P3DS_WideLayoutsOn()&&P3DS_ScaleMode()==1&&(power&0x8000)&&engineA.Enabled&&!(G3G_Wide&&G3G_StripValid>=1&&P3DS_InField)){
   static short wlParts[WC_MAX_PARTS*8];const int n=P3DS_WideGetParts(0,wlParts);
-  if(n>0&&WC_Plan(&wcPlan,PSPNative_GfxRegisters,wlParts,n)){wlNow=true;
+  if(n>=0&&WC_Plan(&wcPlan,PSPNative_GfxRegisters,wlParts,n)){wlNow=true;
    if(wcPlan.changed){wcPlan.changed=0;static unsigned nPl;if(++nPl<=20||nPl%600==0)PSPNativeMemLog("[WIDE] layout #%u: %d parts, %d sprite parts, 3D shift %d",nPl,wcPlan.n,wcPlan.objParts,wcPlan.dx3d);}}}
  /* run 76 display capture through the renderer's own DoCapture (melonDS): source A = 2D+3D composite or 3D, source B =
     VRAM, blend A/B. Motion blur at Spear Pillar (Dialga/Palkia) shows VRAM C fed by capture; ignored it was black. */

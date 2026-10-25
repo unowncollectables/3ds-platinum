@@ -55,6 +55,7 @@ static void buildRow(const WcPlan *p, int li, int y, short *r) {
         const int ln = (t[1] & 0x10) ? y : py; if (ln >= t[2] && ln < t[3]) act[na++] = (uint8_t)k; }
     for (int s = -32; s < 288; s++) r[s + 32] = -1;
     for (int s = 0; s < 256; s++) r[s + 32] = (short)((s + l->h0) & M);
+    if (!p->n) { for (int s = -32; s < 0; s++) r[s + 32] = (short)(l->h0 & M); for (int s = 256; s < 288; s++) r[s + 32] = (short)((255 + l->h0) & M); return; } /* a screen without parts: the BG's edge columns repeat, the sprites still draw across */
     if (!na) return;
     for (int a = 0; a < na; a++) { const short *t = p->parts + act[a] * 8; if (t[0] != 1) continue;
         const int scr = (t[1] & 0x10) != 0, a0 = scr ? t[4] : t[4] - l->h0, a1 = scr ? t[5] : t[5] - l->h0; /* columns vacated, as s */
