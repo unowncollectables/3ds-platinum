@@ -18,6 +18,10 @@ static unsigned stHit, stMiss, stReads; static unsigned long long stBytes;
 static u8 *slotPf; static u32 romSizeG;            /* run 51: slot filled by zone_prefetch and not yet used */
 static void learnFill(u32 b, u32 k, u64 ticks);
 static void zoneStatHit(void);
+/* run 86 [SPIKE]: ROM positions of this frame's cache misses (game thread), named at log time (P3DS_RomSpikeFiles) */
+#define SPKN 32
+static u32 spkPos[SPKN]; static unsigned spkN, spkAll;
+static void spkNote(u32 p) { if (spkN < SPKN) spkPos[spkN++] = p; spkAll++; }
 static void init(u32 romSize) {
     int mb = 32, ra = 1024;   /* run 51: default 32 (falls back 24/16/8/4/2 while keeping 12 MiB heap headroom) */ FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); char l[64]; int x;
     if (f) { while (fgets(l, sizeof l, f)) { if (sscanf(l, "rom_cache_mb=%d", &x) == 1) mb = x; if (sscanf(l, "rom_ra_kb=%d", &x) == 1) ra = x; } fclose(f); }
@@ -61,7 +65,7 @@ static int rcRead(FILE *fp, u32 romSize, u32 pos, void *dst, u32 len) {
     u8 *out = dst; u32 done = 0; const u32 needEnd = (pos + len + BLK - 1) / BLK;
     while (done < len) {
         u32 p = pos + done, b = p / BLK; int s = slotOf[b];
-        if (s < 0) { if (fill(fp, romSize, b, needEnd) < 0) return done ? -1 : -1; s = slotOf[b]; if (s < 0) return -1; } else { stHit++; if (slotPf && slotPf[s]) { slotPf[s] = 0; zoneStatHit(); } }
+        if (s < 0) { spkNote(p); if (fill(fp, romSize, b, needEnd) < 0) return done ? -1 : -1; s = slotOf[b]; if (s < 0) return -1; } else { stHit++; if (slotPf && slotPf[s]) { slotPf[s] = 0; zoneStatHit(); } }
         slotLru[s] = ++lruClock;
         u32 o = p - b * BLK, c = BLK - o; if (c > len - done) c = len - done;
         memcpy(out + done, arena + (size_t)s * BLK + o, c); done += c;
@@ -111,7 +115,14 @@ static void adopt(void) {   /* at most 4 blocks (256 KiB memcpy, < 1 ms) per cal
             memcpy(arena + (size_t)s * BLK, stg[i].buf, stg[i].len); slotBlk[s] = b; slotOf[b] = (s16)s; slotLru[s] = ++lruClock; if (slotPf) slotPf[s] = 1; pfAdopted++; }
         __sync_synchronize(); stg[i].st = 0; }
 }
+/* run 86: current/previous zone for [ZONE] / [SPIKE] / [PERF3] (also when zone_prefetch is off) */
+static int znCur = -1, znPrev = -1, znLearned = -1; static u64 znTick;
+extern const char *P3DS_AreaName(int id);
+void P3DS_ZoneInfo(int *cur, int *prev, int *learned, unsigned *msSince) {
+    *cur = znCur; *prev = znPrev; *learned = znLearned; *msSince = znTick ? (unsigned)((svcGetSystemTick() - znTick) / 268111) : 0;
+}
 void P3DS_ZoneEnter(int zone) {   /* game thread */
+    if (zone != znCur) { znPrev = znCur; znCur = zone; znTick = svcGetSystemTick(); znLearned = -1; PSPNativeMemLog("[ZONE] %d %s -> %d %s", znPrev, P3DS_AreaName(znPrev), zone, P3DS_AreaName(zone)); }
     if (pfCfg != 1 || !zt || zone < 0 || zone >= MAXZ) return;
     const int prev = curZone; if (zone == prev) return;
     if (prev >= 0) { Zone *p = &zt[prev]; int have = 0; for (unsigned i = 0; i < p->nn; i++) if (p->nb[i] == zone) { have = 1;
@@ -119,7 +130,7 @@ void P3DS_ZoneEnter(int zone) {   /* game thread */
         if (!have) { if (p->nn < NN) p->nn++; for (unsigned j = p->nn - 1; j > 0; j--) p->nb[j] = p->nb[j - 1]; p->nb[0] = (u16)zone; pfDirty = 1; } }
     unsigned want = 0, have = 0; if (state == 1) { Zone *z = &zt[zone];
         for (unsigned i = 0; i < z->nr; i++) for (u32 b = z->r[i][0]; b < (u32)z->r[i][0] + z->r[i][1] && b < nBlocks; b++) { want++; if (slotOf[b] >= 0) have++; } }
-    zcN++; zcWant += want; zcHave += have;
+    zcN++; zcWant += want; zcHave += have; znLearned = want > 0;
     PSPNativeMemLog("[PREFETCH] zone %d -> %d: learned %u blocks, %u already in RAM | totals: fetched %u adopted %u used %u | zone changes %u, ready %u%% | worst learn-window SD read %u ms",
         prev, zone, want, have, pfFetched, pfAdopted, pfUsed, zcN, zcWant ? (unsigned)(100ull * zcHave / zcWant) : 0, (unsigned)(spikeMax / 268111));
     spikeMax = 0; curZone = zone; recZone = zone; recUntil = svcGetSystemTick() + msT(4000); pfBudget = nSlots / 4;
@@ -186,3 +197,58 @@ int P3DS_RomCacheRead(FILE *fp, u32 romSize, u32 pos, void *dst, u32 len) {
     gameLastRead = svcGetSystemTick(); gameInRead = 0;
     return r;
 }
+
+/* ======================= run 86: name the files behind a [SPIKE]'s ROM misses =======================
+ * At the first spike with misses, reads the NDS header's FAT + FNT from the user's ROM (own FILE handle, a few tens of
+ * KiB, once) and keeps them in RAM. Each recorded miss position is mapped to its file (path from the FNT, or
+ * "file N" for unnamed files such as overlays) and the offset inside it; same file = one entry. Nothing is written. */
+static u32 *fat; static u32 fatN; static u8 *fnt; static u32 fntLen; static int fatSt;   /* 0 not tried, 1 ok, -1 failed */
+static void fatLoad(void) {
+    fatSt = -1; FILE *f = fopen("sdmc:/3ds/platinum3ds/platinum.nds", "rb"); if (!f) return; u32 h[4];
+    if (!fseek(f, 0x40, SEEK_SET) && fread(h, 4, 4, f) == 4 && h[1] && h[1] < 0x100000 && h[3] && h[3] < 0x40000 && (h[3] & 7) == 0) {
+        fnt = malloc(h[1]); fat = malloc(h[3]);
+        if (fnt && fat && !fseek(f, (long)h[0], SEEK_SET) && fread(fnt, 1, h[1], f) == h[1] && !fseek(f, (long)h[2], SEEK_SET) && fread(fat, 1, h[3], f) == h[3]) {
+            fntLen = h[1]; fatN = h[3] / 8; fatSt = 1; }
+        else { free(fnt); free(fat); fnt = NULL; fat = NULL; } }
+    fclose(f); PSPNativeMemLog("[SPIKE] ROM file table %s (%u files)", fatSt == 1 ? "loaded" : "not readable", (unsigned)fatN);
+}
+static u32 rd32(u32 o) { u32 v; memcpy(&v, fnt + o, 4); return v; }
+static u16 rd16(u32 o) { u16 v; memcpy(&v, fnt + o, 2); return v; }
+/* walks directory d's sub-table; returns the entry name of file id `want` (or of sub-directory 0xF000|want if isDir) */
+static int fntFind(unsigned d, u32 want, int isDir, const u8 **nm) {
+    u32 o = rd32(d * 8); u32 id = rd16(d * 8 + 4);
+    while (o < fntLen) { u8 t = fnt[o++]; if (!t) break; unsigned l = t & 0x7F; if (o + l > fntLen) break;
+        if (t & 0x80) { if (o + l + 2 > fntLen) break; u16 sub = rd16(o + l); if (isDir && sub == (0xF000 | want)) { *nm = fnt + o; return (int)l; } o += l + 2; }
+        else { if (!isDir && id == want) { *nm = fnt + o; return (int)l; } id++; o += l; } }
+    return -1;
+}
+static void fileName(u32 id, char *out, unsigned n) {
+    snprintf(out, n, "file %u", (unsigned)id); if (fntLen < 8) return;
+    unsigned nd = rd16(6); if (nd == 0 || nd * 8 > fntLen) return;
+    for (unsigned d = 0; d < nd; d++) { const u8 *nm; int l = fntFind(d, id, 0, &nm); if (l < 0) continue;
+        char path[128]; unsigned pl = sizeof path - 1; path[pl] = 0;
+        #define PUT(p_, l_) do { unsigned L = (unsigned)(l_); if (L > pl) L = pl; pl -= L; memcpy(path + pl, (p_), L); } while (0)
+        PUT(nm, l); unsigned cur = d;
+        for (int depth = 0; cur && depth < 8; depth++) { unsigned par = rd16(cur * 8 + 6) & 0xFFF; if (par >= nd) break;
+            const u8 *dn; int dl = fntFind(par, cur, 1, &dn); if (dl < 0) break; if (pl) path[--pl] = '/'; PUT(dn, dl); cur = par; }
+        #undef PUT
+        snprintf(out, n, "%s", path + pl); return; }
+}
+/* writes " | missed in: fielddata/x.narc +812K 6x, ..." (up to 4 files) for this frame's misses; then clears the record */
+void P3DS_RomSpikeFiles(char *out, unsigned n) {
+    out[0] = 0;
+    if (spkN) { if (!fatSt) fatLoad();
+        u32 ids[4], lo[4]; unsigned cnt[4], nf = 0, other = 0;
+        for (unsigned i = 0; i < spkN; i++) { u32 p = spkPos[i], id = 0xFFFFFFFFu;
+            if (fatSt == 1) for (u32 k = 0; k < fatN; k++) if (p >= fat[k * 2] && p < fat[k * 2 + 1]) { id = k; break; }
+            unsigned j = 0; while (j < nf && ids[j] != id) j++;
+            if (j < nf) { cnt[j]++; u32 o = id == 0xFFFFFFFFu ? p : p - fat[id * 2]; if (o < lo[j]) lo[j] = o; }
+            else if (nf < 4) { ids[nf] = id; lo[nf] = id == 0xFFFFFFFFu ? p : p - fat[id * 2]; cnt[nf++] = 1; } else other++; }
+        unsigned w = (unsigned)snprintf(out, n, " | missed in:");
+        for (unsigned j = 0; j < nf && w < n; j++) { char nm[128];
+            if (ids[j] == 0xFFFFFFFFu) snprintf(nm, sizeof nm, "rom 0x%X", (unsigned)lo[j]); else fileName(ids[j], nm, sizeof nm);
+            w += (unsigned)snprintf(out + w, n - w, "%s %s +%uK %ux", j ? "," : "", nm, (unsigned)(ids[j] == 0xFFFFFFFFu ? 0 : lo[j] >> 10), cnt[j]); }
+        if (w < n && (other || spkAll > spkN)) snprintf(out + w, n - w, " (+%u more)", other + spkAll - spkN); }
+    spkN = 0; spkAll = 0;
+}
+void P3DS_RomSpikeReset(void) { spkN = 0; spkAll = 0; }

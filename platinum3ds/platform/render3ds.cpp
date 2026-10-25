@@ -14,7 +14,7 @@ extern "C" void PSPNativeMemLog(const char*,...);
 extern "C" int P3DS_CfgInt(const char*,int);
 extern "C" unsigned PSPNativeVramPageGen[];
 extern "C" { int P3DS_StripOn; }
-static unsigned P3DS_Perf3Worst;extern "C" int P3DS_CurMap;
+static unsigned P3DS_Perf3Worst;extern "C" int P3DS_CurMap;extern "C" void P3DS_ZoneInfo(int*,int*,int*,unsigned*),P3DS_RomSpikeFiles(char*,unsigned),P3DS_RomSpikeReset(void);extern "C" const char*P3DS_AreaName(int);
 
 /* run 76 hunt_counter: wild encounters per species in sdmc:/3ds/platinum3ds/hunt.txt (never the save) */
 static int huntN[494];static bool huntLoaded;
@@ -897,6 +897,8 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"
+/* run 86: map header id -> name for the log ([ZONE], [SPIKE], [PERF3]) */
+extern "C" const char*P3DS_AreaName(int id){return id>=0&&id<(int)(sizeof kP3dsAreaName/sizeof kP3dsAreaName[0])?kP3dsAreaName[id]:"-";}
 #include "p3ds_abilnames.h"
 extern "C" volatile int P3DS_CatchInfo[20];static int appStartTab=-1;
 struct ATab{const char*name;int n;int it[16];const char*nm[16];};
@@ -1227,7 +1229,11 @@ static int Present(bool){
    static int spikeMs=-1;static unsigned spikeN;if(spikeMs<0){spikeMs=70;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"spike_ms=%d",&x)==1)spikeMs=x;fclose(f);}PSPNativeMemLog("[SPIKE] spike_ms=%d",spikeMs);}
    if(spikeMs>0&&total>(unsigned)spikeMs*1000&&spikeN<60){spikeN++;struct mallinfo mi=mallinfo();
     PSPNativeMemLog("[SPIKE] f=%u frame %u ms = g3soft+game %u + composite %u + present %u | romfs %u ms (%u x16K misses) | GetTexture %u ms | GPU tex create %u ms (%u) | tris %u | malloc %u KiB",
-     frames,total/1000,g3us/1000,comp/1000,gpu/1000,(unsigned)(P3DS_SpkRomTicks/CPU_TICKS_PER_MSEC),P3DS_SpkRomBlocks,(unsigned)(P3DS_SpkGetTexTicks/CPU_TICKS_PER_MSEC),(unsigned)(P3DS_SpkTexTicks/CPU_TICKS_PER_MSEC),P3DS_SpkTexN,P3DS_G3LastTris(),(unsigned)(mi.uordblks/1024));}
+     frames,total/1000,g3us/1000,comp/1000,gpu/1000,(unsigned)(P3DS_SpkRomTicks/CPU_TICKS_PER_MSEC),P3DS_SpkRomBlocks,(unsigned)(P3DS_SpkGetTexTicks/CPU_TICKS_PER_MSEC),(unsigned)(P3DS_SpkTexTicks/CPU_TICKS_PER_MSEC),P3DS_SpkTexN,P3DS_G3LastTris(),(unsigned)(mi.uordblks/1024));
+    /* run 86: second line: the map (and the one before it, whether zone_prefetch had learned it, ms since the change) and the ROM files that missed */
+    int zc,zp,zl;unsigned zms;P3DS_ZoneInfo(&zc,&zp,&zl,&zms);char mf[200];P3DS_RomSpikeFiles(mf,sizeof mf);
+    PSPNativeMemLog("[SPIKE] f=%u map %s <- %s (%s, +%u ms)%s",frames,P3DS_AreaName(zc),P3DS_AreaName(zp),zl<0?"no prefetch data":zl?"learned":"first visit",zms,mf);}
+   else P3DS_RomSpikeReset();
    P3DS_SpkRomTicks=P3DS_SpkTexTicks=P3DS_SpkGetTexTicks=0;P3DS_SpkRomBlocks=P3DS_SpkTexN=0;}
   secUp+=P3DS_UploadUs;secConv+=G3G_ConvUs;
   {static unsigned w3;if(total>w3)w3=total;P3DS_Perf3Worst=w3;if(secFrames==0)w3=total;}tPrevEnd=tEnd;secFrames++;secG3+=g3us;secComp+=comp;secGpu+=gpu;secGame+=total>comp+gpu+g3us?total-comp-gpu-g3us:0;secTris+=P3DS_G3LastTris();secG3G+=G3G_LastUs();
@@ -1237,7 +1243,7 @@ static int Present(bool){
    PSPNativeMemLogC("[PERF] fps %u | ms/frame %u.%u = game %u.%u + g3soft %u.%u + composite %u.%u + present %u.%u | tris/frame %u | malloc used %u KiB | mode %d slider %.2f | res3d %d, 3D GPU draw+readback %u us",
     fpsShown,msShown/10,msShown%10,secGame/n/1000,(secGame/n/100)%10,secG3/n/1000,(secG3/n/100)%10,secComp/n/1000,(secComp/n/100)%10,secGpu/n/1000,(secGpu/n/100)%10,secTris/n,(unsigned)(mi.uordblks/1024),P3DS_ScaleMode(),(double)p3dsSlider(),G3G_Hi()?2:0,secG3G/n);
    PSPNativeMemLogC("[PERF2] upload %u us | 3D convert %u us | composite %u us",secUp/n,secConv/n,secComp/n);secUp=secConv=0;
-   {static unsigned lS,lD;PSPNativeMemLogC("[PERF3] worst frame %u ms | bottom reused %u drawn %u | map %d field %d",P3DS_Perf3Worst/1000,bSkips-lS,bDraws-lD,P3DS_CurMap,P3DS_InField);lS=bSkips;lD=bDraws;}
+   {static unsigned lS,lD;int zc,zp,zl;unsigned zms;P3DS_ZoneInfo(&zc,&zp,&zl,&zms);PSPNativeMemLogC("[PERF3] worst frame %u ms | bottom reused %u drawn %u | map %d field %d | zone %s <- %s",P3DS_Perf3Worst/1000,bSkips-lS,bDraws-lD,P3DS_CurMap,P3DS_InField,P3DS_AreaName(zc),P3DS_AreaName(zp));lS=bSkips;lD=bDraws;}
    secStart=tEnd;secFrames=secG3=secComp=secGpu=secGame=secTris=0;secG3G=0;}}
  /* run 66 settings_touch=1 (default): overworld touch shortcuts in the Poketch's dead corners (no Poketch screen or
     button there: DS screen area 16..207 x 16..175, buttons x 224..255 y 32..160). Touch and hold 0.3 s:

@@ -1292,3 +1292,18 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   been drawn before them, which let BG3's stripes cover BG2's panel; they now check the melonDS picture only. (2) WIDE_OBJS
   regions: WC_AdjustOam moves each sprite by (its part's dx - the picture's shift) in the OAM copy before the melonDS pass;
   sprites that would leave the 256 columns are cut there. Still not done: WIDE_SHIFT3D (the 3D Pokemon preview), stretch sprites.
+
+## Run 86 (area-change hitches, step 1: the log names the map and the files that missed)
+- Oct 24 hardware log: 29.3 fps average, 61 [SPIKE] frames; 15 of them ROM read misses (worst 398 ms, 330 ms of it SD reads),
+  44 "loading" frames with no ROM cost. Before changing the cache or prefetcher, the log has to say where and what.
+- New `[ZONE] 3 Jubilife City -> 286 Route 202` line on every zone change (warp or walking seam), also with zone_prefetch=0.
+- Every [SPIKE] frame now gets a second line: `[SPIKE] f=N map <now> <- <before> (learned | first visit | no prefetch data,
+  +ms since the change) | missed in: fielddata/land_data/land_data.narc +812K 6x, ...` (up to 4 files, offset of the first miss
+  inside the file, misses per file). File names come from the ROM's own FAT/FNT, read once at the first spike with misses
+  (own file handle, a few tens of KiB in RAM); nothing is written and nothing ROM-derived is in git. Unnamed files show as
+  `file N` (overlays). [PERF3] also says `zone <now> <- <before>`.
+- No config key: diagnostics only, inside the existing spike_ms log (spike_ms=0 still turns [SPIKE] off). Game, save and
+  timing untouched; the extra work happens only on frames that are already over spike_ms.
+- Test (x86, synthetic ROM with nested FNT dirs): `tools/romcache_spike_test.c`.
+- Next: read a 15 minute walking log, sort the misses by file and by first visit vs learned, then pick the fix (earlier
+  prefetch near warps, whole-file read-ahead for the big archives, or a cache for the 44 loading frames).
