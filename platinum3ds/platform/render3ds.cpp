@@ -909,7 +909,7 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
    B / START / L+R+Y close. Drawn in the game's font + message box frame (port font fallback). The top screen shows
    the dimmed game picture with the title and the build/version string. */
 #ifndef P3DS_VERSION
-#define P3DS_VERSION "run98"
+#define P3DS_VERSION "run99"
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"
@@ -1157,7 +1157,10 @@ static int Present(bool){
  bool rightPar=async&&par3d&&stereo&&rightEye&&!gcSt;
  /* run 96 wide_early in stereo: with a wide layout both eyes end up as widecomp's single picture (the right eye is a copy),
     so the right-eye engine A pass on core 2 was thrown away too. wide_early now also covers stereo (per-vertex 3D eyes). */
- const bool wlEarlyPre=wlNow&&async&&!engineA.CaptureLatch&&!(reg32(0x64)&0x80000000u)&&(!stereo||rightEye)&&P3DS_CfgInt("wide_early",1)!=0;
+ const bool wlEarlyPre=wlNow&&async&&!engineA.CaptureLatch&&!(reg32(0x64)&0x80000000u)&&(!stereo||rightEye)&&P3DS_CfgInt("wide_early",1)!=0
+  /* run 99 wide_early_check=1: only when widecomp will accept this frame. Before, a declined frame (windows: the Poke Ball
+     send-out, ...) in stereo fell to the serial right-eye redraw on the main thread (48-57 ms on hardware). */
+  &&(!P3DS_CfgInt("wide_early_check",1)||WC_Check(&wcPlan,PSPNative_GfxRegisters,GPU3D::NativeFrame!=nullptr)==0);
  if(wlEarlyPre&&stereo)rightPar=false;
  if(rightPar){memcpy((void*)&engineA2,(const void*)&engineA,sizeof engineA);engineA2.CaptureCnt=0;engineA2.CaptureLatch=false;}
  /* run 55 stereo_2d=1 (default): outside the overworld (battles, menus, title) the right eye's 2D background layers
