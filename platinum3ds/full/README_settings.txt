@@ -77,7 +77,7 @@ PICTURE
                     continued into the side areas (tint measured from the picture's own edges, applied by the GPU;
                     ~0.1 ms). 0 = off. Default 1. (Menu: WIDE HAZE)  [run 61]
   battle_monobj_hide=1  fixes the Pokemon showing twice while a Poke Ball is thrown in battle. 0 = off. Default 1.
-  (res3d / res3d_lindepth: sharp 3D is DISABLED since run 52 - broken on hardware; these lines are ignored.)
+  res3d_test=0        (2 = try the 2x-supersampled "sharp 3D" again (smoother 3D edges); it was disabled in run 52 after garbage on hardware; run 49 fixed the depth cause. Test only; needs a restart. Look at [3DRES] lines in log.txt)
   tex_postvblank=1  3D sprites pick up their new picture in the same frame (fixes the one-frame coloured box
                     when getting on the bike, and late sprite frames). 0 = off. Default 1.
   stereo_depth=1    3D-slider depth for the 3D scene. 0 = flat 3D layer. Default 1.

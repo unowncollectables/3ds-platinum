@@ -1248,3 +1248,7 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
   3D banner falls back to flat. Needs Python 3.12+ and git (pycgfx fetched once into build/pycgfx). Nothing made is committed.
 - Tests: `python3 -m unittest discover -s tools -p 'test_*.py'` (13 pass in the cloud, pycgfx part included). Not built
   into a CIA here (no devkitPro/ROM). HOME Menu caches banners: delete and reinstall the title to see the new one.
+
+## Run 83 (sharper 3D experiment)
+- res3d_test=2 (default 0): re-enables the run 46-49 "sharp 3D" path (3D at 2x, HW 2x2 downscale, 24-bit depth in linear RAM) for a hardware test. It is smoothing only (4x supersampled edges), not extra texels. Disabled since run 52 for garbage on hardware; run 49 fixed the 16-bit depth cause but was never re-tested. Look at [3DRES] / [PERF] lines.
+- Real sharpness (3D drawn at the screen's own 400x240 under a 2D overlay, as GabeSud0's port does) is a bigger project, not started: needs the 2D composite to leave 3D pixels clear and a hi-res 3D target (400x240 needs ~0.7 MB VRAM, far less than 2x).
