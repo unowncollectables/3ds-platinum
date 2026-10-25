@@ -25,6 +25,8 @@ int WC_Check(const WcPlan *p, const uint8_t *regs, int have3d);
 /* draws engine A across -32..287: centre 256x192 (melonDS 0xAABBGGRR) rewritten, strip 64x192 (32 left, 32 right) as
    0xRRGGBBAA like P3DS_WideFillBuf. Returns 0 (nothing written) when the screen uses something it does not do. */
 int WC_Compose(const WcPlan *p, const uint8_t *regs, const WcSrc *src, uint32_t *center, uint32_t *strip);
+/* run 97: same, with its own cache per eye (eye 1 = right eye, src->frame3d = the right-eye 3D layer) */
+int WC_ComposeEye(const WcPlan *p, const uint8_t *regs, const WcSrc *src, uint32_t *center, uint32_t *strip, int eye);
 #ifdef __cplusplus
 }
 #endif

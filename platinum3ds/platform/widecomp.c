@@ -211,7 +211,7 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
 /* the same picture is asked for again and again while a menu waits, so the result is kept: a hash of everything
    composeNow reads (registers, palettes, OAM, the BG map entries and tiles on screen, the tiles of each sprite) decides
    whether it is made again. The 3D layer changes every frame, so hashed whole. */
-static u32 cCenter[256 * 192], cStrip[64 * 192]; static u32 cHash; static int cValid;
+static u32 cCenterA[2][256 * 192], cStripA[2][64 * 192]; static u32 cHashA[2]; static int cValidA[2]; /* run 97: one cache per eye */
 static u32 hashSpan(u32 h, const u8 *b, unsigned n) { const u32 *w = (const u32 *)b; for (unsigned i = 0; i < n / 4; i++) h = (h ^ w[i]) * 16777619u; return h; }
 static u32 inputHash(const WcPlan *p, const u8 *R, const WcSrc *S) {
     const u32 dc = *(const u32 *)R; u32 h = 2166136261u ^ p->hash;
@@ -232,11 +232,13 @@ static u32 inputHash(const WcPlan *p, const u8 *R, const WcSrc *S) {
             h = hashSpan(h, S->objvram + (addr & 0x3FFFF), (unsigned)(width >> 3) * (bpp8 ? 64 : 32)); } }
     return h;
 }
-int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip) {
+int WC_ComposeEye(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip, int eye) {
     const u32 dc = *(const u32 *)R; if (WC_Check(p, R, S->frame3d != 0)) return 0;
+    eye = eye ? 1 : 0; u32 *cCenter = cCenterA[eye], *cStrip = cStripA[eye];
     u32 h = inputHash(p, R, S);
     if (dc & 8) h = hashSpan(h, (const u8 *)S->frame3d, 256 * 192 * 4); /* the 3D layer is part of the picture; a still scene keeps it */
-    if (cValid && h == cHash) { memcpy(center, cCenter, sizeof cCenter); memcpy(strip, cStrip, sizeof cStrip); return 1; }
+    if (cValidA[eye] && h == cHashA[eye]) { memcpy(center, cCenter, 256 * 192 * 4); memcpy(strip, cStrip, 64 * 192 * 4); return 1; }
     if (!composeNow(p, R, S, center, strip)) return 0;
-    memcpy(cCenter, center, sizeof cCenter); memcpy(cStrip, strip, sizeof cStrip); cHash = h; cValid = 1; return 1;
+    memcpy(cCenter, center, 256 * 192 * 4); memcpy(cStrip, strip, 64 * 192 * 4); cHashA[eye] = h; cValidA[eye] = 1; return 1;
 }
+int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip) { return WC_ComposeEye(p, R, S, center, strip, 0); }

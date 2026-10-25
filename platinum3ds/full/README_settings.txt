@@ -277,5 +277,7 @@ Run 80
   text_auto=0          (1 = text boxes advance by themselves after ~1.5 s; choices still wait for you)
   wide_layouts=0      (run 84, test; settings app Wide tab "Wide menu layouts": 1 = menus laid out across the wide screen, as GabeSud0's port does, at the 1.25x scale. Party menu first; other screens may look off)
   wide_early=1        (run 95, settings Debug tab "Wide layout early": with wide_layouts=1, widecomp draws the wide screen while engine B renders and the unused melonDS engine A pass is skipped. Same pixels; menus/title ~40% less composite time in the emulator. 0 = old order. Not used with stereo, display capture or a synchronous engine B)
+  wide_stereo=1       (run 97, Debug tab "Wide layout 3D depth": with wide_layouts and the 3D slider up, the right eye gets its own wide picture with the right-eye 3D layer, so battles keep slider depth. 0 = right eye copies the left (run 96: flat, a little faster))
+  wide_stereo_par=1   (run 97: that right-eye picture is composed on core 2 while the main thread does the left eye. 0 = both on the main thread)
 Run 88
   shiny_suite=0        (settings app Extra tab "Shiny hunt suite": 1 = shiny hunt counters in hunt.txt (encounters, since last shiny, soft resets, time, shinies), a chime + flash when a wild shiny appears, and a hunt panel on the Ball tab: Left/Right species, X twice reset, A export CSV to hunts/)
