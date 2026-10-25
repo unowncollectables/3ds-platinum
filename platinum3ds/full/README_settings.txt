@@ -14,6 +14,10 @@ VERSION 1.0 (run 100)
                     settings Menu tab); the item squares press Y (registered item); MAP and POKETCH have no action
                     yet. Touches inside the panel go to the game as before. Only in the field; off = nothing changes.
                     Icons are read from your ROM (graphic/menu_gra.narc). Default 0.
+  heap_fast=1       (run 101, Debug "Fast heap free") skips a slow table scan on every game heap free when it cannot
+                    find anything (same result); shorter load hitches (battle end, menus). Read at startup.
+  field_prof=0      (run 101, Debug "Load-hitch profiler") logs the slowest game functions of any frame >= 70 ms ([PROF]).
+  Settings app top screen shows your play time (read from the game's data, never written).
   splash_ms=3000    the boot credits now list Unown Collectables, 3DS Homebrew Dev, pspoke/pret and GabeSud0
                     (A skips). credits_splash=0 turns it off.
   log_level=1       periodic diagnostic lines (wide haze, GPU-compose stereo, bottom skip, present skip, tearfix)
