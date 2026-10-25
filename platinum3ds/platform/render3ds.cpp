@@ -904,7 +904,7 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
    B / START / L+R+Y close. Drawn in the game's font + message box frame (port font fallback). The top screen shows
    the dimmed game picture with the title and the build/version string. */
 #ifndef P3DS_VERSION
-#define P3DS_VERSION "run95"
+#define P3DS_VERSION "run96"
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"
@@ -1146,6 +1146,10 @@ static int Present(bool){
  const int gcMode0=P3DS_GpuComposeCfg();
  const bool gcSt=!wlNow&&gcMode0==2&&stereo&&rightEye&&P3DS_InField&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
  bool rightPar=async&&par3d&&stereo&&rightEye&&!gcSt;
+ /* run 96 wide_early in stereo: with a wide layout both eyes end up as widecomp's single picture (the right eye is a copy),
+    so the right-eye engine A pass on core 2 was thrown away too. wide_early now also covers stereo (per-vertex 3D eyes). */
+ const bool wlEarlyPre=wlNow&&async&&!engineA.CaptureLatch&&!(reg32(0x64)&0x80000000u)&&(!stereo||rightEye)&&P3DS_CfgInt("wide_early",1)!=0;
+ if(wlEarlyPre&&stereo)rightPar=false;
  if(rightPar){memcpy((void*)&engineA2,(const void*)&engineA,sizeof engineA);engineA2.CaptureCnt=0;engineA2.CaptureLatch=false;}
  /* run 55 stereo_2d=1 (default): outside the overworld (battles, menus, title) the right eye's 2D background layers
     get depth by BG priority: priority 3 (back) = the far-3D disparity (2 x shift), priority 2 = 1.5 x, priorities 0-1
@@ -1170,7 +1174,7 @@ static int Present(bool){
     to the worker (overlapping it) and the engine A pass is skipped when it succeeded. Same pixels: widecomp overwrites
     every centre pixel either way. If widecomp declines (windows, unsupported blend...) engine A is drawn as before.
     Not with stereo, display capture or a synchronous engine B. 0 = old order. */
- const bool wlEarlyWant=wlNow&&!stereo&&async&&!rightPar&&!onC1&&!stealNow&&!engineA.CaptureLatch&&!(reg32(0x64)&0x80000000u)&&P3DS_CfgInt("wide_early",1)!=0;
+ const bool wlEarlyWant=wlEarlyPre&&!rightPar&&!onC1&&!stealNow;
  bool wlEarly=false;
  const bool splitNow=!wlEarlyWant&&!gcOK&&splitCfg&&async&&!stereo&&!rightPar&&!onC1&&!stealNow&&engineA.Enabled&&((a>>16)&3)==1&&!(reg32(0x64)&0x80000000u);
  if(splitNow){memcpy((void*)&engineAS,(const void*)&engineA,sizeof engineA);line0Done=false;bSplit=true;splitN++;}
@@ -1222,7 +1226,8 @@ static int Present(bool){
   if(sq0>=0&&(int)frames>=sq0&&(int)frames<sq0+sqn){char fn[80];snprintf(fn,sizeof fn,"sdmc:/3ds/platinum3ds/seq/f%05u.raw",frames);FILE*f=fopen(fn,"wb");if(f){fwrite(display[0],4,256*192,f);fwrite(display[1],4,256*192,f);fclose(f);}}}
  const u32*eyeL=nullptr,*eyeR=nullptr;
  if(stereo&&gcStR){eyeL=display[0];eyeR=rawR;} /* run 61: both eyes from the GPU compositor */
- else if(stereo&&rightPar){eyeL=display[0];eyeR=rawR;} /* no copies: present reads both eyes in place */
+ else if(stereo&&rightPar){eyeL=display[0];eyeR=rawR;}
+ else if(stereo&&wlEarly){eyeL=display[0];eyeR=rawR;} /* run 96: widecomp drew eyeL; the wide block copies it to eyeR */ /* no copies: present reads both eyes in place */
  else if(stereo){memcpy(stereoL,display[0],sizeof stereoL);if(rightEye)memcpy(GPU3D::NativeFrame,rightEye,256*192*4);else shift3D(2*sd);FrameStart(engineA);
   for(unsigned line=0;line<192;line++){GPU::VCount=line;engineA.CheckWindows(line);renderer.DrawSprites(line,&engineA);renderer.DrawScanline(line,&engineA);}
   if(!rightEye)shift3D(-sd);eyeL=stereoL;eyeR=display[0];}
