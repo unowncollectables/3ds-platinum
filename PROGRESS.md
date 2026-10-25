@@ -1406,3 +1406,7 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - wide_stereo / wide_stereo_par (default 1): per-eye wide compose (right eye on core 2), restoring battle slider depth.
 - Fixed the 2.7 s first-battle freeze (stereo blob diag dumping BMPs on a not-yet-filled right eye under wide_early).
 - Azahar stereo battle fps: run96 flat 13-22, run97 11-19 with depth. See docs/HANDOFF.md.
+
+## Run 98 (2026-10-25, Grok Bot) - widecomp dirty lines
+- wide_dirty (default 1): per-line input hashes, only changed lines redrawn, rolling 8-line refresh; verify mode 0 mismatches.
+- Azahar stereo battle 10-23 fps (run97 11-19); emulator noise is large; 30 not confirmed. See docs/HANDOFF.md.
