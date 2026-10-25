@@ -5,9 +5,9 @@ Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the
 ## 2026-10-25 - Run 98 (Grok Bot), branch `run98`
 
 - wide_dirty=1 (Debug tab): widecomp hashes each line's inputs (registers/palettes/plan, BG map entries + sampled tile rows,
-  sprites covering the line, the 3D row) and redraws only changed lines, plus 8 rolling lines a frame. Verify mode (=2) in Azahar,
-  Spear Pillar stereo battle: 0 mismatches over ~2000 composes after a per-eye buffer fix (the 2 earlier ones were before the rolling
-  refresh / verify-buffer race). Battle averages 71 of 192 lines per compose; about 23% of composes are still full (camera moves).
+  sprites covering the line, the 3D row) and redraws only changed lines, plus 8 rolling lines a frame. Verify mode (=2) in Azahar, Spear
+  Pillar stereo battle: 2 one-line mismatches in 1200 composes (cause not found); the rolling refresh bounds any such stale line
+  to < 24 frames. Verify was not re-run after adding the refresh. Battle averages 71 of 192 lines per compose; about 23% of composes are still full (camera moves).
 - Sprite pass scans only the line's sprite span (identical output, host test hash unchanged).
 - Azahar stereo battle fps: run96 flat 13-22, run97 11-19, run98 10-23 (noisy; the emulator CPU is far slower than hardware for this
   code). For reference wide_layouts=0 gives 10-17 in the same battle, so battle cost in the emulator is mostly the 2D path itself.
