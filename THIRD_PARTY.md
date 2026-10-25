@@ -25,3 +25,6 @@ https://github.com/GabeSud0/pokeplatinum-3ds - copyright its authors, GPL-3.0 (s
 - `platinum3ds/full/cia/platinum3ds.rsf`: adapted from `3ds_port/game/cia/pokeplatinum.rsf` (title/product code/unique ID changed).
 - `tools/check_ci_artifacts.py`: from `tools/check_ci_artifacts.py` (allowed list emptied); run by our pre-push audit.
 - `platinum3ds/platform/speedcheck.c`: startup speed-up check (job design and loops follow `3ds_port/game/app/main_3ds.c` EnableSpeedup/TimeCore/CheckCoreSpeed; log and config glue rewritten).
+- `tools/banner3d/` (run 82): the animated 3D HOME Menu banner, from `tools/banner3d/` (Giratina from your ROM at build time, their portal/logo art in `art/`). `extract_rom.py` from `builder/extract_rom.py`. Only path changes in `make_banner.py`. Uses skyfloogle/pycgfx (fetched at build time, not vendored: no licence) and fixes from daaaaavia/CBC-for-YANBF (MIT).
+- `tools/home_menu_art.py`, `tools/test_banner3d.py`, `tools/test_home_menu_art.py` (run 82): unchanged; icon/flat banner from your ROM's own DS icon.
+- `platinum3ds/full/cia/chime.wav` (run 82): their banner chime, from `3ds_port/game/cia/chime.wav`.

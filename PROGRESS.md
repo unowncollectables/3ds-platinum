@@ -1241,3 +1241,10 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Core 1 reads -1: a thread can only be created there after APT_SetAppCpuTimeLimit, which the renderer requests later. Not changed on purpose (the check only observes).
 - NOT built or run: no devkitARM on the box that wrote it; host syntax check only with stub headers. Look for the [perf] lines in the next hardware log.
 
+## Run 82 (HOME Menu art from GabeSud0/pokeplatinum-3ds)
+- `make cia` now makes the icon and the animated 3D banner (portal, title-screen Giratina idle, logo, chime) from your ROM
+  (default `baserom/platinum_us_rev1.nds`, or `ROM=...`): tools/home_menu_art.py + tools/banner3d (from their repo, GPL-3.0,
+  see THIRD_PARTY.md). `BANNER=flat` = flat banner from the ROM's DS icon; no ROM = the run-79 placeholder art; a failed
+  3D banner falls back to flat. Needs Python 3.12+ and git (pycgfx fetched once into build/pycgfx). Nothing made is committed.
+- Tests: `python3 -m unittest discover -s tools -p 'test_*.py'` (13 pass in the cloud, pycgfx part included). Not built
+  into a CIA here (no devkitPro/ROM). HOME Menu caches banners: delete and reinstall the title to see the new one.

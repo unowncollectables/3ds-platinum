@@ -1188,3 +1188,11 @@ All new features behind config keys (README_settings.txt), all save-safe:
 - log_max_kb=1024 (default): log.txt rolls over to log_old.txt.
 - hm_free=0: Party_HasMonWithMove also accepts a party mon that can learn the HM (game's CanPokemonFormLearnTM); badges still required. Untested in emu.
 - 8c audit: DWC_ (141) and WM_ (35) symbols from the decomp are linked; no 3DS network (soc/ac/uds) is linked. No network code written.
+
+## Run 82 (HOME Menu art from GabeSud0/pokeplatinum-3ds)
+- `make cia` now makes the icon and the animated 3D banner (portal, title-screen Giratina idle, logo, chime) from your ROM
+  (default `baserom/platinum_us_rev1.nds`, or `ROM=...`): tools/home_menu_art.py + tools/banner3d (from their repo, GPL-3.0,
+  see THIRD_PARTY.md). `BANNER=flat` = flat banner from the ROM's DS icon; no ROM = the run-79 placeholder art; a failed
+  3D banner falls back to flat. Needs Python 3.12+ and git (pycgfx fetched once into build/pycgfx). Nothing made is committed.
+- Tests: `python3 -m unittest discover -s tools -p 'test_*.py'` (13 pass in the cloud, pycgfx part included). Not built
+  into a CIA here (no devkitPro/ROM). HOME Menu caches banners: delete and reinstall the title to see the new one.
