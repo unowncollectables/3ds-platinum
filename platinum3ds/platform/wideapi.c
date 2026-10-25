@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 extern int P3DS_CfgInt(const char *, int);
+extern void PSPNativeMemLog(const char *, ...);
 
 #define MAX_WINDOWS 24
 #define MAX_PARTS 128
@@ -16,7 +17,7 @@ static Win wins[MAX_WINDOWS]; static int nWins; static uint32_t winSerial;
 static Part parts[2][MAX_PARTS]; static int nParts[2];
 static short splits[2][MAX_SPLITS * 7]; static int nSplits[2];
 
-int P3DS_WideLayoutsOn(void) { static int on = -1; if (on < 0) on = P3DS_CfgInt("wide_layouts", 0) != 0; return on; }
+int P3DS_WideLayoutsOn(void) { static int on = -1; if (on < 0) { on = P3DS_CfgInt("wide_layouts", 0) != 0; PSPNativeMemLog("[WIDE] run83 wide-layout API linked, wide_layouts=%d (%s %s)", on, __DATE__, __TIME__); } return on; }
 int NitroPort_WideScreenExtra(void) { return P3DS_WideLayoutsOn() ? 32 : 0; }
 int NitroPort_WidePictures(void) { return 0; }
 int NitroPort_SunShadows(void) { return 0; }
