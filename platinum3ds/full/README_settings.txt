@@ -280,3 +280,5 @@ Run 88
   shiny_suite=0        (settings app Extra tab "Shiny hunt suite": 1 = shiny hunt counters in hunt.txt (encounters, since last shiny, soft resets, time, shinies), a chime + flash when a wild shiny appears, and a hunt panel on the Ball tab: Left/Right species, X twice reset, A export CSV to hunts/)
 Run 95
   reset_skip_intro=0   (settings app Hunt tab "Skip intro on reset": 1 = after a soft reset (L+R+START+SELECT) the game skips the logos and title and stops at Continue / New Game. 0 = the original reset)
+Run 96
+  select_reset=0       (settings app Hunt tab "Hold SELECT = reset (battle)": 1 = holding SELECT for about 1/3 s in a wild battle does a soft reset, for a worn START button. Not in the overworld, menus or trainer battles)

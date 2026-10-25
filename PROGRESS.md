@@ -1388,3 +1388,9 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Log: `[BOOT] soft reset marker, age N s, reset_skip_intro=1 -> skip 1` and `[BOOT] skip intro done: stage 2 after N polls`.
 - NOT done: the in-process reset / boot step timings of plan "run 84" (the relaunch itself is still a full app start; the skip only
   removes the logo and title waiting). Untested on hardware, not compiled in the cloud.
+
+## Run 96 (select_reset: hold SELECT in a wild battle = soft reset)
+- Nathan's START button is worn. New key select_reset=0 (default off; settings app Hunt tab "Hold SELECT = reset (battle)", applies within
+  ~2 s): holding SELECT alone for 20 polls (~1/3 s) in a WILD battle (P3DS_CatchInfo[0], not in the field) calls P3DS_SoftReset, the same
+  path as L+R+START+SELECT (counts the soft reset for the hunt, then relaunches; with reset_skip_intro=1 it lands on Continue).
+  Ignored with L, R or START held, in the overworld, menus and trainer battles. Log: `[BOOT] select_reset: ...`. Untested on hardware.
