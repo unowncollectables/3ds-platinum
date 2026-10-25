@@ -289,8 +289,10 @@ int __wrap_G3X_GetBoxTestResult(s32 *in) { int r = __real_G3X_GetBoxTestResult(i
     if (r) { CRUMB("boxtest-busy"); *in = 1; r = 0; }
     if (*in) p3dsBoxVisW++; else p3dsBoxHidW++;
     if (boxForce()) *in = 1; return r; }
-extern void __real_OS_WaitVBlankIntr(void); void __wrap_OS_WaitVBlankIntr(void) { CRUMB("waitvblank"); __real_OS_WaitVBlankIntr(); }
-extern void __real_OS_WaitIrq(int c, u32 m); void __wrap_OS_WaitIrq(int c, u32 m) { CRUMB("waitirq"); __real_OS_WaitIrq(c, m); }
+/* run 95 [PERF4]: ticks the game thread spends blocked in its own V-blank / IRQ waits (idle, not work) */
+volatile unsigned long long P3DS_WaitTicks; volatile unsigned P3DS_WaitCalls;
+extern void __real_OS_WaitVBlankIntr(void); void __wrap_OS_WaitVBlankIntr(void) { CRUMB("waitvblank"); u64 t = svcGetSystemTick(); __real_OS_WaitVBlankIntr(); P3DS_WaitTicks += svcGetSystemTick() - t; P3DS_WaitCalls++; }
+extern void __real_OS_WaitIrq(int c, u32 m); void __wrap_OS_WaitIrq(int c, u32 m) { CRUMB("waitirq"); u64 t = svcGetSystemTick(); __real_OS_WaitIrq(c, m); P3DS_WaitTicks += svcGetSystemTick() - t; P3DS_WaitCalls++; }
 extern void __real_MI_WaitDma(u32 ch); void __wrap_MI_WaitDma(u32 ch) { CRUMB("waitdma"); __real_MI_WaitDma(ch); }
 /* Texture-load call chain breadcrumbs (run-8 stall: endless GX_EndLoadTex/Pltt on the main thread). */
 extern int __real_Easy3D_UploadTextureToVRAM(void *t);

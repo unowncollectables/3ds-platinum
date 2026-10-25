@@ -276,5 +276,6 @@ Run 80
   text_hold_b=0        (1 = holding B prints text instantly and advances finished text boxes; never picks yes/no or menu choices)
   text_auto=0          (1 = text boxes advance by themselves after ~1.5 s; choices still wait for you)
   wide_layouts=0      (run 84, test; settings app Wide tab "Wide menu layouts": 1 = menus laid out across the wide screen, as GabeSud0's port does, at the 1.25x scale. Party menu first; other screens may look off)
+  wide_early=1        (run 95, settings Debug tab "Wide layout early": with wide_layouts=1, widecomp draws the wide screen while engine B renders and the unused melonDS engine A pass is skipped. Same pixels; menus/title ~40% less composite time in the emulator. 0 = old order. Not used with stereo, display capture or a synchronous engine B)
 Run 88
   shiny_suite=0        (settings app Extra tab "Shiny hunt suite": 1 = shiny hunt counters in hunt.txt (encounters, since last shiny, soft resets, time, shinies), a chime + flash when a wild shiny appears, and a hunt panel on the Ball tab: Left/Right species, X twice reset, A export CSV to hunts/)
