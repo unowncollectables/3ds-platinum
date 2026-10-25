@@ -14,7 +14,9 @@ extern "C" void PSPNativeMemLog(const char*,...);
 extern "C" int P3DS_CfgInt(const char*,int);
 extern "C" unsigned PSPNativeVramPageGen[];
 extern "C" volatile unsigned long long P3DS_WaitTicks;extern "C" volatile unsigned P3DS_WaitCalls;
-extern "C" { int P3DS_StripOn; }
+extern "C" int P3DS_LogLevel(void);
+extern "C" { int P3DS_StripOn; extern int P3DS_LowerMenuDraw; int lmYPress; }
+#include "nitro_port_lowermenu.h"
 static unsigned P3DS_Perf3Worst;static u64 P3DS_St[10];static unsigned long long P3DS_SpkWait0; /* run 95 [SPIKE] stage stamps */extern "C" int P3DS_CurMap;extern "C" void P3DS_ZoneInfo(int*,int*,int*,unsigned*),P3DS_RomSpikeFiles(char*,unsigned),P3DS_RomSpikeReset(void);extern "C" const char*P3DS_AreaName(int);
 
 /* run 76 hunt_counter / run 88 shiny_suite: wild encounters per species in sdmc:/3ds/platinum3ds/hunt.txt (never the
@@ -438,7 +440,7 @@ static void drawFolTalk(u32*img,u64 now){if(!folAt||!folText[0]||now-folAt>(u64)
 static int splashCfg=-1,splashMs=2000;static u64 splashT0,splashEnd;static bool splashDone;
 static u32 scaleCol(u32 c,int a){return ((((c&255)*a)>>8)&255)|(((((c>>8)&255)*a)>>8)<<8)|(((((c>>16)&255)*a)>>8)<<16);}
 static bool splashActive(u64 now){if(splashDone)return false;
- if(splashCfg<0){splashCfg=P3DS_CfgInt("credits_splash",1)!=0;splashMs=P3DS_CfgInt("splash_ms",2000);if(splashMs<300)splashMs=300;if(splashMs>5000)splashMs=5000;PSPNativeMemLog("[SPLASH] credits_splash=%d splash_ms=%d font=%d",splashCfg,splashMs,P3DS_GameFontReady());}
+ if(splashCfg<0){splashCfg=P3DS_CfgInt("credits_splash",1)!=0;splashMs=P3DS_CfgInt("splash_ms",3000);if(splashMs<300)splashMs=300;if(splashMs>5000)splashMs=5000;PSPNativeMemLog("[SPLASH] credits_splash=%d splash_ms=%d font=%d",splashCfg,splashMs,P3DS_GameFontReady());}
  if(!splashCfg){splashDone=true;return false;}
  const u64 ms=CPU_TICKS_PER_MSEC;if(!splashT0){splashT0=now;splashEnd=now+(u64)splashMs*ms;}
  if(!(splashEnd-now<(u64)250*ms)&&(hidKeysHeld()&KEY_A)){splashEnd=now+(u64)250*ms;PSPNativeMemLog("[SPLASH] skipped (A)");}
@@ -446,12 +448,13 @@ static bool splashActive(u64 now){if(splashDone)return false;
 static void drawSplash(u32*img,u64 now){const u64 ms=CPU_TICKS_PER_MSEC;int in=(int)((now-splashT0)/ms),out=(int)((splashEnd-now)/ms);
  int a=256;if(in<300)a=in*256/300;if(out<250&&out*256/250<a)a=out*256/250;if(a<0)a=0;
  for(int i=0;i<256*192;i++)img[i]=0;
- const char*l1="Patch by",*l2="Unown Collectables & 3DS Homebrew Dev";
- if(P3DS_GameFontReady()){int w1=P3DS_GameFontWidth(1,l1),w2=P3DS_GameFontWidth(1,l2);
-  P3DS_GameFontDraw(img,256,256,192,128-w1/2,70,l1,scaleCol(0x00B8B0A8u,a),0,1,1);
-  for(int x=128-w2/2;x<128+w2/2;x++)img[90*256+x]=scaleCol(0x00585048u,a);
-  P3DS_GameFontDraw(img,256,256,192,128-w2/2,96,l2,scaleCol(0x00F8F8F8u,a),scaleCol(0x00505050u,a),1,1);}
- else{drawBig(img,128-4*8/2*2,74,"PATCH BY",scaleCol(0x00B8B0A8u,a));drawBig(img,128-18*4,96,"UNOWN COLLECTABLES",scaleCol(0x00F8F8F8u,a));drawBig(img,128-16*4,112,"3DS HOMEBREW DEV",scaleCol(0x00F8F8F8u,a));}}
+ /* run 100 (v1.0): full credits. Port by Unown Collectables; built on pspoke (native PSP/PC runtime of pret's
+    pokeplatinum decomp); wide layouts and the bottom icon menu from GabeSud0's pokeplatinum-3ds. */
+ static const char*const L[6]={"Platinum 3DS v1.0","Port by Unown Collectables","with 3DS Homebrew Dev","Built on pspoke + pret pokeplatinum","Wide layouts & icon menu: GabeSud0","Not affiliated with Nintendo/Game Freak"};
+ static const int Y[6]={40,70,86,112,128,156};static const u32 C[6]={0x00F8F8F8u,0x00F8F8F8u,0x00B8B0A8u,0x00B8B0A8u,0x00B8B0A8u,0x00787068u};
+ for(int k=0;k<6;k++){if(P3DS_GameFontReady()){int w=P3DS_GameFontWidth(1,L[k]);P3DS_GameFontDraw(img,256,256,192,128-w/2,Y[k],L[k],scaleCol(C[k],a),scaleCol(0x00404040u,a),1,1);}
+  else drawBig(img,8,Y[k],L[k],scaleCol(C[k],a));}
+ for(int x=48;x<208;x++)img[60*256+x]=scaleCol(0x00585048u,a);}
 static void drawSaveBox(u32*img,u64 now){
  /* run 50 fail-safe: the takeover box only while it is clearly the field save sequence. Leaving the overworld, or 20 s
     with no yes/no menu frame and no save write (a script path that never closes the save info), drops it so the
@@ -579,7 +582,7 @@ static void wideFx(const u32*C,const u32*T,int eyes){
 extern "C" { extern int P3DS_HazeOn; extern unsigned P3DS_HazeK,P3DS_HazeB; }
 static void wideHaze(const u32*C,const u32*T){
  const unsigned bc=reg16(0x50),ba=reg16(0x52);static unsigned n,on,usAcc;static unsigned lastBc,lastBa;
- if(++n%600==0){PSPNativeMemLog("[WIDE] wide_haze: %u of 600 strip frames hazed, avg %u us | BLDCNT %04x BLDALPHA %04x",on,on?usAcc/on:0,lastBc,lastBa);on=0;usAcc=0;}
+ if(++n%600==0){if(P3DS_LogLevel()>=2)PSPNativeMemLog("[WIDE] wide_haze: %u of 600 strip frames hazed, avg %u us | BLDCNT %04x BLDALPHA %04x",on,on?usAcc/on:0,lastBc,lastBa);on=0;usAcc=0;}
  lastBc=bc;lastBa=ba;
  if(((bc>>6)&3)!=1||!(bc&0x100)||!(bc&0x0E))return;
  const u64 t0=svcGetSystemTick();
@@ -843,12 +846,12 @@ static const MItem mItems[]={
  {"INFINITE MONEY","cheat_money",2,{"OFF","ON"}},{"ALWAYS CATCH","cheat_catch",2,{"OFF","ON"}},{"SHINY WILD","cheat_shiny",2,{"OFF","ON"}},
  {"FAST EGGS","cheat_eggs",2,{"OFF","ON"}},{"EXP BOOST","cheat_exp",3,{"OFF","2X","3X"}},{"RARE CANDY 99","cheat_candy",2,{"OFF","ON"}},
  /* run 74: 33.. generic config rows (value = label index; log_max_kb mapped). Most apply after a restart. */
- {"FOLLOWER_AREA_TALK","follower_area_talk",2,{"OFF","ON"}},{"FOLLOWER_CRY","follower_cry",2,{"OFF","ON"}},{"FOLLOWER_ITEMS","follower_items",2,{"OFF","ON"}},{"FOLLOWER_BALLPOP","follower_ballpop",2,{"OFF","ON"}},{"FOLLOWER_EMOTES","follower_emotes",2,{"OFF","ON"}},{"FOLLOWER_FRIEND_TALK","follower_friend_talk",2,{"OFF","ON"}},{"FOLLOWER_IDLE","follower_idle",2,{"OFF","ON"}},{"FOLLOWER_GAP","follower_gap",2,{"OFF","ON"}},{"FOLLOWER_BEHIND","follower_behind",2,{"OFF","ON"}},{"WIDE_WEATHER","wide_weather",2,{"OFF","ON"}},{"WIDE_EDGEFILL","wide_edgefill",2,{"OFF","ON"}},{"WIDE_MENUS","wide_menus",2,{"OFF","ON"}},{"WIDE_FILL","wide_fill",2,{"OFF","ON"}},{"WILD_VIS","wild_vis",2,{"OFF","ON"}},{"WILD_VIS_MAX","wild_vis_max",5,{"0","1","2","3","4"}},{"WILD_VIS_REPLACE","wild_vis_replace",2,{"OFF","ON"}},{"WILD_VIS_TEST","wild_vis_test",2,{"OFF","ON"}},{"HM_FREE","hm_free",2,{"OFF","ON"}},{"SAVE_BACKUP","save_backup",2,{"OFF","ON"}},{"LOG_MAX_KB","log_max_kb",4,{"OFF","512 KB","1 MB","2 MB"}},{"CHEAT_PP","cheat_pp",2,{"OFF","ON"}},{"CHEAT_SPEED","cheat_speed",2,{"OFF","ON"}},{"CHEAT_WALK_WALLS","cheat_walk_walls",2,{"OFF","ON"}},{"CHEAT_TIME","cheat_time",5,{"OFF","MORNING","DAY","EVENING","NIGHT"}},{"CATCH_OVERLAY","catch_overlay",2,{"OFF","ON"}},{"BATTLE_ANIM_SPEED","battle_anim_speed",3,{"OFF","SKIP MOVES","SKIP + FAST HP"}},{"DW_DEPTH","dw_depth",4,{"OFF","SUBTLE","MODERATE","STRONG"}},{"DW_DEBRIS","dw_debris",2,{"OFF","ON"}},{"DW_UNEASE","dw_unease",2,{"OFF","ON"}},{"DW_CRY","dw_cry",2,{"OFF","ON"}},{"HUNT_COUNTER","hunt_counter",2,{"OFF","ON"}},{"TOD_TINT","tod_tint",2,{"OFF","ON"}},{"ITEM_PING","item_ping",2,{"OFF","ON"}},{"TOUCH_MENU","touch_menu",2,{"OFF","ON"}},{"DW_ROLL","dw_roll",2,{"OFF","ON"}},{"BOTTOM_STRIP","bottom_strip",2,{"OFF","ON"}},{"TEXT_HOLD_B","text_hold_b",2,{"OFF","ON"}},{"TEXT_AUTO","text_auto",2,{"OFF","ON"}},{"WIDE_LAYOUTS","wide_layouts",2,{"OFF","ON"}},{"SHINY_SUITE","shiny_suite",2,{"OFF","ON"}},{"WIDE_EARLY","wide_early",2,{"OFF","ON"}},{"WIDE_STEREO","wide_stereo",2,{"OFF","ON"}},{"WIDE_DIRTY","wide_dirty",3,{"OFF","ON","VERIFY"}},{"WIDE_DIRTY_REGS","wide_dirty_regs",2,{"OFF","ON"}},
+ {"FOLLOWER_AREA_TALK","follower_area_talk",2,{"OFF","ON"}},{"FOLLOWER_CRY","follower_cry",2,{"OFF","ON"}},{"FOLLOWER_ITEMS","follower_items",2,{"OFF","ON"}},{"FOLLOWER_BALLPOP","follower_ballpop",2,{"OFF","ON"}},{"FOLLOWER_EMOTES","follower_emotes",2,{"OFF","ON"}},{"FOLLOWER_FRIEND_TALK","follower_friend_talk",2,{"OFF","ON"}},{"FOLLOWER_IDLE","follower_idle",2,{"OFF","ON"}},{"FOLLOWER_GAP","follower_gap",2,{"OFF","ON"}},{"FOLLOWER_BEHIND","follower_behind",2,{"OFF","ON"}},{"WIDE_WEATHER","wide_weather",2,{"OFF","ON"}},{"WIDE_EDGEFILL","wide_edgefill",2,{"OFF","ON"}},{"WIDE_MENUS","wide_menus",2,{"OFF","ON"}},{"WIDE_FILL","wide_fill",2,{"OFF","ON"}},{"WILD_VIS","wild_vis",2,{"OFF","ON"}},{"WILD_VIS_MAX","wild_vis_max",5,{"0","1","2","3","4"}},{"WILD_VIS_REPLACE","wild_vis_replace",2,{"OFF","ON"}},{"WILD_VIS_TEST","wild_vis_test",2,{"OFF","ON"}},{"HM_FREE","hm_free",2,{"OFF","ON"}},{"SAVE_BACKUP","save_backup",2,{"OFF","ON"}},{"LOG_MAX_KB","log_max_kb",4,{"OFF","512 KB","1 MB","2 MB"}},{"CHEAT_PP","cheat_pp",2,{"OFF","ON"}},{"CHEAT_SPEED","cheat_speed",2,{"OFF","ON"}},{"CHEAT_WALK_WALLS","cheat_walk_walls",2,{"OFF","ON"}},{"CHEAT_TIME","cheat_time",5,{"OFF","MORNING","DAY","EVENING","NIGHT"}},{"CATCH_OVERLAY","catch_overlay",2,{"OFF","ON"}},{"BATTLE_ANIM_SPEED","battle_anim_speed",3,{"OFF","SKIP MOVES","SKIP + FAST HP"}},{"DW_DEPTH","dw_depth",4,{"OFF","SUBTLE","MODERATE","STRONG"}},{"DW_DEBRIS","dw_debris",2,{"OFF","ON"}},{"DW_UNEASE","dw_unease",2,{"OFF","ON"}},{"DW_CRY","dw_cry",2,{"OFF","ON"}},{"HUNT_COUNTER","hunt_counter",2,{"OFF","ON"}},{"TOD_TINT","tod_tint",2,{"OFF","ON"}},{"ITEM_PING","item_ping",2,{"OFF","ON"}},{"TOUCH_MENU","touch_menu",2,{"OFF","ON"}},{"DW_ROLL","dw_roll",2,{"OFF","ON"}},{"BOTTOM_STRIP","bottom_strip",2,{"OFF","ON"}},{"TEXT_HOLD_B","text_hold_b",2,{"OFF","ON"}},{"TEXT_AUTO","text_auto",2,{"OFF","ON"}},{"WIDE_LAYOUTS","wide_layouts",2,{"OFF","ON"}},{"SHINY_SUITE","shiny_suite",2,{"OFF","ON"}},{"WIDE_EARLY","wide_early",2,{"OFF","ON"}},{"WIDE_STEREO","wide_stereo",2,{"OFF","ON"}},{"WIDE_DIRTY","wide_dirty",3,{"OFF","ON","VERIFY"}},{"WIDE_DIRTY_REGS","wide_dirty_regs",2,{"OFF","ON"}},{"LOWER_MENU","lower_menu",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
 static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
@@ -909,7 +912,7 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
    B / START / L+R+Y close. Drawn in the game's font + message box frame (port font fallback). The top screen shows
    the dimmed game picture with the title and the build/version string. */
 #ifndef P3DS_VERSION
-#define P3DS_VERSION "run100"
+#define P3DS_VERSION "v1.0 (run100)"
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"
@@ -922,12 +925,28 @@ extern "C" volatile int P3DS_CatchInfo[20];static int appStartTab=-1;
    Map tab, Quick menu = the old Menu tab); B on such a page goes back to the row that opened it. */
 enum{L_HUNT=1000,L_MAP,L_MENU};
 struct ATab{const char*name;int n;int it[20];const char*nm[20];};
+/* run 100 (v1.0): one/two-line help for the selected setting (top screen). */
+static const char*settingHelp(const char*k){static const char*const H[][2]={
+ {"fps_counter","Frame rate in the top corner."},{"wideview","Fills the 400px top screen\nwith extra 3D view."},{"wide_layouts","Menus and battles laid out\nfor the wide screen."},
+ {"gpuscale","Picture size on the top screen."},{"stereo_strength","3D depth (slider still applies)."},{"stereo_2d","Depth for battle scenes."},
+ {"cam_zoom","Overworld camera distance."},{"tod_tint","Evening/night tint outdoors."},{"wide_weather","Rain/snow also in the side strips."},
+ {"fast_text","Text prints at full speed."},{"text_hold_b","Hold B to rush text."},{"text_auto","Text advances by itself."},
+ {"battle_anim_speed","Speeds up battle animations."},{"repel_prompt","Asks to use another Repel."},{"reusable_tms","TMs are not used up."},
+ {"hm_free","Field moves without teaching HMs."},{"item_ping","Ping near hidden items."},{"save_backup","Keeps 3 rotating copies of\nplatinum.sav on the SD."},
+ {"cstick_mode","What the C-stick does."},{"zl_run","ZL toggles running."},{"zr_item","ZR uses your registered item."},{"cpad_dpad","Circle pad acts as D-pad."},
+ {"touch_menu","Tap the bottom screen corner\nfor the quick menu."},{"bottom_strip","Button strip on the bottom\nscreen in the field."},
+ {"lower_menu","Icon menu around the bottom\nscreen in the field (GabeSud0)."},{"follower","A Pok\xe9mon follows you."},
+ {"hunt_counter","Counts encounters for hunts."},{"catch_overlay","Y in wild battles: catch info."},{"wild_vis","Wild Pok\xe9mon show in grass."},
+ {"shiny_suite","Shiny hunting helpers."},{"wide_early","Faster wide layout in battle."},{"wide_stereo","3D depth for wide layouts."},
+ {"wide_dirty","Redraws only changed lines."},{"summary_ivs","IVs/EVs on the summary screen."},{"menu_audio","Music in the settings app."},
+ {"dw_depth","Distortion World 3D depth."},{"dw_roll","Distortion World camera roll."},{"follower_slot","Which party slot follows."},{"cheat_time","Fixed time of day."},{"wide_dirty_regs","Ignore timing-only registers\nfor the line check."}};
+ for(auto&h:H)if(!strcmp(h[0],k))return h[1];return nullptr;}
 static const ATab kTabs[]={
  {"Video",14,{0,1,71,2,10,20,9,64,42,59,60,67,61,62},{"FPS counter","Wide view","Wide menu layouts","Scale","3D strength","Battle 3D depth","Camera zoom","Time-of-day tint",
   "Weather in strips","Distortion 3D depth","Distortion debris","Distortion camera roll","Uneasy Pok\xe9mon","Distant cry"}},
  {"Game",11,{22,69,70,58,25,26,23,50,65,51,18},{"Fast text","Hold B: fast text","Auto-advance text","Battle anim speed","Repel prompt","IV/EV on summary","Reusable TMs","HMs without learning",
   "Hidden item ping","Save backups (3)","Menu music"}},
- {"Keys",7,{3,4,5,6,66,68,L_MENU},{"C-stick","ZL run toggle","ZR = item (Y)","Circle pad D-pad","Touch quick menu","Bottom button strip","Quick menu"}},
+ {"Keys",8,{3,4,5,6,66,68,77,L_MENU},{"C-stick","ZL run toggle","ZR = item (Y)","Circle pad D-pad","Touch quick menu","Bottom button strip","Bottom icon menu","Quick menu"}},
  {"Pal",12,{14,16,17,34,35,37,36,33,38,39,40,41},{"Following Pok\xe9mon","Follower slot","Follower talk","Follower cry","Finds items","Emote bubbles","Ball pop-out","Area talk",
   "Friendship talk","Idle look-around","Follower gap","Behind player"}},
  {"Hunt",8,{L_HUNT,L_MAP,72,63,57,46,47,48},{"Hunt stats","Wild Pok\xe9mon here","Shiny hunt suite","Encounter counter","Catch info (Y)","Visible wild Pok\xe9mon","Visible wild max","Only visible battle"}},
@@ -1031,6 +1050,8 @@ static void runApp(const u32*top,int mode,bool gpu){
    P3DS_GameBoxDraw(img,256,256,192,16,16,216,32);gtxt(img,18,16,t2,kMsgFg,kMsgSh);gtxt(img,18,32,kAppVer,gy,gs);
    const char*h1=list?"Up/Down: pick   Left/Right: change":menuTab?"Pick a menu with the D-pad or a tap.":T.n==-2?"Tap or A: next page":"Game paused";
    const char*h2=back>=0?"L/R: tab   B: back":"L/R: tab   B: close";
+   if(list&&T.it[sel]<L_HUNT){const char*hp=settingHelp(mItems[T.it[sel]].key);if(hp){P3DS_GameBoxDraw(img,256,256,192,16,104,216,32);
+    const char*nl=strchr(hp,'\n');if(nl){char a1[64];int n=(int)(nl-hp);if(n>63)n=63;memcpy(a1,hp,n);a1[n]=0;gtxt(img,18,104,a1,kMsgFg,kMsgSh);gtxt(img,18,120,nl+1,kMsgFg,kMsgSh);}else gtxt(img,18,104,hp,kMsgFg,kMsgSh);}}
    P3DS_GameBoxDraw(img,256,256,192,16,152,216,32);gtxt(img,18,152,h1,kMsgFg,kMsgSh);gtxt(img,18,168,h2,kMsgFg,kMsgSh);}
   else{menuBox(img,8,10,248,52,0x00502010u,0x00F0F0F0u);drawBig(img,16,18,"SETTINGS (PAUSED)",0x0060E0FFu);drawBig(img,16,34,P3DS_VERSION,0x00C0C0C0u);}
   /* bottom: tab bar + the tab's list or page */
@@ -1201,7 +1222,7 @@ static int Present(bool){
   wlEarly=WC_Compose(&wcPlan,PSPNative_GfxRegisters,&ws,display[0],P3DS_WideFillBuf)!=0;if(wlEarly)line0Done=true;
   {static unsigned ne,nf;if(wlEarly)ne++;else nf++;if((ne+nf)%600==1)PSPNativeMemLog("[WIDE] wide_early: %u composed early (engine A skipped), %u fell back",ne,nf);}}
  const unsigned aEnd=splitNow?96:192;
- bool gcDone=false,gcStR=false;static unsigned gcStN;{static unsigned gsl;if(gcSt&&++gsl%600==0){PSPNativeMemLog("[GPUC] stereo: %u of last 600 stereo-eligible frames GPU-composed for both eyes",gcStN);gcStN=0;}}
+ bool gcDone=false,gcStR=false;static unsigned gcStN;{static unsigned gsl;if(gcSt&&++gsl%600==0){if(P3DS_LogLevel()>=2)PSPNativeMemLog("[GPUC] stereo: %u of last 600 stereo-eligible frames GPU-composed for both eyes",gcStN);gcStN=0;}}
  if(gcOK){if(!async)for(unsigned line=0;line<192;line++){GPU::VCount=line;engineB.CheckWindows(line);renderer.DrawSprites(line,&engineB);renderer.DrawScanline(line,&engineB);}
   gcDone=gcCompose(display[0]);if(gcDone)gcUsed++;line0Done=true;
   if(gcDone&&gcSt){gcStR=P3DS_GcComposeA((const u8*)PSPNative_GfxRegisters,GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,rightEye,rawR)!=0;if(gcStR)gcStN++;}}
@@ -1297,7 +1318,16 @@ static int Present(bool){
     x 8..207: below the Poketch screen, left of its buttons). Taps there go to the strip only (main3ds touch read
     drops them while P3DS_StripOn). Off = nothing drawn, every touch unchanged. */
  static int stripReq=0;
- {P3DS_StripOn=P3DS_CfgInt("bottom_strip",0)&&P3DS_InField&&appCfg()&&!P3DS_ConsoleOnBottom();
+ /* run 100 lower_menu (default 0): GabeSud0's bottom-screen icon menu (lowermenu.c, THIRD_PARTY.md) around the field's
+    lower screen. Shown only in the field; a button press opens that start-menu entry through the same request path as the
+    settings Menu tab (P3DS_StartReq); the item squares press Y (registered item). The touch inside the panel goes to the
+    game unchanged (main3ds). Off: nothing changes. */
+ {const bool lmWant=P3DS_CfgInt("lower_menu",0)&&P3DS_InField&&!P3DS_ConsoleOnBottom();
+  if(lmWant!=(NitroPort_LowerMenuOn()!=0))NitroPort_LowerMenuShow(lmWant);P3DS_LowerMenuDraw=lmWant&&NitroPort_LowerMenuOn();
+  if(P3DS_LowerMenuDraw){const int b=NitroPort_LowerMenuTakePress();
+   if(b>=0){static const int opt[NITRO_LOWERMENU_COUNT]={-1,1,2,3,0,-1,4,5,-2,-2};extern volatile int P3DS_StartReq;const int o=opt[b];
+    if(o>=0)P3DS_StartReq=o;else if(o==-2)lmYPress=3;PSPNativeMemLog("[LMENU] button %d -> %s %d",b,o>=0?"start menu option":o==-2?"Y (item)":"none",o);}}}
+ {P3DS_StripOn=P3DS_CfgInt("bottom_strip",0)&&P3DS_InField&&appCfg()&&!P3DS_ConsoleOnBottom()&&!P3DS_LowerMenuDraw;
   if(P3DS_StripOn&&bot){static const char*const nm[4]={"Menu","Wide","Ball","Set"};u32*bb=(u32*)bot;
    for(int i=0;i<4;i++){const int x0=8+i*50;plate(bb,x0,177,x0+48,191,0x00F8F8F8u,0x00585858u);gtxt(bb,x0+24-gw(nm[i])/2,176,nm[i],kMsgFg,kMsgSh);}
    if(hidKeysDown()&KEY_TOUCH){touchPosition tp;hidTouchRead(&tp);int x,y;if(touchToDS(tp.px,tp.py,&x,&y)&&y>=176&&x>=8&&x<208){const int b=(x-8)/50;if(b>=0&&b<4){stripReq=b+1;PSPNativeMemLog("[STRIP] %s",nm[b]);}}}}}
@@ -1329,7 +1359,7 @@ static int Present(bool){
  else{present(GFX_TOP,400,top,0);if(!P3DS_ConsoleOnBottom())present(GFX_BOTTOM,320,bot,0);gfxFlushBuffers();gfxSwapBuffers();}
  P3DS_GameFramePresented();
  u64 tEnd=svcGetSystemTick();last2DUs=(unsigned)((tEnd-t0)/CPU_TICKS_PER_USEC);frames++;
- {static unsigned bl;if(++bl%600==0){PSPNativeMemLog("[2D] bottom_skip: reused %u, recomposed %u of last 600 | steal_b: engine B on main %u, worker %u | early_b %u | split_top %u",bSkips,bDraws,stealMain,stealWorker,earlyN,splitN);earlyN=0;splitN=0;bSkips=bDraws=0;stealMain=stealWorker=0;}}
+ {static unsigned bl;if(++bl%600==0){if(P3DS_LogLevel()>=2)PSPNativeMemLog("[2D] bottom_skip: reused %u, recomposed %u of last 600 | steal_b: engine B on main %u, worker %u | early_b %u | split_top %u",bSkips,bDraws,stealMain,stealWorker,earlyN,splitN);earlyN=0;splitN=0;bSkips=bDraws=0;stealMain=stealWorker=0;}}
  {unsigned total=tPrevEnd?(unsigned)((tEnd-tPrevEnd)/CPU_TICKS_PER_USEC):0,comp=(unsigned)((tComp-t0)/CPU_TICKS_PER_USEC),gpu=(unsigned)((tEnd-tComp)/CPU_TICKS_PER_USEC);
   {/* run 43 [SPIKE] diag: any frame > spike_ms (default 70, 0 = off) logs where the time went (max 60 lines / session).
      g3soft time includes the game's own CPU work between frame start and the 3D flush (loads, decompression). */

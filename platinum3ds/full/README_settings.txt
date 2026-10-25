@@ -1,8 +1,23 @@
-Platinum 3DS port - settings (sdmc:/3ds/platinum3ds/config.txt)
+Platinum 3DS v1.0 - settings (sdmc:/3ds/platinum3ds/config.txt)
 ================================================================
 Put one setting per line, like:   wideview=1
 Anything not in the file uses its default. Delete a line to go back to the default.
 If something looks or sounds wrong after a change, delete that line (or the whole config.txt).
+
+VERSION 1.0 (run 100)
+  Every option below can be changed in the settings app (L+R+Y); the selected row now shows a short help line on the
+  top screen. Experimental/diagnostic options live in the hidden Debug tab (press SELECT in the settings app).
+  New in 1.0:
+  lower_menu=0      Keys tab "Bottom icon menu". 1 = GabeSud0's bottom-screen icon menu (MAP, POKEMON, BAG, TRAINER,
+                    POKEDEX, POKETCH, SAVE, OPTIONS + two item squares) drawn around the field's lower screen, which
+                    sits in the panel on the left. Tapping a button opens that start-menu entry (same path as the
+                    settings Menu tab); the item squares press Y (registered item); MAP and POKETCH have no action
+                    yet. Touches inside the panel go to the game as before. Only in the field; off = nothing changes.
+                    Icons are read from your ROM (graphic/menu_gra.narc). Default 0.
+  splash_ms=3000    the boot credits now list Unown Collectables, 3DS Homebrew Dev, pspoke/pret and GabeSud0
+                    (A skips). credits_splash=0 turns it off.
+  log_level=1       periodic diagnostic lines (wide haze, GPU-compose stereo, bottom skip, present skip, tearfix)
+                    are only written at log_level=2 ("Log detail" in Debug); perf summaries stay.
 
 HOTKEYS (hold L and R, then press the button; the game never sees these presses)
   L+R+SELECT  cycle screen scale: 1:1 / 1.25x / fill (remembered) - happens when you let go of SELECT

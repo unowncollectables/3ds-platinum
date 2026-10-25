@@ -2,14 +2,29 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
-## 2026-10-25 - Run 100 (Grok Bot), branch `run100`
+## 2026-10-25 - Run 100 = v1.0 (Grok Bot), branch `run100`, tag `v1.0`
 
-- Done: wide_dirty_regs=1 (Debug tab "Ignore timing registers"): the per-line hash covers only the registers widecomp reads, so
-  timing/3D/capture registers no longer mark every line dirty. Same pixels (those registers are never read by composeNow). Emulator
-  menus: 31-42 of 192 lines redrawn per compose. Settings tabs now hold up to 20 rows (Debug has 17).
-- Not done: battle-end field reload (87 ms game-side; needs profiling inside the game's field setup), the wide_dirty one-line
-  mismatch (cause not found; rolling refresh bounds it), splitting the mono compositor across cores, async 3D readback, and the
-  GabeSud0 lower-screen icon menu (needs start-menu hooks in the game code plus a bottom-screen frame; too large for this run).
+- Version string "Platinum 3DS v1.0 (run100)" (settings title box, console banner "v1.0").
+- Bottom icon menu (GabeSud0 port): `lowermenu.c` + `nitro_port_lowermenu.h` (credit header, THIRD_PARTY.md). Toggle
+  `lower_menu` (Keys tab "Bottom icon menu", default 0). gpuscale draws the 320x240 menu picture and the DS lower screen into
+  its panel; main3ds routes touches through NitroPort_LowerMenuTouch (panel touches reach the game); presses map to
+  P3DS_StartReq (Pokemon 1, Bag 2, Trainer 3, Pokedex 0, Save 4, Options 5), item squares press Y, MAP/POKETCH no action.
+  Shown whenever P3DS_InField (no overlay-005 patch, unlike GabeSud0's patch 0031); always the male bag icon (no gender read).
+  Emulator (Spear Pillar save): menu drawn correctly, POKEMON and TRAINER taps opened those screens.
+- Credits splash: Unown Collectables / 3DS Homebrew Dev, pspoke + pret pokeplatinum, GabeSud0, non-affiliation line; 3 s, A skips.
+- Settings app: one/two-line help for the selected row on the top screen (settingHelp()).
+- log_level 1: wide_haze, GPUC stereo, bottom_skip, present_skipbot, tearfix periodic lines only at log_level 2.
+- Earlier this run: wide_dirty_regs=1 (Debug "Ignore timing registers").
+- NOT done, with reasons:
+  - Battle-end hitch: the 87 ms is one game-thread call (field map/overlay 5 setup inside the game's own load state); cutting
+    it needs splitting that game code across frames or moving it off-thread with the game's heap, which is not safe without a
+    proper game-code audit. No change.
+  - Async 3D readback: the compositor needs that frame's 3D layer in the same frame; async readback means one frame of added
+    latency, which the rules forbid.
+  - Mono compositor split across cores: with wide_dirty on (default) most composes redraw only changed lines into a per-eye
+    cache; splitting needs that cache shared between cores. Not done.
+  - wide_dirty one-line mismatch: cause still unknown (rolling refresh bounds it).
+  - Phase 2 playtime display: needs reading the game's play-time from save RAM; not done.
 
 ## 2026-10-25 - Run 99 (Grok Bot), branch `run99`
 

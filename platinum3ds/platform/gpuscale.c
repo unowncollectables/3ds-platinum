@@ -121,6 +121,50 @@ static void quad(C3D_RenderTarget *t, float sw, int i, float x0, float y0, float
     C3D_ImmSendAttrib(x1, y1, 0, 0); C3D_ImmSendAttrib(1, t1, 0, 0);
     C3D_ImmDrawEnd();
 }
+/* run 100 lower_menu: GabeSud0's bottom-screen icon menu (lowermenu.c, see THIRD_PARTY.md). The 320x240 menu picture
+   fills the screen; the DS's lower screen is drawn into its panel (3,4 .. 243,236: the canvas 256x247 with DS row 0 at
+   canvas row 27, its top row carried up and its last row carried down). P3DS_LowerMenuDraw is set per frame by render3ds. */
+#include "nitro_port_lowermenu.h"
+int P3DS_LowerMenuDraw; extern int P3DS_LogLevel(void);
+static C3D_Tex menuTex; static u32 *menuLin; static int menuOk = -1; static uint32_t menuSerial = 0xFFFFFFFFu;
+static void imm(float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1) {
+    C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
+    C3D_ImmSendAttrib(x0, y0, 0, 0); C3D_ImmSendAttrib(s0, t0, 0, 0);
+    C3D_ImmSendAttrib(x0, y1, 0, 0); C3D_ImmSendAttrib(s0, t1, 0, 0);
+    C3D_ImmSendAttrib(x1, y0, 0, 0); C3D_ImmSendAttrib(s1, t0, 0, 0);
+    C3D_ImmSendAttrib(x1, y1, 0, 0); C3D_ImmSendAttrib(s1, t1, 0, 0);
+    C3D_ImmDrawEnd();
+}
+static int menuDraw(void) {
+    if (menuOk < 0) { menuOk = 0;
+        if (C3D_TexInit(&menuTex, 512, 256, GPU_RGBA8) && (menuLin = linearAlloc(512 * 256 * 4)) != NULL) {
+            C3D_TexSetFilter(&menuTex, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&menuTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+            memset(menuLin, 0, 512 * 256 * 4); menuOk = 1; }
+        PSPNativeMemLog("[3DS] lower_menu texture %s", menuOk ? "ok" : "FAILED"); }
+    if (!menuOk) return 0;
+    uint32_t ser; const uint32_t *pic = NitroPort_LowerMenuLockFrame(&ser);
+    if (!pic) { NitroPort_LowerMenuUnlockFrame(); return 0; }
+    if (ser != menuSerial) { menuSerial = ser;
+        for (int y = 0; y < NITRO_LOWERMENU_H; y++) memcpy(menuLin + y * 512, pic + y * NITRO_LOWERMENU_W, NITRO_LOWERMENU_W * 4);
+        GSPGPU_FlushDataCache(menuLin, 512 * 256 * 4);
+        C3D_SyncDisplayTransfer(menuLin, GX_BUFFER_DIM(512, 256), menuTex.data, GX_BUFFER_DIM(512, 256), TEX_FLAGS); }
+    NitroPort_LowerMenuUnlockFrame();
+    C3D_RenderTargetClear(tgtBot, C3D_CLEAR_ALL, 0x000000FF, 0);
+    C3D_FrameDrawOn(tgtBot);
+    C3D_Mtx proj; Mtx_OrthoTilt(&proj, 0.0f, 320.0f, 240.0f, 0.0f, 1.0f, -1.0f, true);
+    C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uProj, &proj);
+    C3D_TexBind(0, &menuTex);
+    imm(0, 0, 320, 240, 0, 0, 320.0f / 512.0f, 240.0f / 256.0f);
+    C3D_TexBind(0, &up[1]);
+    const float k = (float)NITRO_LOWERMENU_PANEL_H / (float)NITRO_LOWERMENU_CANVAS_H;
+    const float x0 = NITRO_LOWERMENU_PANEL_X0, x1 = x0 + NITRO_LOWERMENU_PANEL_W, y0 = NITRO_LOWERMENU_PANEL_Y0;
+    const float yA = y0 + NITRO_LOWERMENU_DS_ROW0 * k, yB = y0 + (NITRO_LOWERMENU_DS_ROW0 + 192) * k, yE = y0 + NITRO_LOWERMENU_PANEL_H;
+    const float row = (384.0f / 512.0f) / 192.0f, tB = 384.0f / 512.0f;
+    imm(x0, y0, x1, yA, 0, 0.5f * row, 1, 0.5f * row);
+    imm(x0, yA, x1, yB, 0, 0, 1, tB);
+    imm(x0, yB, x1, yE, 0, tB - 0.5f * row, 1, tB - 0.5f * row);
+    return 1;
+}
 /* run 43 wideview: side strips of the wide 3D pass (g3gpu G3G_Strip, 64x192 RGBA8: left 32 | right 32 DS px), drawn
    at x 0..40 and 360..400 (1.25x, LINEAR) after the centred picture. P3DS_WideStrip[eye] = NULL: not drawn. */
 const u32 *P3DS_WideStrip[2];
@@ -227,14 +271,14 @@ void P3DS_GpuPresent(const u32 *top, const u32 *bot, int mode, int drawBottom, c
     for (int k = 1; k < 6; k++) C3D_TexEnvInit(C3D_GetTexEnv(k));
     P3DS_Crumb("gp-prescale", 0);
     prescale(0); if (drawBottom && botFresh) { prescale(1); botValid = 1; } if (st) prescale(2);
-    { static unsigned n; if (++n % 600 == 0) { PSPNativeMemLog("[3DS] present_skipbot: skipped bottom upload %u of 600", botSkips); botSkips = 0; } }
+    { static unsigned n; if (++n % 600 == 0) { if(P3DS_LogLevel()>=2)PSPNativeMemLog("[3DS] present_skipbot: skipped bottom upload %u of 600", botSkips); botSkips = 0; } }
     /* run 33: mode 2 (fill) zoom from config gpuscale_zoom (1.25..1.5625, default 1.40625 = 360x270: 20px bars, 15 rows
        cropped top/bottom). Aspect always 4:3; edges snapped to whole pixels. */
     static float zoom = -1; if (zoom < 0) { zoom = 1.40625f; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); char l[64]; float z; if (f) { while (fgets(l, sizeof l, f)) if (sscanf(l, "gpuscale_zoom=%f", &z) == 1) zoom = z; fclose(f); } if (zoom < 1.25f) zoom = 1.25f; if (zoom > 1.5625f) zoom = 1.5625f; PSPNativeMemLog("[3DS] gpuscale_zoom=%.5f -> fill mode %dx%d", zoom, (int)(256 * zoom + 0.5f), (int)(192 * zoom + 0.5f)); }
     float fw = (float)(int)(256 * zoom + 0.5f), fh = (float)(int)(192 * zoom + 0.5f), fx = (float)(int)((400 - fw) / 2), fy = (float)(int)((240 - fh) / 2);
     if (mode == 2) quad(tgtTop, 400.0f, 0, fx, fy, fx + fw, fy + fh); else { quad(tgtTop, 400.0f, 0, 40, 0, 360, 240); strips(tgtTop, 0); }
     if (st) { if (mode == 2) quad(tgtTopR, 400.0f, 2, fx, fy, fx + fw, fy + fh); else { quad(tgtTopR, 400.0f, 2, 40, 0, 360, 240); strips(tgtTopR, 1); } }
-    if (drawBottom) quad(tgtBot, 320.0f, 1, 0, 0, 320, 240);
+    if (drawBottom && !(P3DS_LowerMenuDraw && menuDraw())) quad(tgtBot, 320.0f, 1, 0, 0, 320, 240);
     { /* tearfix: citro3d requests the screen swap at the first vblank after the transfer and GSP latches it one vblank
          later. A new transfer inside that window lands in the buffer still being scanned out: the first rows show the
          new frame, the rest the old (run 27 report, both screens). Make sure ~2 vblanks passed since the last present. */
@@ -250,6 +294,6 @@ void P3DS_GpuPresent(const u32 *top, const u32 *bot, int mode, int drawBottom, c
         while ((gspIsPresentPending(GFX_TOP) || gspIsPresentPending(GFX_BOTTOM)) && svcGetSystemTick() - t0 < (u64)(40 * 268111.856)) { w = 1; svcSleepThread(250000); }
         if (w) { waits++; waitTicks += svcGetSystemTick() - t0; }
       } else if (tf && lastEnd) { u64 el = svcGetSystemTick() - lastEnd; if (el < (u64)(2 * 16.713 * 268111.856)) { if (el < (u64)(16.713 * 268111.856)) gspWaitForVBlank(); gspWaitForVBlank(); waits++; } }
-      if (tf && ++n % 600 == 0) { PSPNativeMemLog("[3DS] tearfix=%d: waited on %u of 600 presents, avg wait %u us", tf, waits, waits ? (unsigned)(waitTicks / waits / 268) : 0); waits = 0; waitTicks = 0; }
+      if (tf && ++n % 600 == 0) { if(P3DS_LogLevel()>=2)PSPNativeMemLog("[3DS] tearfix=%d: waited on %u of 600 presents, avg wait %u us", tf, waits, waits ? (unsigned)(waitTicks / waits / 268) : 0); waits = 0; waitTicks = 0; }
       P3DS_Crumb("gp-end", 0); C3D_FrameEnd(0); lastEnd = svcGetSystemTick(); P3DS_Crumb("gp-done", 0); }
 }

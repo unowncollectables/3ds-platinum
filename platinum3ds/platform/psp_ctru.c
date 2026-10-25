@@ -220,7 +220,7 @@ typedef struct { unsigned short species; unsigned char lo, hi, pct, sec; } P3DSM
 P3DSMapEnt P3DS_MapEnt[48]; volatile int P3DS_MapEntN, P3DS_MapTod; unsigned *P3DS_MapIcons;
 int P3DS_MapIconMem[48], P3DS_MapIconPal[48], P3DS_MapIconPalFile; volatile int P3DS_MapGen; /* run 64 Map tab snapshot (game thread) */ /* run 64 summary_ivs (written by the summary screen) */   /* run 53 ZL: read by PlayerAvatar_IsRunButtonHeld (run = B XOR toggle) */
 int sceCtrlPeekBufferPositive(SceCtrlData *d, int n) {
-    hidScanInput(); { extern void P3DS_FrameHook(void); P3DS_FrameHook(); } u32 k = hidKeysHeld(); unsigned b = 0;
+    hidScanInput(); { extern void P3DS_FrameHook(void); P3DS_FrameHook(); } u32 k = hidKeysHeld(); { extern int lmYPress; if (lmYPress > 0) { lmYPress--; k |= KEY_Y; } } /* run 100 lower_menu item squares */ unsigned b = 0;
     if (P3DS_PromptOpen == 1) { u32 dn = hidKeysDown(); if (dn & (KEY_DUP | KEY_DDOWN)) P3DS_PromptSel ^= 1;
         if (dn & KEY_A) { P3DS_PromptResult = P3DS_PromptSel == 0; P3DS_PromptOpen = 2; } else if (dn & KEY_B) { P3DS_PromptResult = 0; P3DS_PromptOpen = 2; }
         k = 0; }

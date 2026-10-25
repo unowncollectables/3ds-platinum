@@ -1432,3 +1432,7 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 
 ## Run 100 (2026-10-25, Grok Bot)
 - wide_dirty_regs=1: fewer full widecomp redraws (only registers composeNow reads are hashed). Other run-100 goals deferred; see docs/HANDOFF.md.
+
+## Run 100 = v1.0 (2026-10-25)
+
+Bottom icon menu (lower_menu, GabeSud0 port, default 0), v1.0 version string and credits splash, settings help lines, quieter log_level 1, wide_dirty_regs. Battle-end hitch, async readback, mono split not done (see HANDOFF). Builds: 3dsx adb863b6ecb81a741e7dbfe6335a9a5544a2d0df, CIA 59ba3ce209df4f3c9673c0342deb131221ea565f.
