@@ -1401,3 +1401,18 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - run95 CIA had been built with BANNER=flat (broken HOME banner/logo); run96 uses the run82 3D banner again.
 - Emulator: trainer double battle (Mars/Jupiter, Spear Pillar) with wide_layouts: battle UI fine, no crash. wide_early on/off pixel
   diff on party and bag: identical apart from the clock and an icon animation frame.
+
+## Builder parity: overlay edits that only lived as pspoke-patches/*.c (2026-10-25, Claude)
+- Same problem as run 88b for five more files: the run 75-80 edits below existed only as full-file copies in pspoke-patches/,
+  which no script applies, so a build made with the builder (patch-builder, apply_worktree.py) never had them. They are now
+  overlay patches against pokeplatinum 47c28d53 (each applies to the pristine file and reproduces the copy byte for byte;
+  where a wide-layout patch already existed it is merged in):
+  - battle__healthbox.c: battle_anim_speed=2 fast HP drain (+ the existing GabeSud0 wide health boxes)
+  - battle__battle_display.c: battle_anim_speed=1 skip plain move animations
+  - player_move.c: cheat_speed, cheat_walk_walls (+ the existing zl_run hunk)
+  - render_text.c: text_hold_b, text_auto
+  - rtc.c: cheat_time
+- pspoke-patches/battle__healthbox.c removed (fully covered by the patch). The other copies there stay for now as reference.
+- README: the builder is now the recommended way to build; the hand build follows the builder's steps; troubleshooting section.
+- Not compiled in the cloud (no devkitARM / generated tree). On an existing tree the builder reverts the old healthbox /
+  player_move patches and applies the new ones; on a tree that already has the copies' edits it just records them.

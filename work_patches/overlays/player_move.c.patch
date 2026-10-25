@@ -1,6 +1,34 @@
 --- a/player_move.c
 +++ b/player_move.c
-@@ -2477,11 +2477,10 @@
+@@ -26,6 +26,8 @@
+ #include "map_tile_behavior.h"
+ #include "persisted_map_features_init.h"
+ #include "player_avatar.h"
++#include "system.h"
++extern int P3DS_CfgInt(const char *, int);
+ #include "sound_playback.h"
+ #include "terrain_collision_manager.h"
+ #include "unk_020655F4.h"
+@@ -1055,6 +1057,8 @@
+                     speed = PLAYER_ACTION_SPEED_FAST;
+                 }
+             }
++            { int cs; cs = P3DS_CfgInt("cheat_speed", 0) != 0; /* run 75 cheat_speed: B-run is bike speed */
++              if (cs && movementAction == MOVEMENT_ACTION_RUN_NORTH) { movementAction = MOVEMENT_ACTION_WALK_FASTER_NORTH; speed = PLAYER_ACTION_SPEED_FASTER; } }
+ 
+             movementAction = MapObject_GetDeepSnowMovementAction(mapObj, MapObject_GetCurrTileBehavior(mapObj), movementAction);
+ 
+@@ -1917,6 +1921,9 @@
+         collisionFlag |= PLAYER_COLLISION_WILL_COLLIDE;
+     }
+ 
++    { int cw; cw = P3DS_CfgInt("cheat_walk_walls", 0) != 0; /* run 75: hold R to walk through walls (warps still work) */
++      if (cw && (gSystem.heldKeys & PAD_BUTTON_R) && !(collisionFlag & (PLAYER_COLLISION_WARP | PLAYER_COLLISION_JUMP | PLAYER_COLLISION_JUMP_TWICE))) return PLAYER_COLLISION_NONE; }
++
+     return collisionFlag;
+ }
+ 
+@@ -2477,11 +2484,10 @@
   */
  BOOL PlayerAvatar_IsRunButtonHeld(PlayerAvatar *playerAvatar, u16 pad)
  {
