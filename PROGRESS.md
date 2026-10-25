@@ -1402,6 +1402,15 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 - Emulator: trainer double battle (Mars/Jupiter, Spear Pillar) with wide_layouts: battle UI fine, no crash. wide_early on/off pixel
   diff on party and bag: identical apart from the clock and an icon animation frame.
 
+## Run 97 (2026-10-25, Grok Bot) - battle depth with wide layouts
+- wide_stereo / wide_stereo_par (default 1): per-eye wide compose (right eye on core 2), restoring battle slider depth.
+- Fixed the 2.7 s first-battle freeze (stereo blob diag dumping BMPs on a not-yet-filled right eye under wide_early).
+- Azahar stereo battle fps: run96 flat 13-22, run97 11-19 with depth. See docs/HANDOFF.md.
+
+## Run 98 (2026-10-25, Grok Bot) - widecomp dirty lines
+- wide_dirty (default 1): per-line input hashes, only changed lines redrawn, rolling 8-line refresh; verify mode 0 mismatches.
+- Azahar stereo battle 10-23 fps (run97 11-19); emulator noise is large; 30 not confirmed. See docs/HANDOFF.md.
+
 ## Builder parity: overlay edits that only lived as pspoke-patches/*.c (2026-10-25, Claude)
 - Same problem as run 88b for five more files: the run 75-80 edits below existed only as full-file copies in pspoke-patches/,
   which no script applies, so a build made with the builder (patch-builder, apply_worktree.py) never had them. They are now

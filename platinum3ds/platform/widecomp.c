@@ -118,7 +118,7 @@ int WC_Check(const WcPlan *p, const u8 *R, int have3d) {
 }
 
 /* returns 0 = something this compositor does not do (the melonDS picture stays); else the picture is written */
-static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip) {
+static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip, const u8 *rowMask) {
     const u32 dc = *(const u32 *)R;
     if (WC_Check(p, R, S->frame3d != 0)) return 0;
     const u16 bc = *(const u16 *)(R + 0x50); const unsigned eff = (bc >> 6) & 3;
@@ -145,9 +145,9 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
     unsigned eva = *(const u16 *)(R + 0x52) & 31, evb = (*(const u16 *)(R + 0x52) >> 8) & 31; if (eva > 16) eva = 16; if (evb > 16) evb = 16;
     #define PUT(X, C, LY) { if (!done[X]) { row[X] = (C); lay[X] = (u8)(LY); done[X] = 1; if (!(ab && (fm >> (LY) & 1))) { d2[X] = 1; left--; } } \
         else if (!d2[X]) { row2[X] = (C); lay2[X] = (u8)(LY); d2[X] = 1; left--; } }
-    for (int y = 0; y < 192; y++) {
+    for (int y = 0; y < 192; y++) { if (rowMask && !rowMask[y]) continue;
         u32 row[320], row2[320], spr[320]; u8 lay[320], lay2[320], done[320], d2[320], sprPr[320]; memset(done, 0, sizeof done); memset(d2, 0, sizeof d2); memset(sprPr, 4, sizeof sprPr); memset(spr, 0, sizeof spr);
-        int left = 320;
+        int left = 320; int sx0 = 320, sx1 = 0; /* run 98: span of sprite pixels on this line */
         if (dc & 0x1000) for (int n = no - 1; n >= 0; n--) { /* back to front here: the front sprite is painted last */
             const int i = ord[n]; const u16 *a = S->oam + i * 4; const int aff = (a[0] & 0x100) != 0, dbl = (a[0] & 0x300) == 0x300;
             const unsigned shape = a[0] >> 14, size = a[1] >> 14; if (shape > 2) continue;
@@ -162,15 +162,15 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
                     tx_ = rx >> 8; ty_ = ry >> 8; if (rx < 0 || ry < 0 || tx_ >= width || ty_ >= height) tx_ = -1; } \
                 else { tx_ = (a[1] & 0x1000) ? width - 1 - (XO) : (XO); ty_ = (a[1] & 0x2000) ? height - 1 - ypos : ypos; if ((XO) >= width) tx_ = -1; } \
                 if (tx_ >= 0 && sprTexel(a, dc, ov, width, tx_, ty_, &ci_)) OUT = bpp8 ? (ext ? toM(*(const u16 *)(S->objext + ((a[2] >> 12) * 256 + ci_) * 2)) : lutO[ci_]) : lutO[(a[2] >> 12) * 16 + ci_]; }
-            for (int xo = 0; xo < bw; xo++) { const int X = xs + xo + 32; if (X < 0 || X >= 320) continue; u32 c; SPRCOL(xo, c); if (c) { spr[X] = c; sprPr[X] = spp[n]; } }
+            for (int xo = 0; xo < bw; xo++) { const int X = xs + xo + 32; if (X < 0 || X >= 320) continue; u32 c; SPRCOL(xo, c); if (c) { spr[X] = c; sprPr[X] = spp[n]; if (X < sx0) sx0 = X; if (X >= sx1) sx1 = X + 1; } }
             if (sst[i] && !aff && sdx[i]) { /* stretched: the edge column drawn back over the gap it left */
-                const int dx = sdx[i]; u32 c; if (dx > 0) { SPRCOL(0, c); for (int X = xs0 + 32; X < xs0 + dx + 32; X++) if (c && X >= 0 && X < 320) { spr[X] = c; sprPr[X] = spp[n]; } }
-                else { SPRCOL(bw - 1, c); for (int X = xs + bw + 32; X < xs0 + bw + 32; X++) if (c && X >= 0 && X < 320) { spr[X] = c; sprPr[X] = spp[n]; } } }
+                const int dx = sdx[i]; u32 c; if (dx > 0) { SPRCOL(0, c); for (int X = xs0 + 32; X < xs0 + dx + 32; X++) if (c && X >= 0 && X < 320) { spr[X] = c; sprPr[X] = spp[n]; if (X < sx0) sx0 = X; if (X >= sx1) sx1 = X + 1; } }
+                else { SPRCOL(bw - 1, c); for (int X = xs + bw + 32; X < xs0 + bw + 32; X++) if (c && X >= 0 && X < 320) { spr[X] = c; sprPr[X] = spp[n]; if (X < sx0) sx0 = X; if (X >= sx1) sx1 = X + 1; } } }
             #undef SPRCOL
         }
         for (int li = 0; li < nl && left; li++) { const int L = lorder[li]; const WcLayer *l = &p->L[L];
             /* sprites of this priority go in front of the BGs of the same priority */
-            if (li == 0 || p->L[lorder[li - 1]].prio != l->prio) { for (int pr = (li ? p->L[lorder[li - 1]].prio + 1 : 0); pr <= l->prio; pr++) for (int X = 0; X < 320; X++) if (!d2[X] && spr[X] && sprPr[X] == pr) { PUT(X, spr[X], 4); spr[X] = 0; } }
+            if (li == 0 || p->L[lorder[li - 1]].prio != l->prio) { for (int pr = (li ? p->L[lorder[li - 1]].prio + 1 : 0); pr <= l->prio; pr++) for (int X = sx0; X < sx1; X++) if (!d2[X] && spr[X] && sprPr[X] == pr) { PUT(X, spr[X], 4); spr[X] = 0; } }
             if (!left) break;
             if (L == 0 && (dc & 8)) { /* the 3D layer in BG0's place */
                 for (int s = -32; s < 288; s++) { const int X = s + 32, c = s - p->dx3d; if (d2[X] || c < 0 || c > 255) continue; const u32 v = S->frame3d[y * 256 + c]; if (!(v >> 24)) continue; PUT(X, from3D(v), 0); }
@@ -211,7 +211,7 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
 /* the same picture is asked for again and again while a menu waits, so the result is kept: a hash of everything
    composeNow reads (registers, palettes, OAM, the BG map entries and tiles on screen, the tiles of each sprite) decides
    whether it is made again. The 3D layer changes every frame, so hashed whole. */
-static u32 cCenter[256 * 192], cStrip[64 * 192]; static u32 cHash; static int cValid;
+static u32 cCenterA[2][256 * 192], cStripA[2][64 * 192]; static u32 cHashA[2]; static int cValidA[2]; /* run 97: one cache per eye */
 static u32 hashSpan(u32 h, const u8 *b, unsigned n) { const u32 *w = (const u32 *)b; for (unsigned i = 0; i < n / 4; i++) h = (h ^ w[i]) * 16777619u; return h; }
 static u32 inputHash(const WcPlan *p, const u8 *R, const WcSrc *S) {
     const u32 dc = *(const u32 *)R; u32 h = 2166136261u ^ p->hash;
@@ -232,11 +232,60 @@ static u32 inputHash(const WcPlan *p, const u8 *R, const WcSrc *S) {
             h = hashSpan(h, S->objvram + (addr & 0x3FFFF), (unsigned)(width >> 3) * (bpp8 ? 64 : 32)); } }
     return h;
 }
-int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip) {
+/* run 98 wide_dirty: per-line input hashes; only lines whose inputs changed are drawn again (the rest come from the last
+   picture of that eye). A line's inputs: global state (registers, both palettes, extended palettes in use, the plan), for
+   each BG the map entries + the tile row bytes the line actually samples (through the same column map composeNow uses),
+   every sprite covering the line (its OAM entry, affine group, and a hash of all its tile data), and the 3D layer's row. */
+static int dirtyMode; static unsigned dStatFull, dStatRows, dStatFrames, dStatBad; unsigned dStatRace; int dBadRow = -1, dBadMask;
+void WC_SetDirty(int mode) { dirtyMode = mode; }
+void WC_DirtyStats(unsigned *frames, unsigned *rows, unsigned *full, unsigned *bad) { *frames = dStatFrames; *rows = dStatRows; *full = dStatFull; *bad = dStatBad; dStatFrames = dStatRows = dStatFull = dStatBad = 0; }
+static void rowHashes(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *rh) {
+    const u32 dc = *(const u32 *)R; u32 g = 2166136261u ^ p->hash;
+    g = hashSpan(g, R, 0x80); g = hashSpan(g, (const u8 *)S->bgpal, 512); g = hashSpan(g, (const u8 *)S->objpal, 512);
+    g = hashSpan(g, (const u8 *)&p->dx3d, sizeof p->dx3d); g = hashSpan(g, (const u8 *)&p->n, sizeof p->n);
+    for (int i = 0; i < 4; i++) if (p->L[i].on && p->L[i].extSlot >= 0) g = hashSpan(g, S->bgext + p->L[i].extSlot * 0x2000, 0x2000);
+    if (dc & 0x80000000u) g = hashSpan(g, S->objext, 0x2000);
+    for (int y = 0; y < 192; y++) rh[y] = g;
+    /* sprites */
+    if (dc & 0x1000) for (int i = 0; i < 128; i++) { const u16 *a = S->oam + i * 4; if ((a[0] & 0x300) == 0x200) continue;
+        const unsigned shape = a[0] >> 14, size = a[1] >> 14; if (shape > 2) continue;
+        const int width = SPW[shape][size], height = SPH[shape][size], bpp8 = (a[0] & 0x2000) != 0; const u32 tile = a[2] & 0x3FF;
+        const int dbl = (a[0] & 0x300) == 0x300, bh = height * (dbl ? 2 : 1);
+        u32 sh = 2166136261u ^ (u32)i; sh = hashSpan(sh, (const u8 *)a, 8);
+        if (a[0] & 0x100) { const int grp = (a[1] >> 9) & 31; for (int k = 0; k < 4; k++) sh = (sh ^ S->oam[grp * 16 + 3 + k * 4]) * 16777619u; }
+        for (int t8 = 0; t8 < height / 8; t8++) { u32 addr = (dc & 0x10) ? ((tile << ((dc >> 20) & 3)) + (u32)((t8 * (width >> 3)) << (bpp8 ? 1 : 0))) << 5 : (tile + (u32)(t8 * 0x20)) << 5;
+            sh = hashSpan(sh, S->objvram + (addr & 0x3FFFF), (unsigned)(width >> 3) * (bpp8 ? 64 : 32)); }
+        const int y0 = a[0] & 255; for (int k = 0; k < bh; k++) { const int y = (y0 + k) & 255; if (y < 192) rh[y] = (rh[y] ^ sh) * 16777619u; } }
+    /* BG layers: what each line samples */
+    for (int L = 0; L < 4; L++) { const WcLayer *l = &p->L[L]; if (!l->on) continue; if (L == 0 && (dc & 8)) continue;
+        for (int y = 0; y < 192; y++) {
+            const uint8_t ri = p->rowOf[L][y]; short tmp[320]; const short *map; if (ri != 255) map = p->rows[ri]; else { buildRow(p, L, y, tmp); map = tmp; }
+            const int py = (int)((y + l->vofs) & (l->h * 8 - 1)); const unsigned ty = (unsigned)(py >> 3) & (l->h - 1); const unsigned fy0 = py & 7;
+            u32 h = rh[y] ^ (u32)(L * 0x9E3779B1u); int lastT = -0x7FFF;
+            for (int X = 0; X < 320; X++) { const int pc = map[X]; if (pc < 0) continue; const int t = pc >> 3; if (t == lastT) continue; lastT = t;
+                const unsigned tx = (unsigned)t & (l->w - 1);
+                const unsigned ma = (l->mapb + ((tx >> 5) + (ty >> 5) * (l->w >> 5)) * 0x800 + ((ty & 31) * 32 + (tx & 31)) * 2) & 0x7FFFF;
+                const u16 me = *(const u16 *)(S->bgvram + ma); const unsigned fy = (me & 0x800) ? 7 - fy0 : fy0; h = (h ^ me) * 16777619u;
+                h = hashSpan(h, S->bgvram + ((l->charb + (me & 0x3FF) * (l->bpp8 ? 64 : 32) + fy * (l->bpp8 ? 8 : 4)) & 0x7FFFF), l->bpp8 ? 8 : 4); }
+            rh[y] = h; } }
+    if ((dc & 8) && S->frame3d) for (int y = 0; y < 192; y++) rh[y] = hashSpan(rh[y], (const u8 *)(S->frame3d + y * 256), 1024);
+}
+static u32 dRH[2][192]; static int dValid[2]; static u32 vCA[2][256 * 192], vSA[2][64 * 192];
+int WC_ComposeEye(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip, int eye) {
     const u32 dc = *(const u32 *)R; if (WC_Check(p, R, S->frame3d != 0)) return 0;
+    eye = eye ? 1 : 0; u32 *cCenter = cCenterA[eye], *cStrip = cStripA[eye];
+    if (dirtyMode) { u32 rh[192]; u8 mask[192]; int n = 0; rowHashes(p, R, S, rh);
+        static int band[2]; const int b0 = band[eye] * 8; band[eye] = (band[eye] + 1) % 24; /* rolling 8-line refresh: any missed change lasts < 24 frames */
+        for (int y = 0; y < 192; y++) { mask[y] = !dValid[eye] || rh[y] != dRH[eye][y] || (y >= b0 && y < b0 + 8); n += mask[y]; }
+        if (n && !composeNow(p, R, S, cCenter, cStrip, n == 192 ? 0 : mask)) return 0;
+        memcpy(dRH[eye], rh, sizeof rh); dValid[eye] = 1; cValidA[eye] = 0; dStatFrames++; dStatRows += (unsigned)n; if (n == 192) dStatFull++;
+        u32 *vC = vCA[eye], *vS = vSA[eye]; if (dirtyMode == 2 && composeNow(p, R, S, vC, vS, 0) && (memcmp(vC, cCenter, 256 * 192 * 4) || memcmp(vS, cStrip, 64 * 192 * 4))) { u32 rh2[192]; rowHashes(p, R, S, rh2); if (!memcmp(rh2, rh, sizeof rh)) { dStatBad++; for (int y = 0; y < 192; y++) if (memcmp(vC + y * 256, cCenter + y * 256, 1024)) { dBadRow = y; dBadMask = mask[y]; break; } } else dStatRace++; memcpy(cCenter, vC, 256 * 192 * 4); memcpy(cStrip, vS, 64 * 192 * 4); }
+        memcpy(center, cCenter, 256 * 192 * 4); memcpy(strip, cStrip, 64 * 192 * 4); return 1; }
     u32 h = inputHash(p, R, S);
     if (dc & 8) h = hashSpan(h, (const u8 *)S->frame3d, 256 * 192 * 4); /* the 3D layer is part of the picture; a still scene keeps it */
-    if (cValid && h == cHash) { memcpy(center, cCenter, sizeof cCenter); memcpy(strip, cStrip, sizeof cStrip); return 1; }
-    if (!composeNow(p, R, S, center, strip)) return 0;
-    memcpy(cCenter, center, sizeof cCenter); memcpy(cStrip, strip, sizeof cStrip); cHash = h; cValid = 1; return 1;
+    if (cValidA[eye] && h == cHashA[eye]) { memcpy(center, cCenter, 256 * 192 * 4); memcpy(strip, cStrip, 64 * 192 * 4); return 1; }
+    if (!composeNow(p, R, S, center, strip, 0)) return 0;
+    dValid[eye] = 0;
+    memcpy(cCenter, center, 256 * 192 * 4); memcpy(cStrip, strip, 64 * 192 * 4); cHashA[eye] = h; cValidA[eye] = 1; return 1;
 }
+int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip) { return WC_ComposeEye(p, R, S, center, strip, 0); }
