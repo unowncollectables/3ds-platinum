@@ -2,6 +2,15 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-25 - Run 100 (Grok Bot), branch `run100`
+
+- Done: wide_dirty_regs=1 (Debug tab "Ignore timing registers"): the per-line hash covers only the registers widecomp reads, so
+  timing/3D/capture registers no longer mark every line dirty. Same pixels (those registers are never read by composeNow). Emulator
+  menus: 31-42 of 192 lines redrawn per compose. Settings tabs now hold up to 20 rows (Debug has 17).
+- Not done: battle-end field reload (87 ms game-side; needs profiling inside the game's field setup), the wide_dirty one-line
+  mismatch (cause not found; rolling refresh bounds it), splitting the mono compositor across cores, async 3D readback, and the
+  GabeSud0 lower-screen icon menu (needs start-menu hooks in the game code plus a bottom-screen frame; too large for this run).
+
 ## 2026-10-25 - Run 99 (Grok Bot), branch `run99`
 
 - Hardware log (run 98): battles 23-30 fps in stereo, composite 12-24 ms/frame; wide_dirty averages 58-108 of 192 lines per compose,

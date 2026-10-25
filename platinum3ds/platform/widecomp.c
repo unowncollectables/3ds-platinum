@@ -236,12 +236,16 @@ static u32 inputHash(const WcPlan *p, const u8 *R, const WcSrc *S) {
    picture of that eye). A line's inputs: global state (registers, both palettes, extended palettes in use, the plan), for
    each BG the map entries + the tile row bytes the line actually samples (through the same column map composeNow uses),
    every sprite covering the line (its OAM entry, affine group, and a hash of all its tile data), and the 3D layer's row. */
+static int dirtyMode, dirtyRegFilter = 1; void WC_SetDirtyRegFilter(int on) { dirtyRegFilter = on; }
 static int dirtyMode; static unsigned dStatFull, dStatRows, dStatFrames, dStatBad; unsigned dStatRace; int dBadRow = -1, dBadMask;
 void WC_SetDirty(int mode) { dirtyMode = mode; }
 void WC_DirtyStats(unsigned *frames, unsigned *rows, unsigned *full, unsigned *bad) { *frames = dStatFrames; *rows = dStatRows; *full = dStatFull; *bad = dStatBad; dStatFrames = dStatRows = dStatFull = dStatBad = 0; }
 static void rowHashes(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *rh) {
     const u32 dc = *(const u32 *)R; u32 g = 2166136261u ^ p->hash;
-    g = hashSpan(g, R, 0x80); g = hashSpan(g, (const u8 *)S->bgpal, 512); g = hashSpan(g, (const u8 *)S->objpal, 512);
+    /* run 100: only the registers composeNow reads (DISPCNT, BGxCNT..BLDY, MASTER_BRIGHT). DISPSTAT/VCOUNT, DISP3DCNT and
+       DISPCAPCNT change without changing the picture and made every line dirty (13-35% full redraws in battle on hardware). */
+    if (dirtyRegFilter) { g = hashSpan(g, R, 4); g = hashSpan(g, R + 8, 0x58); g = hashSpan(g, R + 0x6C, 4); } else g = hashSpan(g, R, 0x80);
+    g = hashSpan(g, (const u8 *)S->bgpal, 512); g = hashSpan(g, (const u8 *)S->objpal, 512);
     g = hashSpan(g, (const u8 *)&p->dx3d, sizeof p->dx3d); g = hashSpan(g, (const u8 *)&p->n, sizeof p->n);
     for (int i = 0; i < 4; i++) if (p->L[i].on && p->L[i].extSlot >= 0) g = hashSpan(g, S->bgext + p->L[i].extSlot * 0x2000, 0x2000);
     if (dc & 0x80000000u) g = hashSpan(g, S->objext, 0x2000);

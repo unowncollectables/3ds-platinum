@@ -1429,3 +1429,6 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 ## Run 99 (2026-10-25, Grok Bot) - Poke Ball send-out hitch
 - wide_early_check=1: declined widecomp frames in stereo keep the parallel right-eye path (send-out hitch 48-57 ms in the hw log).
 - Battle-end hitch (87 ms game-side during the field reload) analysed, not fixed. See docs/HANDOFF.md.
+
+## Run 100 (2026-10-25, Grok Bot)
+- wide_dirty_regs=1: fewer full widecomp redraws (only registers composeNow reads are hashed). Other run-100 goals deferred; see docs/HANDOFF.md.
