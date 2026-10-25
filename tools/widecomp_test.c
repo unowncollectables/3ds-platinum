@@ -54,7 +54,8 @@ int main(void) {
     check(pix(100, 216) == white && pix(103, 223) == white, "BG1 over a lower-priority sprite", pix(100, 216), white);
     /* windows: not done -> 0, picture untouched */
     *(uint32_t *)R = 0x11F00 | 0x2000; ok = WC_Compose(&p, R, &S, center, strip); check(ok == 0, "window -> unsupported", ok, 0);
-    *(uint32_t *)R = 0x11F00; *(uint16_t *)(R + 0x50) = 0x0041 | 0x0100; /* alpha blend, BG0 first target */ ok = WC_Compose(&p, R, &S, center, strip); check(ok == 0, "alpha -> unsupported", ok, 0);
+    *(uint32_t *)R = 0x11F08; *(uint16_t *)(R + 0x50) = 0x0041 | 0x0100; /* alpha blend with BG0 as the 3D layer: not done here */ ok = WC_Compose(&p, R, &S, center, strip); check(ok == 0, "alpha on 3D -> unsupported", ok, 0);
+    *(uint32_t *)R = 0x11F00; *(uint16_t *)(R + 0x50) = 0x0042 | 0x0100; *(uint16_t *)(R + 0x52) = 0x0808; ok = WC_Compose(&p, R, &S, center, strip); check(ok == 1, "alpha BG1 over BG0 -> drawn", ok, 1);
     printf(fails ? "%d checks FAILED\n" : "all widecomp checks passed\n", fails);
     return fails != 0;
 }

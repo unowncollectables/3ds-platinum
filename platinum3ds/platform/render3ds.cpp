@@ -1304,7 +1304,7 @@ static int Present(bool){
     else if(zz==4){cornerOpen=true;for(int t=0;t<(int)(sizeof kTabs/sizeof kTabs[0]);t++)if(kTabs[t].n==-1)appStartTab=t;PSPNativeMemLog("[APP] touch_menu: quick menu opened");} /* run 77 touch_menu */
     else{extern volatile int P3DS_StartReq;P3DS_StartReq=zz==2?1:2;PSPNativeMemLog("[APP] corner touch: open %s",zz==2?"Pokemon":"Bag");}}}
   else cZone=0;}
- {u32 kd=hidKeysDown(),kh=hidKeysHeld();bool catchY=(kd&KEY_Y)&&!(kh&(KEY_L|KEY_R|KEY_X))&&P3DS_CatchInfo[0]&&!P3DS_InField&&appCfg()&&(P3DS_CfgInt("catch_overlay",0)||P3DS_HuntOn());if(catchY){for(int t=0;t<(int)(sizeof kTabs/sizeof kTabs[0]);t++)if(kTabs[t].n==-3)appStartTab=t;PSPNativeMemLog("[CATCH] Y: catch info opened");}
+ {u32 kd=hidKeysDown(),kh=hidKeysHeld();bool catchY=(kd&KEY_Y)&&!(kh&(KEY_L|KEY_R|KEY_X))&&P3DS_CatchInfo[0]&&!P3DS_InField&&appCfg()&&(P3DS_CfgInt("catch_overlay",0)||P3DS_HuntOn());if(catchY){for(int t=0;t<(int)(sizeof kTabs/sizeof kTabs[0]);t++)if(kTabs[t].n==-3)appStartTab=t;PSPNativeMemLog("[CATCH] Y: catch info opened");}else if(kd&KEY_Y&&!(kh&(KEY_L|KEY_R|KEY_X))){static int ly;if(++ly<=5)PSPNativeMemLog("[CATCH] Y ignored: catchInfo %d inField %d appCfg %d overlay %d hunt %d",(int)P3DS_CatchInfo[0],P3DS_InField,(int)appCfg(),P3DS_CfgInt("catch_overlay",0),P3DS_HuntOn());}
   if(catchY||cornerOpen||((kd&KEY_Y)&&(kh&KEY_L)&&(kh&KEY_R)&&!(kh&KEY_X)&&menuCfg())){if(appCfg()&&!P3DS_ConsoleOnBottom())runApp(stereo?eyeL:top,mode,mode&&gpuOk==1);else runMenu(stereo?eyeL:top,bot,mode,mode&&gpuOk==1,!P3DS_ConsoleOnBottom());}}
  return 0;
 }

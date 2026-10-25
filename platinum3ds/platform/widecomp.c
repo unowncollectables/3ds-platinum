@@ -110,14 +110,14 @@ static const u8 SPW[3][4] = {{8, 16, 32, 64}, {16, 32, 32, 64}, {8, 8, 16, 32}},
 int WC_Check(const WcPlan *p, const u8 *R, int have3d) {
     const u32 dc = *(const u32 *)R;
     if (dc & 0x80) return 1; if (((dc >> 16) & 3) != 1) return 2; if (dc & 0xE000) return 3;
-    const u16 bc = *(const u16 *)(R + 0x50); if (((bc >> 6) & 3) == 1 && (bc & 0x3F)) return 4;
+    const u16 bc = *(const u16 *)(R + 0x50); if (((bc >> 6) & 3) == 1 && (bc & 1) && (dc & 8)) return 4; /* alpha on the 3D layer: its own alpha, not done here */
     for (int i = 0; i < 4; i++) { const WcLayer *l = &p->L[i]; if (!l->on) continue; if (!l->text && !(i == 0 && (dc & 8))) return 5; if (l->mosaic) return 6; }
     if ((dc & 8) && !have3d) return 7;
     return 0;
 }
 
 /* returns 0 = something this compositor does not do (the melonDS picture stays); else the picture is written */
-int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip) {
+static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip) {
     const u32 dc = *(const u32 *)R;
     if (WC_Check(p, R, S->frame3d != 0)) return 0;
     const u16 bc = *(const u16 *)(R + 0x50); const unsigned eff = (bc >> 6) & 3;
@@ -140,8 +140,12 @@ int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *s
     /* layers front to back: priority, then sprites before BGs, BG0 before BG3 */
     int lorder[4], nl = 0; for (int pr = 0; pr <= 3; pr++) for (int i = 0; i < 4; i++) if (p->L[i].on && p->L[i].prio == pr) lorder[nl++] = i;
     const int bgBld = eff >= 2 && bY ? (int)(bc & 0x3F) : 0;
+    const int ab = eff == 1 && (bc & 0x3F); const unsigned fm = bc & 0x3F, sm = (bc >> 8) & 0x3F;
+    unsigned eva = *(const u16 *)(R + 0x52) & 31, evb = (*(const u16 *)(R + 0x52) >> 8) & 31; if (eva > 16) eva = 16; if (evb > 16) evb = 16;
+    #define PUT(X, C, LY) { if (!done[X]) { row[X] = (C); lay[X] = (u8)(LY); done[X] = 1; if (!(ab && (fm >> (LY) & 1))) { d2[X] = 1; left--; } } \
+        else if (!d2[X]) { row2[X] = (C); lay2[X] = (u8)(LY); d2[X] = 1; left--; } }
     for (int y = 0; y < 192; y++) {
-        u32 row[320], spr[320]; u8 lay[320], done[320], sprPr[320]; memset(done, 0, sizeof done); memset(sprPr, 4, sizeof sprPr); memset(spr, 0, sizeof spr);
+        u32 row[320], row2[320], spr[320]; u8 lay[320], lay2[320], done[320], d2[320], sprPr[320]; memset(done, 0, sizeof done); memset(d2, 0, sizeof d2); memset(sprPr, 4, sizeof sprPr); memset(spr, 0, sizeof spr);
         int left = 320;
         if (dc & 0x1000) for (int n = no - 1; n >= 0; n--) { /* back to front here: the front sprite is painted last */
             const int i = ord[n]; const u16 *a = S->oam + i * 4; const int aff = (a[0] & 0x100) != 0, dbl = (a[0] & 0x300) == 0x300;
@@ -165,15 +169,15 @@ int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *s
         }
         for (int li = 0; li < nl && left; li++) { const int L = lorder[li]; const WcLayer *l = &p->L[L];
             /* sprites of this priority go in front of the BGs of the same priority */
-            if (li == 0 || p->L[lorder[li - 1]].prio != l->prio) { for (int pr = (li ? p->L[lorder[li - 1]].prio + 1 : 0); pr <= l->prio; pr++) for (int X = 0; X < 320; X++) if (!done[X] && spr[X] && sprPr[X] == pr) { row[X] = spr[X]; lay[X] = 4; done[X] = 1; left--; } }
+            if (li == 0 || p->L[lorder[li - 1]].prio != l->prio) { for (int pr = (li ? p->L[lorder[li - 1]].prio + 1 : 0); pr <= l->prio; pr++) for (int X = 0; X < 320; X++) if (!d2[X] && spr[X] && sprPr[X] == pr) { PUT(X, spr[X], 4); spr[X] = 0; } }
             if (!left) break;
             if (L == 0 && (dc & 8)) { /* the 3D layer in BG0's place */
-                for (int s = -32; s < 288; s++) { const int X = s + 32, c = s - p->dx3d; if (done[X] || c < 0 || c > 255) continue; const u32 v = S->frame3d[y * 256 + c]; if (!(v >> 24)) continue; row[X] = from3D(v); lay[X] = 0; done[X] = 1; left--; }
+                for (int s = -32; s < 288; s++) { const int X = s + 32, c = s - p->dx3d; if (d2[X] || c < 0 || c > 255) continue; const u32 v = S->frame3d[y * 256 + c]; if (!(v >> 24)) continue; PUT(X, from3D(v), 0); }
                 continue; }
             const uint8_t ri = p->rowOf[L][y]; short tmp[320]; const short *map; if (ri != 255) map = p->rows[ri]; else { buildRow(p, L, y, tmp); map = tmp; }
             const int py = (int)((y + l->vofs) & (l->h * 8 - 1)); const unsigned ty = (unsigned)(py >> 3) & (l->h - 1); const unsigned fy0 = py & 7;
             int lastT = -1; u16 me = 0; const u8 *trow = 0;
-            for (int X = 0; X < 320; X++) { if (done[X]) continue; const int pc = map[X]; if (pc < 0) continue; const int t = pc >> 3;
+            for (int X = 0; X < 320; X++) { if (d2[X]) continue; const int pc = map[X]; if (pc < 0) continue; const int t = pc >> 3;
                 if (t != lastT) { lastT = t; const unsigned tx = (unsigned)t & (l->w - 1);
                     const unsigned ma = (l->mapb + ((tx >> 5) + (ty >> 5) * (l->w >> 5)) * 0x800 + ((ty & 31) * 32 + (tx & 31)) * 2) & 0x7FFFF;
                     me = *(const u16 *)(S->bgvram + ma); const unsigned fy = (me & 0x800) ? 7 - fy0 : fy0;
@@ -181,14 +185,17 @@ int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *s
                 unsigned fx = pc & 7; if (me & 0x400) fx = 7 - fx; unsigned ci;
                 if (l->bpp8) ci = trow[fx]; else { const u8 b = trow[fx >> 1]; ci = (fx & 1) ? b >> 4 : b & 15; }
                 if (!ci) continue;
-                row[X] = l->extSlot >= 0 ? toM(*(const u16 *)(S->bgext + l->extSlot * 0x2000 + ((me >> 12) * 256 + ci) * 2)) : lutB[l->bpp8 ? ci : ((me >> 12) * 16 + ci)];
-                lay[X] = (u8)L; done[X] = 1; left--; } }
+                PUT(X, (l->extSlot >= 0 ? toM(*(const u16 *)(S->bgext + l->extSlot * 0x2000 + ((me >> 12) * 256 + ci) * 2)) : lutB[l->bpp8 ? ci : ((me >> 12) * 16 + ci)]), L); } }
         if (left) { /* sprites behind every BG, then the backdrop */
-            for (int X = 0; X < 320; X++) if (!done[X]) { if (spr[X]) { row[X] = spr[X]; lay[X] = 4; } else { row[X] = bd; lay[X] = 5; } } }
-        if (!bgBld && !mm) { memcpy(center + y * 256, row + 32, 256 * 4);
+            for (int X = 0; X < 320; X++) if (!d2[X]) { if (spr[X]) PUT(X, spr[X], 4); if (!d2[X]) PUT(X, bd, 5); } }
+        if (!bgBld && !mm && !ab) { memcpy(center + y * 256, row + 32, 256 * 4);
             for (int X = 0; X < 64; X++) { const u32 c = row[X < 32 ? X : X + 256]; strip[y * 64 + X] = ((c & 255) << 24) | (((c >> 8) & 255) << 16) | (((c >> 16) & 255) << 8) | 0xFF; }
             continue; }
-        for (int X = 0; X < 320; X++) { u32 c = row[X]; unsigned r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255; const int side = X < 32 || X >= 288;
+        for (int X = 0; X < 320; X++) { u32 c = row[X];
+            if (ab && (fm >> lay[X] & 1) && (sm >> lay2[X] & 1)) { const u32 c2 = row2[X]; /* alpha blend: top * EVA + second * EVB */
+                unsigned r1 = (c & 255) * eva + (c2 & 255) * evb, g1 = ((c >> 8) & 255) * eva + ((c2 >> 8) & 255) * evb, b1 = ((c >> 16) & 255) * eva + ((c2 >> 16) & 255) * evb;
+                r1 >>= 4; g1 >>= 4; b1 >>= 4; if (r1 > 255) r1 = 255; if (g1 > 255) g1 = 255; if (b1 > 255) b1 = 255; c = r1 | (g1 << 8) | (b1 << 16); }
+            unsigned r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255; const int side = X < 32 || X >= 288;
             /* BLDY brighten/darken on the first-target layers (bits 0-3 BGs, 4 sprites, 5 backdrop); in the strips a fade
                that targets BG0 comes from gpuscale (wide_fadefix), as for wide_menus */
             if (bgBld && (bgBld & (1 << lay[X])) && !(side && (bgBld & 1))) {
@@ -198,4 +205,37 @@ int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *s
                 center[y * 256 + X - 32] = r | (g << 8) | (b << 16) | 0xFF000000u; } }
     }
     return 1;
+}
+
+/* the same picture is asked for again and again while a menu waits, so the result is kept: a hash of everything
+   composeNow reads (registers, palettes, OAM, the BG map entries and tiles on screen, the tiles of each sprite) decides
+   whether it is made again. The 3D layer changes every frame, so a screen that uses it is never kept. */
+static u32 cCenter[256 * 192], cStrip[64 * 192]; static u32 cHash; static int cValid;
+static u32 hashSpan(u32 h, const u8 *b, unsigned n) { const u32 *w = (const u32 *)b; for (unsigned i = 0; i < n / 4; i++) h = (h ^ w[i]) * 16777619u; return h; }
+static u32 inputHash(const WcPlan *p, const u8 *R, const WcSrc *S) {
+    const u32 dc = *(const u32 *)R; u32 h = 2166136261u ^ p->hash;
+    h = hashSpan(h, R, 0x80); h = hashSpan(h, (const u8 *)S->bgpal, 512); h = hashSpan(h, (const u8 *)S->objpal, 512); h = hashSpan(h, (const u8 *)S->oam, 1024);
+    for (int i = 0; i < 4; i++) { const WcLayer *l = &p->L[i]; if (!l->on) continue;
+        if (l->extSlot >= 0) h = hashSpan(h, S->bgext + l->extSlot * 0x2000, 0x2000);
+        const unsigned tb = l->hofs >> 3; const unsigned tyb = l->vofs >> 3;
+        for (unsigned r = 0; r < 25; r++) { const unsigned ty = (tyb + r) & (l->h - 1);
+            for (unsigned c = 0; c < 42; c++) { const unsigned tx = (tb + c - 4) & (l->w - 1);
+                const unsigned ma = (l->mapb + ((tx >> 5) + (ty >> 5) * (l->w >> 5)) * 0x800 + ((ty & 31) * 32 + (tx & 31)) * 2) & 0x7FFFF;
+                const u16 me = *(const u16 *)(S->bgvram + ma); h = (h ^ me) * 16777619u;
+                h = hashSpan(h, S->bgvram + ((l->charb + (me & 0x3FF) * (l->bpp8 ? 64 : 32)) & 0x7FFFF), l->bpp8 ? 64 : 32); } } }
+    if (dc & 0x80000000u) h = hashSpan(h, S->objext, 0x2000);
+    if (dc & 0x1000) for (int i = 0; i < 128; i++) { const u16 *a = S->oam + i * 4; if ((a[0] & 0x300) == 0x200) continue;
+        const unsigned shape = a[0] >> 14, size = a[1] >> 14; if (shape > 2) continue;
+        const int width = SPW[shape][size], height = SPH[shape][size], bpp8 = (a[0] & 0x2000) != 0; const u32 tile = a[2] & 0x3FF;
+        for (int t8 = 0; t8 < height / 8; t8++) { u32 addr = (dc & 0x10) ? ((tile << ((dc >> 20) & 3)) + (u32)((t8 * (width >> 3)) << (bpp8 ? 1 : 0))) << 5 : (tile + (u32)(t8 * 0x20)) << 5;
+            h = hashSpan(h, S->objvram + (addr & 0x3FFFF), (unsigned)(width >> 3) * (bpp8 ? 64 : 32)); } }
+    return h;
+}
+int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip) {
+    const u32 dc = *(const u32 *)R; if (WC_Check(p, R, S->frame3d != 0)) return 0;
+    if (dc & 8) { cValid = 0; return composeNow(p, R, S, center, strip); }
+    const u32 h = inputHash(p, R, S);
+    if (cValid && h == cHash) { memcpy(center, cCenter, sizeof cCenter); memcpy(strip, cStrip, sizeof cStrip); return 1; }
+    if (!composeNow(p, R, S, center, strip)) return 0;
+    memcpy(cCenter, center, sizeof cCenter); memcpy(cStrip, strip, sizeof cStrip); cHash = h; cValid = 1; return 1;
 }
