@@ -2,6 +2,19 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 110: slider-on battles on the GPU, the SoulSilver way (Grok Bot, branch `run110`)
+- Why Run 109 was worse (hardware slider-on battles avg 47.6-50.7 ms vs 40.3-41.0 in Run 108; slider 0 unchanged): `wide_split_r` SHARED. Composite rose to 33-46 ms. Every 16-line group re-runs composeNow's per-call setup (palette LUT, OAM walk), both cores thrash the same caches and VRAM-flat buffers, and main ends up doing right-eye work on top of the left eye. `wide_windows` is not the cause: battle DISPCNT 00111f18 has no windows, so its code is never reached. wide_split_r is back to OFF by default (HALF / SHARED still in Debug).
+- **SoulSilver comparison (useful to Claude too):** the SoulSilver port (`unowncollectables/Pokemon-Soulsilver-New3ds`) has no widecomp in battles. With the slider up it GPU-composes both eyes outside the overworld (`gpu_compose_stereo_nf`), with GPU alpha/brightness blending (`gpu_blend`), 3D-layer texture reuse by hash, a right-eye register copy for stereo_2d BG depth, and Claude's `gpu_direct3d`: the 3D frame stays in the PICA render target and the compositor samples it directly (no wait, no readback DMA, no 6-bit convert, no re-swizzle/upload). Anything that needs CPU pixels calls G3G_DirectResolve(). Platinum battles went through the CPU wide path W (two CPU composes plus readback) instead. Wide mode can't use the direct texture because widecomp is a CPU compositor.
+- Changes (all Debug-tab toggles):
+  - `gpu_direct3d` (default ON): ported from SoulSilver g3gpu.c. Resolve points in render3ds.cpp: shift3D, CPU right-eye paths, widecomp, display capture, CPU composite, GPU-compose rejection, dumps. g3soft invalidates on CPU-rendered frames.
+  - `stereo_gpu_battle` (default ON): when the slider is up outside the field and gpucomp can take the frame, both eyes are GPU-composed (path G) instead of wide path W. These frames are 4:3 DS layout. While it's active, `NitroPort_WideScreenExtra()` returns 0, so health boxes created then sit at DS positions; before this they were clipped at the 4:3 edges.
+  - `gpu_blend_3d` (default ON): gpucomp no longer rejects blend frames just because the 3D layer is on (only when 3D is itself a first target). Translucent 3D pixels use a premultiplied blend over the second-target layers below. Without the blend, a Gyro Ball effect showed as a black blob.
+  - gpucomp.c replaced by SoulSilver's version (gpu_blend, 3D tex reuse). Right-eye stereo_2d register copy for GPU stereo.
+  - `wide_split_r` default 0. `wide_windows` kept ON.
+- Emulator, Coronet battle, slider on (Azahar runs on one host thread, so the numbers are noisy): r109 57.9 ms/frame, r110 40.8-46.9; with gpu_direct3d=0 47.8; with gpu_blend_3d=0 66.1 (mostly path W). Path counts r110: G 46, W 21 (intro/windows/mbright frames), S 8, P 2. Screenshots: HUD fully visible, effects correct. The slider toggle test every 5 s ran with no hang.
+- Not done: wide layout plus GPU (would need gpucomp to draw the wide side parts). Remaining W frames are battle intro / brightness / objaff ineligible frames.
+- Builds: 3dsx 7251d06b0221cdd7da88dfad9f82d48b31ba6e5d, CIA 4f72269a04b0fa597cf5b091f771a7ac8099eaec.
+
 ## 2026-10-26 — Run 109: slider-on battles, part 2 (Grok Bot, branch `run109`)
 - Run 108 hardware log: slider-on battles avg 40.3-41.0 ms (about 160/320 frames over 40 ms); slider 0 avg 33.2-33.9. Battle frames take the wide-early stereo path (new `path` field in battle_log lines: W = wide early stereo). Composite 17-32 ms (engineA stage 19-31) vs 11 ms in field 3D; g3soft 15-17. The 2-eye compose is the bottleneck: main draws the left eye then waits while core 2 draws engine B + the whole right eye.
 - Why g3_conv_split did not help: it worked (PERF2 3D convert 2.7-3.7 ms, was ~5.4 for 2 eyes) but the 3D convert is not the critical path in battles; the compose is.

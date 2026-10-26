@@ -45,7 +45,7 @@ static inline u32 c555(u16 c,unsigned a){unsigned r=c&31,g=(c>>5)&31,b=(c>>10)&3
 struct Tex{unsigned off,pal,fmt,w,h,c0,gen;u32*px;unsigned lru;u8*raw;unsigned rawN;void*gt;u64 cnt;unsigned useF;};
 extern "C" {int G3G_Init(void);void*G3G_TexCreate(const u32*,unsigned,unsigned);void G3G_TexFree(void*);void G3G_Begin(u32,unsigned,int);
  void G3G_Tri(int,const float*,const float*,const float*,const float*,const float*,const u32*,void*,unsigned,unsigned,int,int,int,int,int,int,int);
- void G3G_End(u32*,u32*);void G3G_TexUpdate(void*,const u32*,unsigned,unsigned);int G3G_RbSyncOn(void);void G3G_TriClip(int,const float*,const float*,const float*,const u32*,void*,int,int,int,int,int,int,int,const float*);unsigned G3G_LastUs(void);extern int G3G_TexFlip,G3G_FlipY,G3G_ZInv,G3G_Async,G3G_Wide,G3G_CurFog,G3G_FogNoW;}
+ void G3G_End(u32*,u32*);void G3G_DirectInvalidate(void);void G3G_TexUpdate(void*,const u32*,unsigned,unsigned);int G3G_RbSyncOn(void);void G3G_TriClip(int,const float*,const float*,const float*,const u32*,void*,int,int,int,int,int,int,int,const float*);unsigned G3G_LastUs(void);extern int G3G_TexFlip,G3G_FlipY,G3G_ZInv,G3G_Async,G3G_Wide,G3G_CurFog,G3G_FogNoW;}
 static int gpuOn=-1,gpuReq=-1;
 /* Source bytes (texels [+4x4 index data] + palette) of a texture; used to skip re-decoding when VRAM gen moved
    but this texture's bytes did not (outdoors the gen changes every frame). */
@@ -405,6 +405,7 @@ void P3DS_G3BeginFrame(void){CRUMB("g3-begin");g3FrameNo++;usedN=0;frameTicks=sv
   gpuOn=want&&G3G_Init()?1:0;if(want&&!gpuOn)PSPNativeMemLog("[GPU3D] GPU 3D init FAILED -> automatic CPU 3D fallback");PSPNativeMemLog("[GPU3D] gpu3d=%d (config wants %d) texflip=%d zinv=%d async=%d",gpuOn,want,G3G_TexFlip,G3G_ZInv,G3G_Async);}
  if(gpuReq>=0){gpuOn=gpuReq&&G3G_Init()?1:0;gpuReq=-1;PSPNativeMemLog("[GPU3D] L+R+Y: gpu3d=%d",gpuOn);}
  if(gpuOn==1){u16 dz=(u16)(((cd&0x7FFF)*2)|1);G3G_Begin(v,dz?dz:0xFFFF,stereoSd);transN=transVN=0;return;}
+ G3G_DirectInvalidate();/* run 110 gpu_direct3d: CPU-rendered frame, NativeFrame is the truth again */
  for(unsigned i=0;i<256*192;i++)GPU3D::NativeFrame[i]=v;
  u16 dz=(u16)(((cd&0x7FFF)*2)|1);for(unsigned i=0;i<256*192;i++)depth[i]=dz?dz:0xFFFF;
  if(stereoSd){memcpy(frameR,GPU3D::NativeFrame,sizeof frameR);memcpy(depthR,depth,sizeof depthR);}
