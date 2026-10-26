@@ -306,3 +306,5 @@ Run 80
   wide_early_check=1  (run 99: wide_early is only used when widecomp will accept the frame; a declined frame in stereo (Poke Ball send-out) no longer falls to the slow serial right-eye redraw. 0 = run 98)
 Run 88
   shiny_suite=0        (settings app Extra tab "Shiny hunt suite": 1 = shiny hunt counters in hunt.txt (encounters, since last shiny, soft resets, time, shinies), a chime + flash when a wild shiny appears, and a hunt panel on the Ball tab: Left/Right species, X twice reset, A export CSV to hunts/)
+
+wide_3d_alpha (Debug, default ON): wide layouts draw 3D fade-ins such as battle send-outs themselves instead of the slow path. OFF = old behaviour.
