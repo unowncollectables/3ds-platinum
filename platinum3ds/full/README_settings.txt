@@ -311,3 +311,4 @@ wide_3d_alpha (Debug, default ON): wide layouts draw 3D fade-ins such as battle 
 
 hunt_async_save (Debug, default ON): the shiny-hunt file is written in the background, removing the ~70 ms drop at wild battle start.
 field_prof (Debug): OFF / ON / AUTO (default) - AUTO profiles 8 s after each battle start/end.
+wide_split (Debug "Wide compose on 2 cores", default ON, run 105): in mono (3D slider off) the wide-layout compose (battles, menus) is shared by the main thread and the core-2 worker: the changed lines are dealt out to the two halves. Same picture as one thread (tools/widecomp_split_test.c). Needs wide_early=1 and wide_dirty=1; stereo is unchanged (right eye already on core 2). 0 = one thread.

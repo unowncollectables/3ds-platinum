@@ -2,6 +2,14 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 105: battle 30 fps work (branch `run105`, Claude)
+- Touches widecomp.c and the stereo/compose path in render3ds.cpp (the other bot also edits these): everything is behind `wide_split`; nothing else in the stereo path changed.
+- New Debug toggle `wide_split` ("Wide compose on 2 cores", default ON, 0 = run 104 behaviour). Mono only, needs wide_early=1 + wide_dirty=1. widecomp's changed lines are hashed on the main thread, dealt to two parts in 4-line groups (always to the part with fewer lines), the main thread draws part 0 while the core-2 worker, after engine B, draws part 1 (disjoint lines of the left-eye cache), then the main thread commits. API: WC_SplitPrepare/Run/Commit in widecomp.c. Expected: the mono compose (17-27 ms in the run 103 log) drops towards half. Stereo (slider on) is unchanged: left eye on main, right eye already on core 2.
+- Fixed the PERF3 "bottom reused 4294967234": bSkips/bDraws are reset every 600 frames but the PERF3 baselines were not.
+- Host test tools/widecomp_split_test.c: 200 frames of moving sprites + changing 3D layer, split picture == full redraw (all ok). widecomp_test.c still passes (both tests got a PSPNativeMemLog stub, they did not link before).
+- NOT done / why: no compositor on the GPU (needs per-pixel priority + 3D alpha; gpucomp has no alpha), no g3soft pass cut, no vblank-wait removal (the wait is the game thread idle; compose needs that frame's final state, so overlapping it means a frame of latency or a state snapshot).
+- NOT built or run: the cloud has no devkitARM and no ROM, so render3ds.cpp is not compiled and there are no emulator numbers; only widecomp.c is host-tested. Needs a build + hardware log: look for `[WIDE] wide_split=1`, `[WIDE] wide_split: ... lines main X / worker Y avg`, then [PERF] composite and fps in a battle at slider 0. Slider-on battles still need their g3soft/right-eye cost cut (not addressed).
+
 ## 2026-10-26 — Run 104: battle frame drops (hardware run103 log)
 - wide_3d_alpha works on hardware: no reason-4 decline in the run103 log (only reason 2/3 lines; reason 3 = battle intro windows).
 - Recurring 70 ms battle-start drop (f=752/1174/1746/2301, tris 6, "capture..tComp" ~70) followed every `[HUNT] species N met` line: the shiny-hunt counter wrote hunt.txt synchronously (fopen/write/remove/rename on SD) on the game thread. The same write ran every 2 min during play. Fix: new Debug toggle `hunt_async_save` (default ON, same file contents): the text is built in memory and written by a low-priority thread.
