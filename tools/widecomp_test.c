@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "widecomp.h"
+void PSPNativeMemLog(const char *f, ...) { (void)f; } /* widecomp.c verify-mode log */
 static uint8_t R[0x70], bgv[0x80000], objv[0x40000], bgext[0x8000], objext[0x2000]; static uint16_t bgpal[256], objpal[256], oam[512]; static uint32_t center[256 * 192], strip[64 * 192];
 static int fails;
 static void check(int ok, const char *what, unsigned got, unsigned want) { if (!ok) { fails++; printf("FAIL %s: got %08x want %08x\n", what, got, want); } }

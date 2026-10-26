@@ -1451,3 +1451,7 @@ MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, li
 
 - Run 103: wide_3d_alpha — 3D fade-in (battle send-out) composed on the wide path instead of the slow fallback.
 - Run 104: hunt_async_save (battle-start 70 ms drop), field_prof AUTO default, finer SPIKE stages.
+
+## Run 105 (2026-10-26)
+
+- wide_split (default 1): mono widecomp compose on two cores; PERF3 counter underflow fixed. Not built/measured (no toolchain in the cloud). See docs/HANDOFF.md.
