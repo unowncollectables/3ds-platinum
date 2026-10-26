@@ -313,21 +313,22 @@ int WC_Compose(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *s
    two parts, always to the part with fewer lines so far; each part then runs composeNow on its own lines only
    (disjoint rows of the eye's cache, no shared state), and WC_SplitCommit (after both parts finished) stores the line
    hashes and copies the picture out. Same pixels as WC_ComposeEye in dirty mode 1 (host test compares them). */
-int WC_SplitPrepare(const WcPlan *p, const u8 *R, const WcSrc *S, WcSplit *sp, int minRows) {
+int WC_SplitPrepare(const WcPlan *p, const u8 *R, const WcSrc *S, WcSplit *sp, int minRows, int eye) {
     if (dirtyMode != 1 || WC_Check(p, R, S->frame3d != 0)) return -1;
+    eye = eye ? 1 : 0; sp->eye = eye;
     u32 rh[192]; rowHashes(p, R, S, rh); memcpy(sp->rh, rh, sizeof rh);
-    const int b0 = band[0] * 8; band[0] = (band[0] + 1) % 24;
+    const int b0 = band[eye] * 8; band[eye] = (band[eye] + 1) % 24;
     u8 dirty[192]; int n = 0;
-    for (int y = 0; y < 192; y++) { dirty[y] = !dValid[0] || rh[y] != dRH[0][y] || (y >= b0 && y < b0 + 8); n += dirty[y]; }
+    for (int y = 0; y < 192; y++) { dirty[y] = !dValid[eye] || rh[y] != dRH[eye][y] || (y >= b0 && y < b0 + 8); n += dirty[y]; }
     memset(sp->mask, 0, sizeof sp->mask); sp->n[0] = sp->n[1] = 0;
     for (int g = 0; g < 192; g += 4) { int part = (n < minRows || sp->n[0] <= sp->n[1]) ? 0 : 1;
         for (int y = g; y < g + 4; y++) if (dirty[y]) { sp->mask[part][y] = 1; sp->n[part]++; } }
     return n;
 }
 void WC_SplitRun(const WcPlan *p, const u8 *R, const WcSrc *S, const WcSplit *sp, int part) {
-    if (sp->n[part]) composeNow(p, R, S, cCenterA[0], cStripA[0], sp->mask[part]);
+    if (sp->n[part]) composeNow(p, R, S, cCenterA[sp->eye], cStripA[sp->eye], sp->mask[part]);
 }
 void WC_SplitCommit(const WcSplit *sp, u32 *center, u32 *strip) {
-    memcpy(dRH[0], sp->rh, sizeof sp->rh); dValid[0] = 1;
-    memcpy(center, cCenterA[0], 256 * 192 * 4); memcpy(strip, cStripA[0], 64 * 192 * 4);
+    memcpy(dRH[sp->eye], sp->rh, sizeof sp->rh); dValid[sp->eye] = 1;
+    memcpy(center, cCenterA[sp->eye], 256 * 192 * 4); memcpy(strip, cStripA[sp->eye], 64 * 192 * 4);
 }

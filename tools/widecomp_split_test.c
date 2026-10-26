@@ -21,18 +21,18 @@ int main(void) {
     for (int i = 0; i < 128; i++) oam[i * 4] = 0x200;
     WcPlan p; memset(&p, 0, sizeof p); WcSrc S = { bgv, objv, bgext, objext, bgpal, objpal, oam, f3d };
     WC_SetDirty(1); int bad = 0;
-    for (int f = 0; f < 200; f++) {
+    for (int eye = 0; eye < 2; eye++) for (int f = 0; f < 200; f++) {
         for (int i = 0; i < 6; i++) { oam[i * 4] = (uint16_t)((20 + i * 25 + f) & 255); oam[i * 4 + 1] = (uint16_t)((10 + i * 40 + f * (i + 1)) & 0x1FF); oam[i * 4 + 2] = (uint16_t)(i * 8); }
         for (int y = 40 + (f % 50); y < 90 + (f % 50); y++) for (int x = 30; x < 200; x++) f3d[y * 256 + x] = 0x1F000000u | (uint32_t)rand();
         if (f % 37 == 0) bgpal[1] = (uint16_t)rand();
         *(uint16_t *)(R + 0x10) = (uint16_t)(f & 7);
         if (!WC_Plan(&p, R, NULL, 0)) { puts("plan failed"); return 1; }
-        WcSplit sp; int n = WC_SplitPrepare(&p, R, &S, &sp, 24);
+        WcSplit sp; int n = WC_SplitPrepare(&p, R, &S, &sp, 24, eye);
         if (n < 0) { puts("prepare declined"); return 1; }
         WC_SplitRun(&p, R, &S, &sp, 1); WC_SplitRun(&p, R, &S, &sp, 0); WC_SplitCommit(&sp, cA, sA);
-        if (sp.n[0] + sp.n[1] != n) { printf("FAIL frame %d: parts %d+%d != %d\n", f, sp.n[0], sp.n[1], n); bad++; }
-        WC_SetDirty(0); int ok = WC_ComposeEye(&p, R, &S, cB, sB, 1); WC_SetDirty(1);
-        if (!ok || memcmp(cA, cB, sizeof cA) || memcmp(sA, sB, sizeof sA)) { printf("FAIL frame %d: picture differs\n", f); bad++; }
+        if (sp.n[0] + sp.n[1] != n) { printf("FAIL eye %d frame %d: parts %d+%d != %d\n", eye, f, sp.n[0], sp.n[1], n); bad++; }
+        WC_SetDirty(0); int ok = WC_ComposeEye(&p, R, &S, cB, sB, !eye); WC_SetDirty(1);
+        if (!ok || memcmp(cA, cB, sizeof cA) || memcmp(sA, sB, sizeof sA)) { printf("FAIL eye %d frame %d: picture differs\n", eye, f); bad++; }
     }
     printf(bad ? "%d FAILURES\n" : "all ok\n", bad); return bad != 0;
 }
