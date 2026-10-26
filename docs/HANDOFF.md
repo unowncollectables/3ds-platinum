@@ -2,6 +2,10 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Wireless / Wi-Fi feasibility (docs only, Claude)
+- New `docs/WIRELESS.md` (same file in the SoulSilver repo). Local 3DS-to-3DS play (trade, battle, Union Room, Underground, Platinum port <-> SoulSilver port) is realistic by replacing pspoke's `wm_absent.c` with a UDS-backed WM layer. Local play with a real DS is not possible from native 3DS mode. Trades with legit games go online through a revival server (Wiimmfi), with GTS first.
+- Recommended first milestone: M1 local trade between two 3DSes, after an M0 UDS latency probe. Nothing is built or tested. No code changed.
+
 ## 2026-10-26 — Run 104: battle frame drops (hardware run103 log)
 - wide_3d_alpha works on hardware: no reason-4 decline in the run103 log (only reason 2/3 lines; reason 3 = battle intro windows).
 - Recurring 70 ms battle-start drop (f=752/1174/1746/2301, tris 6, "capture..tComp" ~70) followed every `[HUNT] species N met` line: the shiny-hunt counter wrote hunt.txt synchronously (fopen/write/remove/rename on SD) on the game thread. The same write ran every 2 min during play. Fix: new Debug toggle `hunt_async_save` (default ON, same file contents): the text is built in memory and written by a low-priority thread.
