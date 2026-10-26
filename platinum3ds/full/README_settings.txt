@@ -318,3 +318,4 @@ wireless (Game tab "Local wireless (test)", default OFF): 1 = the game's DS wire
 this port; real DS consoles can't join, see docs/WIRELESS.md). Takes effect the next time the game turns wireless on
 (entering the Union Room or the Underground). OFF = exactly as before: a radio with nobody in range. Test with
 copies of your save on both consoles; a trade writes the save through the game's own code. Log tag [WIRELESS].
+battle_log (Debug "Battle frame log", default ON, run 106): in battles and menus every frame over 40 ms logs the [SPIKE] stage breakdown (own 200-line cap). 0 = only frames over spike_ms (70).

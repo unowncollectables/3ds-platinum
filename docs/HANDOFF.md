@@ -2,6 +2,11 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 106: battle frame log (branch `run106`, Claude)
+- Run 105 hardware log (wide_split works, balanced 74/73 lines): slider-0 battles run 29-30 fps, composite 8-17 ms (run 103: 17-27), game thread idle 9-20 ms/frame, but the slowest frame of nearly every second is 40-56 ms (one lost vblank a second). The log could not say where it goes (SPIKE only logs frames over 70 ms).
+- New Debug toggle `battle_log` ("Battle frame log", default ON, 0 = old): outside the field every frame over 40 ms logs the usual [SPIKE] stage lines (compose stages, B-wait, game-wait = vblank wait, romfs ms/misses, g3soft+game) plus field/slider/bottom drawn-or-reused/wide_split lines, with its own 200-line cap. Only logging; spike_ms behaviour for field frames is unchanged (it only applies when spike_ms > 40).
+- Not measured here: no toolchain in the cloud. Save time is not a stage (SaveData_Save shows up in [PROF] only).
+
 ## 2026-10-26 — Run 105: battle 30 fps work (branch `run105`, Claude)
 - Touches widecomp.c and the stereo/compose path in render3ds.cpp (the other bot also edits these): everything is behind `wide_split`; nothing else in the stereo path changed.
 - New Debug toggle `wide_split` ("Wide compose on 2 cores", default ON, 0 = run 104 behaviour). Mono only, needs wide_early=1 + wide_dirty=1. widecomp's changed lines are hashed on the main thread, dealt to two parts in 4-line groups (always to the part with fewer lines), the main thread draws part 0 while the core-2 worker, after engine B, draws part 1 (disjoint lines of the left-eye cache), then the main thread commits. API: WC_SplitPrepare/Run/Commit in widecomp.c. Expected: the mono compose (17-27 ms in the run 103 log) drops towards half. Stereo (slider on) is unchanged: left eye on main, right eye already on core 2.

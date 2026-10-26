@@ -1455,3 +1455,7 @@ MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, li
 ## Run 105 (2026-10-26)
 
 - wide_split (default 1): mono widecomp compose on two cores; PERF3 counter underflow fixed. Not built/measured (no toolchain in the cloud). See docs/HANDOFF.md.
+
+## Run 106 (2026-10-26)
+
+- battle_log (default 1): [SPIKE] stage lines for every battle/menu frame over 40 ms. Logging only. See docs/HANDOFF.md.
