@@ -30,6 +30,7 @@ int WC_Compose(const WcPlan *p, const uint8_t *regs, const WcSrc *src, uint32_t 
 void WC_SetDirty(int mode);
 void WC_SetDirtyRegFilter(int on); /* run 100 */
 void WC_Set3dAlpha(int on); /* run 103 */
+void WC_SetWindows(int on); /* run 109 */
 void WC_DirtyStats(unsigned *frames, unsigned *rows, unsigned *full, unsigned *bad);
 int WC_ComposeEye(const WcPlan *p, const uint8_t *regs, const WcSrc *src, uint32_t *center, uint32_t *strip, int eye);
 /* run 105 wide_split (left eye, wide_dirty=1 only): the dirty lines are shared by two threads. Prepare returns the number of
