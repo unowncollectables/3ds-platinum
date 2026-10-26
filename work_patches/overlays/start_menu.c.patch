@@ -10,3 +10,11 @@
          }
      }
  
+@@ -1159,6 +1162,7 @@
+     FieldSystem *fieldSystem = FieldTask_GetFieldSystem(fieldTask);
+     StartMenu *menu = FieldTask_GetEnv(fieldTask);
+ 
++    { extern volatile int P3DS_BagPocketReq; if (P3DS_BagPocketReq >= 0) { BagCursor_SetFieldPocket(fieldSystem->bagCursor, (u16)P3DS_BagPocketReq); P3DS_BagPocketReq = -1; } } /* run 103 lower_menu MAP: open on Key Items */
+     menu->taskData = FieldSystem_OpenBag(fieldSystem, &menu->itemUseCtx);
+     BagContext_SetSelectedMonSlot(menu->taskData, 0);
+     menu->callback = StartMenu_ExitBag;

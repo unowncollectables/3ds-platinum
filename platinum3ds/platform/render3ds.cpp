@@ -21,7 +21,7 @@ static bool p3dsPlayTime(unsigned*h,unsigned*m){void*sd=SaveData_Ptr();if(!sd)re
 extern "C" { void*SaveData_GetBag(void*); }
 static bool p3dsHasTownMap(){void*sd=SaveData_Ptr();if(!sd)return false;const unsigned short*b=(const unsigned short*)SaveData_GetBag(sd);if(!b)return false;const unsigned short*k=b+165*2;for(int i=0;i<50;i++)if(k[i*2]==442&&k[i*2+1])return true;return false;}
 static int p3dsFemale(){void*sd=SaveData_Ptr();if(!sd)return -1;void*ti=SaveData_GetTrainerInfo(sd);return ti?TrainerInfo_Gender(ti)==1:-1;}
-extern "C" { int P3DS_StripOn; extern int P3DS_LowerMenuDraw; int lmYPress; int lmTouchInj; }
+extern "C" { int P3DS_StripOn; extern int P3DS_LowerMenuDraw; int lmYPress; int lmTouchInj; volatile int P3DS_BagPocketReq=-1; }
 #include "nitro_port_lowermenu.h"
 static unsigned P3DS_Perf3Worst;static u64 P3DS_St[10];static unsigned long long P3DS_SpkWait0; /* run 95 [SPIKE] stage stamps */extern "C" int P3DS_CurMap;extern "C" void P3DS_ZoneInfo(int*,int*,int*,unsigned*),P3DS_RomSpikeFiles(char*,unsigned),P3DS_RomSpikeReset(void);extern "C" const char*P3DS_AreaName(int);
 
@@ -660,7 +660,7 @@ static void wideFill(const u32*C){static u16 acc[3][64*192];
    No mirroring, no blur, no stretching; fades come from gpuscale strips() (wide_fadefix). OBJs are not drawn in the
    strips. 0 = old behaviour (black bars, or wide_fill=1). */
 #include "widecomp.h"
-extern "C" unsigned dStatRace;extern "C" int dBadRow,dBadMask;
+extern "C" unsigned dStatRace,dStat3dRace;extern "C" int dBadRow,dBadMask;
 static WcPlan wcPlanG;static WcSrc wideRSrc;static u32 wideRStrip[64*192];static const u8*wideRRegs;
 static void wideRJob(){bWideROk=WC_ComposeEye(&wcPlanG,wideRRegs,&wideRSrc,rawR,wideRStrip,1)!=0;}
 extern "C" { int P3DS_WideLayoutsOn(void); void P3DS_SetWideLayouts(int); int P3DS_WideGetParts(int,short*); }
@@ -918,7 +918,7 @@ static void runMenu(const u32*top,const u32*bot,int mode,bool gpu,bool drawBot){
    B / START / L+R+Y close. Drawn in the game's font + message box frame (port font fallback). The top screen shows
    the dimmed game picture with the title and the build/version string. */
 #ifndef P3DS_VERSION
-#define P3DS_VERSION "v1.0 (run102)"
+#define P3DS_VERSION "v1.0 (run103)"
 #endif
 static const char*kAppVer="Platinum 3DS " P3DS_VERSION " (" __DATE__ ")";
 #include "p3ds_areanames.h"
@@ -1335,7 +1335,7 @@ static int Present(bool){
    if(b>=0){static const int opt[NITRO_LOWERMENU_COUNT]={-1,1,2,3,0,-1,4,5,-2,-2};extern volatile int P3DS_StartReq;const int o=opt[b];
     if(o>=0)P3DS_StartReq=o;else if(o==-2)lmYPress=3;
     else if(b==NITRO_LOWERMENU_POKETCH){lmTouchInj=4;} /* run 102: the Pokétch's upper side button (next app) */
-    else if(b==NITRO_LOWERMENU_MAP){if(p3dsHasTownMap()){P3DS_StartReq=2;P3DS_Toast("Town Map: Bag > Key Items");}else P3DS_Toast("No Town Map yet");}PSPNativeMemLog("[LMENU] button %d -> %s %d",b,o>=0?"start menu option":o==-2?"Y (item)":"none",o);}}}
+    else if(b==NITRO_LOWERMENU_MAP){if(p3dsHasTownMap()){P3DS_BagPocketReq=7;P3DS_StartReq=2;P3DS_Toast("Town Map is in Key Items");}else P3DS_Toast("No Town Map yet");}PSPNativeMemLog("[LMENU] button %d -> %s %d",b,o>=0?"start menu option":o==-2?"Y (item)":"none",o);}}}
  {P3DS_StripOn=P3DS_CfgInt("bottom_strip",0)&&P3DS_InField&&appCfg()&&!P3DS_ConsoleOnBottom()&&!P3DS_LowerMenuDraw;
   if(P3DS_StripOn&&bot){static const char*const nm[4]={"Menu","Wide","Ball","Set"};u32*bb=(u32*)bot;
    for(int i=0;i<4;i++){const int x0=8+i*50;plate(bb,x0,177,x0+48,191,0x00F8F8F8u,0x00585858u);gtxt(bb,x0+24-gw(nm[i])/2,176,nm[i],kMsgFg,kMsgSh);}

@@ -1444,3 +1444,7 @@ field_prof profiler (default 0), heap_fast (default 1: skips pspoke's 8192-entry
 ## Run 102 = v1.0 (2026-10-25)
 
 lower menu MAP/POKETCH actions, menu hidden behind settings, play time checked, dc_flush_skip (default 1). Builds: 3dsx a49f1cd39acf018a6282f786aa28d3bf6d98abc7, CIA 17f02de4b388423744f605e75536bc73a440098d.
+
+## Run 103 = v1.0 (2026-10-25)
+
+MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, line 52) but not fixed. Builds: see HANDOFF / report.

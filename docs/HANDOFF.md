@@ -2,6 +2,18 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-25 - Run 103 = v1.0 (Grok Bot), branch `run100` (PR #11), tag `v1.0` moved here
+
+- lower_menu MAP now opens the Bag on the Key Items pocket (start_menu.c patch: P3DS_BagPocketReq ->
+  BagCursor_SetFieldPocket, field RAM only, not the save). Emulator: Bag opened on KEY ITEMS with Town Map listed.
+- wide_dirty one-line mismatch, investigated with wide_dirty=2 in the Spear Pillar double battle (emulator): reproducible,
+  1 per ~600 composes, always line 52 (2 rows), ONE pixel, the stale pixel is a sprite colour where a full redraw gives
+  black: x 49 (in OAM 9, a 64x64 battler at y 17) and x 25 (last column of OAM 8). The line hash did not change, the
+  3D row did not change (tested a "3D landed late" re-hash: 0 hits, removed). Not fixed; widecomp.c now logs pixel, layer
+  inputs and the OAM entries on the line in verify mode for the next attempt. Rolling refresh still bounds it to < 24 frames.
+- Bug sweep (emulator, quick): field, start menu, save prompt, Bag, Pokétch, settings app, double battle with wide
+  layouts: no new visual bugs seen. PC and a female save not tested.
+
 ## 2026-10-25 - Run 102 = v1.0 (Grok Bot), branch `run100` (PR #11), tag `v1.0` moved here
 
 - lower_menu MAP: with the Town Map in Key Items (save read only) opens the Bag and toasts "Town Map: Bag > Key Items";

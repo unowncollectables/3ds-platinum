@@ -240,6 +240,7 @@ static int dirtyMode, dirtyRegFilter = 1; void WC_SetDirtyRegFilter(int on) { di
 static int dirtyMode; static unsigned dStatFull, dStatRows, dStatFrames, dStatBad; unsigned dStatRace; int dBadRow = -1, dBadMask;
 void WC_SetDirty(int mode) { dirtyMode = mode; }
 void WC_DirtyStats(unsigned *frames, unsigned *rows, unsigned *full, unsigned *bad) { *frames = dStatFrames; *rows = dStatRows; *full = dStatFull; *bad = dStatBad; dStatFrames = dStatRows = dStatFull = dStatBad = 0; }
+static u32 h3pre[192]; unsigned dStat3dRace;
 static void rowHashes(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *rh) {
     const u32 dc = *(const u32 *)R; u32 g = 2166136261u ^ p->hash;
     /* run 100: only the registers composeNow reads (DISPCNT, BGxCNT..BLDY, MASTER_BRIGHT). DISPSTAT/VCOUNT, DISP3DCNT and
@@ -272,7 +273,7 @@ static void rowHashes(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *rh) {
                 const u16 me = *(const u16 *)(S->bgvram + ma); const unsigned fy = (me & 0x800) ? 7 - fy0 : fy0; h = (h ^ me) * 16777619u;
                 h = hashSpan(h, S->bgvram + ((l->charb + (me & 0x3FF) * (l->bpp8 ? 64 : 32) + fy * (l->bpp8 ? 8 : 4)) & 0x7FFFF), l->bpp8 ? 8 : 4); }
             rh[y] = h; } }
-    if ((dc & 8) && S->frame3d) for (int y = 0; y < 192; y++) rh[y] = hashSpan(rh[y], (const u8 *)(S->frame3d + y * 256), 1024);
+    if ((dc & 8) && S->frame3d) for (int y = 0; y < 192; y++) { h3pre[y] = hashSpan(2166136261u, (const u8 *)(S->frame3d + y * 256), 1024); rh[y] = (rh[y] ^ h3pre[y]) * 16777619u; }
 }
 static u32 dRH[2][192]; static int dValid[2]; static u32 vCA[2][256 * 192], vSA[2][64 * 192];
 int WC_ComposeEye(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32 *strip, int eye) {
@@ -282,8 +283,12 @@ int WC_ComposeEye(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center, u32
         static int band[2]; const int b0 = band[eye] * 8; band[eye] = (band[eye] + 1) % 24; /* rolling 8-line refresh: any missed change lasts < 24 frames */
         for (int y = 0; y < 192; y++) { mask[y] = !dValid[eye] || rh[y] != dRH[eye][y] || (y >= b0 && y < b0 + 8); n += mask[y]; }
         if (n && !composeNow(p, R, S, cCenter, cStrip, n == 192 ? 0 : mask)) return 0;
-        memcpy(dRH[eye], rh, sizeof rh); dValid[eye] = 1; cValidA[eye] = 0; dStatFrames++; dStatRows += (unsigned)n; if (n == 192) dStatFull++;
-        u32 *vC = vCA[eye], *vS = vSA[eye]; if (dirtyMode == 2 && composeNow(p, R, S, vC, vS, 0) && (memcmp(vC, cCenter, 256 * 192 * 4) || memcmp(vS, cStrip, 64 * 192 * 4))) { u32 rh2[192]; rowHashes(p, R, S, rh2); if (!memcmp(rh2, rh, sizeof rh)) { dStatBad++; for (int y = 0; y < 192; y++) if (memcmp(vC + y * 256, cCenter + y * 256, 1024)) { dBadRow = y; dBadMask = mask[y]; break; } } else dStatRace++; memcpy(cCenter, vC, 256 * 192 * 4); memcpy(cStrip, vS, 64 * 192 * 4); }
+        memcpy(dRH[eye], rh, sizeof rh); dValid[eye] = 1;
+        u32 *vC = vCA[eye], *vS = vSA[eye]; if (dirtyMode == 2 && composeNow(p, R, S, vC, vS, 0) && (memcmp(vC, cCenter, 256 * 192 * 4) || memcmp(vS, cStrip, 64 * 192 * 4))) { u32 rh2[192]; rowHashes(p, R, S, rh2); if (!memcmp(rh2, rh, sizeof rh)) { dStatBad++; for (int y = 0; y < 192; y++) if (memcmp(vC + y * 256, cCenter + y * 256, 1024)) { dBadRow = y; dBadMask = mask[y]; { extern void PSPNativeMemLog(const char *, ...); int x0 = -1, x1 = -1; for (int x = 0; x < 256; x++) if (vC[y * 256 + x] != cCenter[y * 256 + x]) { if (x0 < 0) x0 = x; x1 = x; }
+                int nb = 0; for (int yy = 0; yy < 192; yy++) nb += memcmp(vC + yy * 256, cCenter + yy * 256, 1024) != 0;
+                int sx0 = -1; for (int x = 0; x < 64; x++) if (vS[y * 64 + x] != cStrip[y * 64 + x]) { sx0 = x; break; }
+                PSPNativeMemLog("[WIDE] verify: line %d (rows bad %d) x %d..%d full %08x cached %08x | strip x %d | eye %d dc %08x plan n %d dx3d %d", y, nb, x0, x1, x0 >= 0 ? vC[y * 256 + x0] : 0, x0 >= 0 ? cCenter[y * 256 + x0] : 0, sx0, eye, dc, p->n, p->dx3d);
+                const u16 *o = S->oam; for (int i = 0; i < 128; i++) { const u16 *a = o + i * 4; if ((a[0] & 0x300) == 0x200) continue; int y0 = a[0] & 255; if (((y - y0) & 255) < 128) PSPNativeMemLog("[WIDE]   oam %d: %04x %04x %04x", i, a[0], a[1], a[2]); } } break; } } else dStatRace++; memcpy(cCenter, vC, 256 * 192 * 4); memcpy(cStrip, vS, 64 * 192 * 4); }
         memcpy(center, cCenter, 256 * 192 * 4); memcpy(strip, cStrip, 64 * 192 * 4); return 1; }
     u32 h = inputHash(p, R, S);
     if (dc & 8) h = hashSpan(h, (const u8 *)S->frame3d, 256 * 192 * 4); /* the 3D layer is part of the picture; a still scene keeps it */
