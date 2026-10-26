@@ -319,4 +319,4 @@ this port; real DS consoles can't join, see docs/WIRELESS.md). Takes effect the 
 (entering the Union Room or the Underground). OFF = exactly as before: a radio with nobody in range. Test with
 copies of your save on both consoles; a trade writes the save through the game's own code. Log tag [WIRELESS].
 battle_log (Debug "Battle frame log", default ON, run 106): in battles and menus every frame over 40 ms logs the [SPIKE] stage breakdown (own 200-line cap). 0 = only frames over spike_ms (70).
-wide_split_r (Debug "Right eye on 2 cores", default ON, run 106): with the 3D slider up the right eye's wide compose is shared by the main thread and the core-2 worker. Needs wide_dirty=1. 0 = right eye entirely on core 2.
+wide_split_r (Debug "Right eye on 2 cores", default OFF since run 107; it hung and slowed slider-up battles in run 106): with the 3D slider up the right eye's wide compose is shared by the main thread and the core-2 worker. Needs wide_dirty=1. 0 = right eye entirely on core 2.
