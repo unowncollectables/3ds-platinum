@@ -307,6 +307,20 @@ static void clearQuad(void) {
     C3D_DrawArrays(GPU_TRIANGLES, 0, 6);
     C3D_AlphaTest(true, GPU_GREATER, 3);
 }
+/* run 108 g3_conv_split (default 1): with the slider on, the right eye's GPU readback conversion (3D convert ~2.7 ms
+   per eye on hardware) runs on a core-2 helper while the main thread converts the left eye. Same pixels; 0 = serial.
+   The helper only touches rb[1] / outR / G3G_Strip[1]; the first frame converts serially so static inits are done. */
+static int csCfg = -1; static Thread csTh; static LightEvent csGo, csDone; static u32 *volatile csOut; static unsigned csFrames;
+static void rbConvert(int e, u32 *out);
+static void csWorker(void *u) { (void)u; for (;;) { LightEvent_Wait(&csGo); if (csOut) rbConvert(1, csOut); LightEvent_Signal(&csDone); } }
+static int convSplitStart(u32 *outR) {
+    if (csCfg < 0) { extern int P3DS_CfgInt(const char *, int); csCfg = P3DS_CfgInt("g3_conv_split", 1) != 0;
+        if (csCfg) { LightEvent_Init(&csGo, RESET_ONESHOT); LightEvent_Init(&csDone, RESET_ONESHOT); csTh = threadCreate(csWorker, 0, 0x4000, 0x2E, 2, true); if (!csTh) csTh = threadCreate(csWorker, 0, 0x4000, 0x2E, 1, true); if (!csTh) csCfg = 0; }
+        PSPNativeMemLog("[GPU3D] g3_conv_split=%d", csCfg); }
+    if (!csCfg || csFrames++ < 2) return 0;
+    csOut = outR; LightEvent_Signal(&csGo); return 1;
+}
+static void convSplitWait(void) { LightEvent_Wait(&csDone); }
 extern void P3DS_Crumb(const char *tag, void *caller);
 void G3G_End(u32 *outL, u32 *outR) {
     if (ok != 1) return;
@@ -369,7 +383,7 @@ void G3G_End(u32 *outL, u32 *outR) {
     if (G3G_Async) { pendRB = 1; pendEyes = eyes; memcpy(oldFree, pendFree, pendN * sizeof *pendFree); oldN = pendN; pendN = 0; }
     else {
         pendRB = 0; for (unsigned i = 0; i < oldN; i++) { C3D_TexDelete(oldFree[i]); free(oldFree[i]); } oldN = 0;
-        { u64 tc = svcGetSystemTick(); for (int e = 0; e < eyes; e++) { if (rs) rbConvert(e, e ? outR : outL); else readback(e, e ? outR : outL); } G3G_ConvUs = (unsigned)((svcGetSystemTick() - tc) / 268); }
+        { u64 tc = svcGetSystemTick(); if (rs && eyes == 2 && outR && convSplitStart(outR)) { rbConvert(0, outL); convSplitWait(); } else for (int e = 0; e < eyes; e++) { if (rs) rbConvert(e, e ? outR : outL); else readback(e, e ? outR : outL); } G3G_ConvUs = (unsigned)((svcGetSystemTick() - tc) / 268); }
         G3G_StripValid = wideFrame ? eyes : 0;
         for (unsigned i = 0; i < pendN; i++) { C3D_TexDelete(pendFree[i]); free(pendFree[i]); }
         pendN = 0;
