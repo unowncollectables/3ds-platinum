@@ -1466,3 +1466,4 @@ MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, li
 - Run 108: g3_conv_split (right-eye 3D convert on core 2), stereo_flat_fallback, wide_split_r SHARED mode.
 - Run 109: wide_windows (WIN0/WIN1/OBJ window in widecomp), wide_split_r SHARED default, battle_log path field.
 - Run 110: gpu_direct3d (from SoulSilver), stereo_gpu_battle (slider-up battles GPU-composed both eyes), gpu_blend_3d, SoulSilver gpucomp; wide_split_r default OFF again.
+- Run 111: wide_gpu (wide battle layout on the GPU, both eyes, default SLIDER UP), gpu_mbright, stereo_gpu_battle default OFF, gpu_blend_3d rule = widecomp.

@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "blit_shbin.h"
+#include "widecomp.h"
 extern void PSPNativeMemLog(const char *, ...);
 extern int P3DS_CfgInt(const char *, int);
 extern void P3DS_Crumb(const char *tag, void *caller);  /* watchdog crumbs (only on gpu_compose>=2 frames) */
@@ -38,6 +39,7 @@ static GV *vb; static u32 *rb;
 static DVLB_s *dvlb; static shaderProgram_s prog; static int uProj; static int ready = -1;
 static u8 mort[64];
 static unsigned dirtyLo, dirtyHi;
+static int mbOn(void);
 static int relax3d(void) { static int v = -1; if (v < 0) { v = P3DS_CfgInt("gpu_blend_3d", 1) != 0; PSPNativeMemLog("[GPUC] gpu_blend_3d=%d", v); } return v; }
 unsigned P3DS_GcBlendOn, P3DS_GcFxFrames, P3DS_GcBlendFrames, P3DS_GcBlendRej;  /* gpu_blend stats, logged by render3ds.cpp */
 static int blendSet = -1;  /* ss3ds: set from the settings app (System > GPU blend) before or after init */
@@ -97,7 +99,7 @@ int P3DS_GcEligible(const u8 *regs, const u16 *oam) {
     { const u16 bl = rh(regs, 0x50);
       if (P3DS_GcBlendOn) { if ((bl & 0x3F00) && (dc & 0x108) == 0x108 && ((bl & 1) || !relax3d())) return 128; }  /* 3D layer alpha blend stays on melonDS; run 110 gpu_blend_3d=1: only when the 3D layer itself is a first target */
       else if ((bl & 0x3F00) || ((bl & 0xC0) && (bl & 0x3F))) return 128; }
-    { const u16 mb = rh(regs, 0x6C); const unsigned m = mb >> 14; if ((m == 1 || m == 2) && (mb & 0x1F)) return 256; }
+    { const u16 mb = rh(regs, 0x6C); const unsigned m = mb >> 14; if ((m == 1 || m == 2) && (mb & 0x1F) && !mbOn()) return 256; }  /* run 111 gpu_mbright: master brightness as a final GPU pass */
     if (rg(regs, 0x64) & 0x80000000u) return 512;
     if (dc & 0x1000) for (int i = 0; i < 128; i++) { const u16 a0 = oam[i * 4]; if ((a0 & 0x300) == 0x200) continue;
         if (a0 & 0x100) return 1024; if ((a0 >> 10) & 3) return 2048;
@@ -147,16 +149,35 @@ static int tile(int obj, int bpp8, unsigned bank, const u8 *src, unsigned addr) 
 }
 static unsigned nq;
 static u32 blendA, blendB, blendY;  /* clamped BLDALPHA EVA/EVB and BLDY EVY of the frame being composed */
-static void quad(int slot, float x, float y, int hf, int vf) {
+/* run 111 wide_gpu: quads are clipped to a rectangle (DS 256x192 normally; the 320-wide layout or one part's
+   columns/lines in wide mode); u/v follow the clip linearly, so a clipped quad samples exactly the texels it covers. */
+static float cx0 = 0, cx1 = 256, cy0 = 0, cy1 = 192;
+static void quadUV(float x0, float y0, float x1, float y1, float u0, float u1, float v0, float v1) {
+    if (x1 <= cx0 || x0 >= cx1 || y1 <= cy0 || y0 >= cy1) return;
     if (nq >= MAXQ) { fail = 1; return; }
+    const float W = x1 - x0, H = y1 - y0, U = u1 - u0, V = v1 - v0;
+    if (x0 < cx0) { u0 += U * (cx0 - x0) / W; x0 = cx0; } if (x1 > cx1) { u1 -= U * (x1 - cx1) / W; x1 = cx1; }
+    if (y0 < cy0) { v0 += V * (cy0 - y0) / H; y0 = cy0; } if (y1 > cy1) { v1 -= V * (y1 - cy1) / H; y1 = cy1; }
+    GV *v = vb + nq * 6; nq++;
+    v[0] = (GV){ x0, y0, u0, v0 }; v[1] = (GV){ x0, y1, u0, v1 }; v[2] = (GV){ x1, y0, u1, v0 };
+    v[3] = (GV){ x1, y0, u1, v0 }; v[4] = (GV){ x0, y1, u0, v1 }; v[5] = (GV){ x1, y1, u1, v1 };
+}
+static void quad(int slot, float x, float y, int hf, int vf) {
     const unsigned tx = slot % (AW / 8), ty = slot / (AW / 8);
     float u0 = tx * 8.0f / AW, u1 = (tx * 8 + 8.0f) / AW, vt = 1.0f - (ty * 8 + 8.0f) / AH, vb_ = 1.0f - ty * 8.0f / AH;
     if (hf) { float t = u0; u0 = u1; u1 = t; }
     if (vf) { float t = vt; vt = vb_; vb_ = t; }
-    GV *v = vb + nq * 6; nq++;
-    v[0] = (GV){ x, y, u0, vt }; v[1] = (GV){ x, y + 8, u0, vb_ }; v[2] = (GV){ x + 8, y, u1, vt };
-    v[3] = (GV){ x + 8, y, u1, vt }; v[4] = (GV){ x, y + 8, u0, vb_ }; v[5] = (GV){ x + 8, y + 8, u1, vb_ };
+    quadUV(x, y, x + 8, y + 8, u0, u1, vt, vb_);
 }
+/* one texel column (texel tc of the tile's stored rows) stretched across x0..x1 */
+static void quadCol(int slot, float x0, float x1, float y, int tc, int vf) {
+    const unsigned tx = slot % (AW / 8), ty = slot / (AW / 8);
+    const float u = (tx * 8 + tc + 0.5f) / AW; float vt = 1.0f - (ty * 8 + 8.0f) / AH, vb_ = 1.0f - ty * 8.0f / AH;
+    if (vf) { float t = vt; vt = vb_; vb_ = t; }
+    quadUV(x0, y, x1, y + 8, u, u, vt, vb_);
+}
+static int gW; static const WcPlan *gP; static u32 *gStrip; static C3D_Tex rtWTex; static C3D_RenderTarget *rtW; static u32 *rbW; static int wReady = -1;
+static int mbOn(void) { static int v = -1; if (v < 0) { v = P3DS_CfgInt("gpu_mbright", 1) != 0; PSPNativeMemLog("[GPUC] gpu_mbright=%d", v); } return v; }  /* wide mode: the widecomp plan (part maps per layer and line) */
 typedef struct { unsigned first, count; int is3d; int fx; } GB;  /* fx: 0 none, 1 alpha blend, 2 brighten, 3 darken (BLDCNT effect of this layer) */
 static GB bat[32]; static unsigned nb;
 static void batchBegin(int is3d, int fx) { if (nb && bat[nb - 1].is3d == is3d && !is3d && bat[nb - 1].fx == fx) return; bat[nb].first = nq; bat[nb].is3d = is3d; bat[nb].fx = fx; bat[nb].count = 0; nb++; }
@@ -164,7 +185,52 @@ static void batchEnd(void) { bat[nb - 1].count = nq - bat[nb - 1].first; }
 
 /* per-frame memo per BG: map entry -> tile result (most map entries repeat, e.g. the blank tile) */
 static struct { u32 stamp; u16 me; s16 slot; } memo[4][1024];
+static int bgSlot(int i, const u8 *vram, unsigned mapb, unsigned charb, unsigned w, unsigned h, int bpp8, unsigned tx, unsigned ty, u16 *meOut) {
+    tx &= w - 1; ty &= h - 1;
+    const unsigned ma = (mapb + ((tx >> 5) + (ty >> 5) * (w >> 5)) * 0x800 + ((ty & 31) * 32 + (tx & 31)) * 2) & 0x7FFFF;
+    const u16 me = *(const u16 *)(vram + ma); *meOut = me;
+    const unsigned mi = (me ^ (me >> 10)) & 1023; const u16 mk = me & 0xF3FF;
+    if (memo[i][mi].stamp == frameNo && memo[i][mi].me == mk) return memo[i][mi].slot;
+    const unsigned ta = (charb + (me & 0x3FF) * (bpp8 ? 64 : 32)) & 0x7FFFF;
+    const int s = tile(0, bpp8, me >> 12, vram + ta, ta); memo[i][mi].stamp = frameNo; memo[i][mi].me = mk; memo[i][mi].slot = (s16)s; return s;
+}
+/* run 111 wide_gpu: BG i across the 320-wide layout from the plan's column maps (widecomp.c buildRow: per line, wide column
+   X -> picture column or -1). Lines sharing a map are one band; each map splits into runs that are either contiguous
+   (picture column + 1 per column: the layer drawn shifted, clipped to the run) or constant (one picture column repeated:
+   a stretched edge). */
+static void drawBGWide(const u8 *regs, const u8 *vram, u32 dc, int i) {
+    const u16 cnt = rh(regs, 8 + i * 2);
+    const unsigned charb = ((cnt >> 2) & 15) * 0x4000 + ((dc >> 24) & 7) * 0x10000;
+    const unsigned mapb = ((cnt >> 8) & 31) * 0x800 + ((dc >> 27) & 7) * 0x10000;
+    const unsigned sz = cnt >> 14, w = (sz & 1) ? 64 : 32, h = (sz & 2) ? 64 : 32, M = w * 8 - 1;
+    const int bpp8 = (cnt & 0x80) != 0;
+    const int vofs = rh(regs, 0x12 + i * 4) & 0x1FF;
+    const float sx0 = cx0, sx1 = cx1, sy0 = cy0, sy1 = cy1;
+    for (int ya = 0; ya < 192;) {
+        const u8 ri = gP->rowOf[i][ya]; if (ri == 255) { fail = 1; return; }
+        int yb = ya + 1; while (yb < 192 && gP->rowOf[i][yb] == ri) yb++;
+        const short *m = gP->rows[ri];
+        const int wy0 = (ya + vofs) >> 3, wy1 = (yb - 1 + vofs) >> 3;
+        for (int X = 0; X < 320;) {
+            if (m[X] < 0) { X++; continue; }
+            const int p0 = m[X]; int X1 = X + 1, cst = 0;
+            if (X1 < 320 && m[X1] == p0) { cst = 1; while (X1 < 320 && m[X1] == p0) X1++; }
+            else while (X1 < 320 && m[X1] >= 0 && m[X1] == ((m[X1 - 1] + 1) & (int)M)) X1++;
+            cx0 = X; cx1 = X1; cy0 = ya; cy1 = yb;
+            for (int wy = wy0; wy <= wy1; wy++) { const float dy = wy * 8.0f - vofs;
+                if (cst) { u16 me; const int s = bgSlot(i, vram, mapb, charb, w, h, bpp8, (unsigned)(p0 >> 3), (unsigned)wy, &me);
+                    if (s >= 0) { const int fx = p0 & 7; quadCol(s, X, X1, dy, (me & 0x400) ? 7 - fx : fx, me & 0x800); } }
+                else { const int wx0 = p0 >> 3, wx1 = (p0 + (X1 - X) - 1) >> 3;
+                    for (int wx = wx0; wx <= wx1; wx++) { u16 me; const int s = bgSlot(i, vram, mapb, charb, w, h, bpp8, (unsigned)wx, (unsigned)wy, &me);
+                        if (s >= 0) quad(s, (float)(X + wx * 8 - p0), dy, me & 0x400, me & 0x800); } }
+                if (fail) break; }
+            X = X1; if (fail) break; }
+        cx0 = sx0; cx1 = sx1; cy0 = sy0; cy1 = sy1;
+        if (fail) return;
+        ya = yb; }
+}
 static void drawBG(const u8 *regs, const u8 *vram, u32 dc, int i) {
+    if (gW) { drawBGWide(regs, vram, dc, i); return; }
     const u16 cnt = rh(regs, 8 + i * 2);
     const unsigned charb = ((cnt >> 2) & 15) * 0x4000 + ((dc >> 24) & 7) * 0x10000;
     const unsigned mapb = ((cnt >> 8) & 31) * 0x800 + ((dc >> 27) & 7) * 0x10000;
@@ -188,7 +254,14 @@ static void drawOBJ(const u16 *oam, const u8 *ov, u32 dc, unsigned prio) {
         if (((a2 >> 10) & 3) != prio || (a0 & 0x300) == 0x200) continue;
         const unsigned sp = (a0 >> 14) | ((a1 & 0xC000) >> 12); const int w = SW[sp], hh = SH[sp];
         int y = a0 & 255; if (y >= 192) y -= 256; if (y + hh <= 0) continue;
-        const int x = (s32)((u32)a1 << 23) >> 23; if (x <= -w || x >= 256) continue;
+        const int x0 = (s32)((u32)a1 << 23) >> 23;
+        int x = x0, sdx = 0, sst = 0;
+        if (gW) { /* run 111 wide_gpu: the WIDE_OBJS part holding the sprite's middle shifts it (and may stretch its edge back), as widecomp */
+            if (gP->objParts) { const int cx = x0 + w / 2, cy = y + hh / 2;
+                for (int k = 0; k < gP->n; k++) { const short *t = gP->parts + k * 8; if (t[0] != 3) continue;
+                    if (cx >= t[4] && cx < t[5] && cy >= t[2] && cy < t[3]) { sdx = t[6]; sst = t[7] == 1; break; } } }
+            x = x0 + sdx + 32; if ((x + w <= 0 || x >= 320) && !sst) continue; }
+        else if (x <= -w || x >= 256) continue;
         const int bpp8 = (a0 & 0x2000) != 0, hf = (a1 & 0x1000) != 0, vf = (a1 & 0x2000) != 0;
         const unsigned tn = a2 & 0x3FF, bank = a2 >> 12, ts = bpp8 ? 64 : 32;
         for (int r = 0; r < hh / 8; r++) for (int c = 0; c < w / 8; c++) {
@@ -199,7 +272,11 @@ static void drawOBJ(const u16 *oam, const u8 *ov, u32 dc, unsigned prio) {
             const int s = tile(1, bpp8, bank, ov + addr, addr);
             if (s < 0) continue;
             const int dcx = hf ? (w / 8 - 1 - c) : c, dry = vf ? (hh / 8 - 1 - r) : r;
-            quad(s, (float)(x + dcx * 8), (float)(y + dry * 8), hf, vf); } }
+            quad(s, (float)(x + dcx * 8), (float)(y + dry * 8), hf, vf);
+            if (sst && sdx) { /* stretched: the edge column drawn back over the gap the shift left */
+                const int ox = x0 + 32;
+                if (sdx > 0 && dcx == 0) quadCol(s, (float)ox, (float)(ox + sdx), (float)(y + dry * 8), hf ? 7 : 0, vf);
+                if (sdx < 0 && dcx == w / 8 - 1) quadCol(s, (float)(x + w), (float)(ox + w), (float)(y + dry * 8), hf ? 0 : 7, vf); } } }
 }
 /* run 17: outside the overworld the 3D layer is often unchanged between frames (battle backdrop, menus: ~3 ms of conversion per eye in the 2026-10-26 log).
    Each eye (frame buffer pointer) gets its own texture; a content hash decides whether the converted texture can be reused. Overworld: never hashed. */
@@ -291,9 +368,14 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     const u64 tw = svcGetSystemTick(); P3DS_GcWalkUs = (unsigned)((tw - t0) / 268);
     unsigned q3 = nq; if (has3d) { GV *v = vb + nq * 6; nq++;
         const float vt = 0.0f, vbm = 192.0f / 256;
-        v[0] = (GV){ 0, 0, 0, vt }; v[1] = (GV){ 0, 192, 0, vbm }; v[2] = (GV){ 256, 0, 1, vt };
-        v[3] = (GV){ 256, 0, 1, vt }; v[4] = (GV){ 0, 192, 0, vbm }; v[5] = (GV){ 256, 192, 1, vbm };
+        const float ox = gW ? 32.0f + gP->dx3d : 0.0f;  /* run 111 wide_gpu: the 3D layer at its WIDE_3D shift (strips beyond it stay clear) */
+        v[0] = (GV){ ox, 0, 0, vt }; v[1] = (GV){ ox, 192, 0, vbm }; v[2] = (GV){ ox + 256, 0, 1, vt };
+        v[3] = (GV){ ox + 256, 0, 1, vt }; v[4] = (GV){ ox, 192, 0, vbm }; v[5] = (GV){ ox + 256, 192, 1, vbm };
         conv3d(f3d); }
+    /* run 111 gpu_mbright: master brightness (MASTER_BRIGHT 0x6C) on the DS picture (wide: the centre only, as widecomp) */
+    const u16 mbr = rh(regs, 0x6C); unsigned mbf = mbr & 31; if (mbf > 16) mbf = 16; const int mbm = mbf && ((mbr >> 14) == 1 || (mbr >> 14) == 2) ? (int)(mbr >> 14) : 0;
+    const unsigned qm = nq; if (mbm) { if (nq >= MAXQ) { P3DS_GcCpuUs = 0; return 0; } GV *v = vb + nq * 6; nq++; const float a0 = gW ? 32.0f : 0.0f, a1 = a0 + 256;
+        v[0] = (GV){ a0, 0, 0, 0 }; v[1] = (GV){ a0, 192, 0, 0 }; v[2] = (GV){ a1, 0, 0, 0 }; v[3] = (GV){ a1, 0, 0, 0 }; v[4] = (GV){ a0, 192, 0, 0 }; v[5] = (GV){ a1, 192, 0, 0 }; }
     if (dirtyHi > dirtyLo) GSPGPU_FlushDataCache((u8 *)atlas.data + dirtyLo, dirtyHi - dirtyLo);
     GSPGPU_FlushDataCache(vb, nq * 6 * sizeof(GV));
     P3DS_GcQuads = nq;
@@ -306,10 +388,11 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     P3DS_Crumb("gc-draw", 0);
     C3D_FrameBegin(0);
     G3G_DirectSynced();   /* FrameBegin waited for every queued draw, including g3gpu's direct 3D frame */
-    C3D_RenderTargetClear(rt, C3D_CLEAR_ALL, bd, 0);
-    C3D_FrameDrawOn(rt);
+    C3D_RenderTarget *tg = gW ? rtW : rt;
+    C3D_RenderTargetClear(tg, C3D_CLEAR_ALL, bd, 0);
+    C3D_FrameDrawOn(tg);
     C3D_BindProgram(&prog);
-    C3D_Mtx proj; Mtx_Ortho(&proj, 0.0f, 256.0f, 0.0f, 256.0f, 1.0f, -1.0f, true);  /* DS y 0 -> clip -1 (= g3gpu convention, FLIP_VERT readback gives rows top-first) */
+    C3D_Mtx proj; Mtx_Ortho(&proj, 0.0f, gW ? 512.0f : 256.0f, 0.0f, 256.0f, 1.0f, -1.0f, true);  /* DS y 0 -> clip -1 (= g3gpu convention, FLIP_VERT readback gives rows top-first) */
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uProj, &proj);
     C3D_AttrInfo *ai = C3D_GetAttrInfo(); AttrInfo_Init(ai);
     AttrInfo_AddLoader(ai, 0, GPU_FLOAT, 2); AttrInfo_AddLoader(ai, 1, GPU_FLOAT, 2);
@@ -320,19 +403,39 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     { C3D_TexEnv *env = C3D_GetTexEnv(0); C3D_TexEnvInit(env); C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, 0, 0); C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
       for (int k = 1; k < 6; k++) C3D_TexEnvInit(C3D_GetTexEnv(k)); }
     int curFx = 0;
+    /* wide: a brighten/darken that targets BG0 is not applied in the strips (gpuscale's wide_fadefix does them), as widecomp */
+    const int sideNoFx = gW && eff >= 2 && blendY && (firstM & 1);
     for (unsigned b = 0; b < nb; b++) { if (!bat[b].is3d && !bat[b].count) continue;
+        if (sideNoFx && bat[b].fx >= 2) { const int f = bat[b].fx;
+            for (int pass = 0; pass < 3; pass++) { const int fxp = pass ? 0 : f; if (fxp != curFx) { curFx = fxp; setFx(curFx); }
+                if (pass == 0) C3D_SetScissor(GPU_SCISSOR_NORMAL, 32, 0, 288, 256); else if (pass == 1) C3D_SetScissor(GPU_SCISSOR_NORMAL, 0, 0, 32, 256); else C3D_SetScissor(GPU_SCISSOR_NORMAL, 288, 0, 512, 256);
+                if (bat[b].is3d) { C3D_TexBind(0, t3cur); if (blend3d) C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ZERO); C3D_DrawArrays(GPU_TRIANGLES, q3 * 6, 6); if (blend3d) setFx(curFx); }
+                else { C3D_TexBind(0, &atlas); C3D_DrawArrays(GPU_TRIANGLES, bat[b].first * 6, bat[b].count * 6); } }
+            C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0); continue; }
         if (bat[b].fx != curFx) { curFx = bat[b].fx; setFx(curFx); }
         if (bat[b].is3d) { C3D_TexBind(0, t3cur);
             /* run 110 gpu_blend_3d: translucent 3D pixels (move effects) blend with the second-target layers below like the DS.
-               The 3D target was cleared to alpha 0, so its colour is already alpha-weighted: premultiplied blend. */
-            if (blend3d) C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ZERO);
+               run 111: 3D colour * alpha + below * (1 - alpha), the same rule as widecomp wide_3d_alpha (verified against it). */
+            if (blend3d) C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ZERO);
             C3D_DrawArrays(GPU_TRIANGLES, q3 * 6, 6); if (blend3d) setFx(curFx); }
         else { C3D_TexBind(0, &atlas); C3D_DrawArrays(GPU_TRIANGLES, bat[b].first * 6, bat[b].count * 6); } }
-    C3D_SyncDisplayTransfer((u32 *)rtTex.data, GX_BUFFER_DIM(256, 256), rb, GX_BUFFER_DIM(256, 256), RB_FLAGS);
+    if (mbm) { C3D_TexEnv *env = C3D_GetTexEnv(0); C3D_TexEnvInit(env); const u32 cc = mbm == 1 ? 0xFF : 0, ca = (mbf * 255 + 8) >> 4;
+        C3D_TexEnvColor(env, (ca << 24) | (cc << 16) | (cc << 8) | cc); C3D_TexEnvSrc(env, C3D_Both, GPU_CONSTANT, 0, 0); C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+        C3D_AlphaTest(false, GPU_ALWAYS, 0); C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ZERO, GPU_ONE);
+        C3D_DrawArrays(GPU_TRIANGLES, qm * 6, 6); C3D_AlphaTest(true, GPU_GREATER, 0); }
+    if (gW) C3D_SyncDisplayTransfer((u32 *)rtWTex.data, GX_BUFFER_DIM(512, 256), rbW, GX_BUFFER_DIM(512, 256), RB_FLAGS);
+    else C3D_SyncDisplayTransfer((u32 *)rtTex.data, GX_BUFFER_DIM(256, 256), rb, GX_BUFFER_DIM(256, 256), RB_FLAGS);
     C3D_FrameEnd(0);
     P3DS_Crumb("gc-wait", 0);
     C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH);
     P3DS_Crumb("gc-done", 0);
+    if (gW) { GSPGPU_InvalidateDataCache(rbW, 512 * 192 * 4); const u64 t2 = svcGetSystemTick();
+        for (unsigned y = 0; y < 192; y++) { const u32 *r = rbW + y * 512; u32 *o = out + y * 256;
+            for (unsigned x = 0; x < 256; x++) o[x] = __builtin_bswap32(r[x + 32]) | 0xFF000000u;
+            if (gStrip) { u32 *st = gStrip + y * 64; for (unsigned x = 0; x < 32; x++) { st[x] = r[x] | 0xFF; st[x + 32] = r[x + 288] | 0xFF; } } }
+        const u64 t3 = svcGetSystemTick(); P3DS_GcOutUs = (unsigned)((t3 - t2) / 268);
+        P3DS_GcCpuUs = (unsigned)((t1 - t0 + t3 - t2) / 268); P3DS_GcGpuUs = (unsigned)((t2 - t1) / 268);
+        return 1; }
     GSPGPU_InvalidateDataCache(rb, 256 * 192 * 4);
     const u64 t2 = svcGetSystemTick();
     { const u32 *r = rb; u32 *o = out; for (unsigned i = 0; i < 256 * 192; i += 4, r += 4, o += 4) {
@@ -341,4 +444,17 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     const u64 t3 = svcGetSystemTick(); P3DS_GcOutUs = (unsigned)((t3 - t2) / 268);
     P3DS_GcCpuUs = (unsigned)((t1 - t0 + t3 - t2) / 268); P3DS_GcGpuUs = (unsigned)((t2 - t1) / 268);
     return 1;
+}
+/* run 111 wide_gpu: the wide (320-column) battle/menu layout composed on the GPU from widecomp's plan. center = DS columns
+   0..255 (melonDS format), strip = 32 + 32 side columns (0xRRGGBBAA, as WC_Compose) or NULL. Returns 0 = not composed. */
+int P3DS_GcComposeWide(const WcPlan *plan, const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bgpal, const u16 *objpal, const u16 *oam, const u32 *f3d, u32 *center, u32 *strip) {
+    if (!init()) return 0;
+    if (wReady < 0) { wReady = 0; rbW = (u32 *)linearAlloc(512 * 256 * 4);
+        if (rbW && C3D_TexInitVRAM(&rtWTex, 512, 256, GPU_RGBA8) && (rtW = C3D_RenderTargetCreateFromTex(&rtWTex, GPU_TEXFACE_2D, 0, -1))) wReady = 1;
+        PSPNativeMemLog("[GPUC] wide_gpu target 512x256: %s", wReady ? "ready" : "FAILED (VRAM/linear)"); }
+    if (!wReady || !plan || !plan->valid) return 0;
+    gW = 1; gP = plan; gStrip = strip; cx0 = 0; cx1 = 320; cy0 = 0; cy1 = 192;
+    const int r = P3DS_GcComposeA(regs, bgv, objv, bgpal, objpal, oam, f3d, center);
+    gW = 0; gP = 0; gStrip = 0; cx0 = 0; cx1 = 256; cy0 = 0; cy1 = 192;
+    return r;
 }

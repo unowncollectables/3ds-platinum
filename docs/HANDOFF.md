@@ -2,6 +2,31 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 111: the wide battle layout on the GPU (Grok Bot, branch `run111`)
+- The user wants the wide side panels with the slider up. Run 110's `stereo_gpu_battle` (4:3) now defaults to OFF.
+- New `wide_gpu` (Debug "Wide on GPU": OFF / SLIDER UP / ALWAYS, default SLIDER UP): a wide-layout frame is composed on the GPU for both eyes by gpucomp.c `P3DS_GcComposeWide`, from widecomp's plan.
+  - The 320-column layout goes into a 512x256 VRAM target.
+  - BGs are drawn per band of lines sharing a column map. Each map splits into contiguous runs (the layer shifted and clipped, with quads clipped and UV-interpolated) and constant runs (stretched edge columns, one texel column).
+  - Sprites use the WIDE_OBJS part shift and edge stretch.
+  - The 3D layer sits at the WIDE_3D shift from the gpu_direct3d texture.
+  - The backdrop shows in the strips. BG0-targeted fades are skipped in the strips via scissor, as in widecomp.
+  - The right eye uses the right-eye 3D texture. The strips come from the left eye, as before.
+  - Engine A, the CPU wide compose, wide_early and the 3D readback are skipped on those frames.
+- New `gpu_mbright` (Debug "GPU fades", default ON): master brightness is a final GPU quad (centre only in wide). It is no longer a gpucomp decline.
+- gpu_blend_3d now uses colour*alpha + below*(1-alpha), the same rule as widecomp wide_3d_alpha. Run 110's premultiplied version differed by up to 230 per channel on translucent move effects.
+- Test hook `wide_gpu_verify=N` (with wide_dirty=0): every Nth GPU wide frame is also drawn by the CPU widecomp and compared. Emulator results over 193 frames:
+  - Strips were exact in all of them.
+  - Centre was exact on 2D-only frames.
+  - 3D frames had a max channel diff of 3-7 (8-bit GPU 3D vs 6-bit NativeFrame, 8-bit vs 5-bit alpha).
+- Emulator, Coronet battle, slider on (one host thread, noisy):
+  - Run 109 wide CPU: 57.9 ms/frame.
+  - Run 110 4:3 GPU: 40.8-46.9 ms/frame.
+  - Run 111 wide GPU: 41.1-44.9 ms/frame, path X (new battle_log char: wide GPU stereo) 55 of 71 logged frames.
+  - Slider flip every 5 s (30 transitions): no hang.
+- Still on the CPU wide path: affine (rotated/scaled) sprites (the most common decline), semi-transparent/window sprites, and the battle intro windows. They need per-sprite affine sampling and per-pixel window masks on the PICA.
+- **For Claude / SoulSilver:** P3DS_GcComposeWide plus widecomp's WcPlan is the piece that lets the wide layout keep gpu_direct3d. It should port to SoulSilver's wide mode the same way.
+- Builds: 3dsx a87fcfab54c2fe16df1b62b6168e9b896fbf457e, CIA 2124e12140184ce50d51c41a4aadf6a3c29d95e0.
+
 ## 2026-10-26 — Run 110: slider-on battles on the GPU, the SoulSilver way (Grok Bot, branch `run110`)
 - Why Run 109 was worse (hardware slider-on battles avg 47.6-50.7 ms vs 40.3-41.0 in Run 108; slider 0 unchanged): `wide_split_r` SHARED. Composite rose to 33-46 ms. Every 16-line group re-runs composeNow's per-call setup (palette LUT, OAM walk), both cores thrash the same caches and VRAM-flat buffers, and main ends up doing right-eye work on top of the left eye. `wide_windows` is not the cause: battle DISPCNT 00111f18 has no windows, so its code is never reached. wide_split_r is back to OFF by default (HALF / SHARED still in Debug).
 - **SoulSilver comparison (useful to Claude too):** the SoulSilver port (`unowncollectables/Pokemon-Soulsilver-New3ds`) has no widecomp in battles. With the slider up it GPU-composes both eyes outside the overworld (`gpu_compose_stereo_nf`), with GPU alpha/brightness blending (`gpu_blend`), 3D-layer texture reuse by hash, a right-eye register copy for stereo_2d BG depth, and Claude's `gpu_direct3d`: the 3D frame stays in the PICA render target and the compositor samples it directly (no wait, no readback DMA, no 6-bit convert, no re-swizzle/upload). Anything that needs CPU pixels calls G3G_DirectResolve(). Platinum battles went through the CPU wide path W (two CPU composes plus readback) instead. Wide mode can't use the direct texture because widecomp is a CPU compositor.

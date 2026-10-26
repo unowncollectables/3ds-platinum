@@ -332,3 +332,7 @@ gpu_direct3d "GPU 3D direct" (default ON): the 3D layer stays on the GPU when GP
 stereo_gpu_battle "3D battles on GPU" (default ON): with the 3D slider up, battles and menus are composed on the GPU for both eyes. These show the DS 4:3 layout (no wide side panels).
 gpu_blend_3d "GPU blend by 3D" (default ON): GPU compose also takes blend frames next to the 3D layer (battles); translucent move effects blend like the DS.
 wide_split_r is OFF by default again (SHARED made Run 109 battles slower).
+Run 111 (Debug tab):
+wide_gpu "Wide on GPU" (OFF / SLIDER UP / ALWAYS, default SLIDER UP): with the 3D slider up, the wide battle and menu layout (side panels, HUD at the edges) is drawn on the GPU for both eyes. Rotated sprites and the battle intro still use the CPU.
+gpu_mbright "GPU fades" (default ON): GPU compose does screen fades itself.
+stereo_gpu_battle is now OFF by default (it shows 4:3 battles without the wide panels).
