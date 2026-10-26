@@ -10,6 +10,16 @@ Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the
 - NOT done / why: no compositor on the GPU (needs per-pixel priority + 3D alpha; gpucomp has no alpha), no g3soft pass cut, no vblank-wait removal (the wait is the game thread idle; compose needs that frame's final state, so overlapping it means a frame of latency or a state snapshot).
 - NOT built or run: the cloud has no devkitARM and no ROM, so render3ds.cpp is not compiled and there are no emulator numbers; only widecomp.c is host-tested. Needs a build + hardware log: look for `[WIDE] wide_split=1`, `[WIDE] wide_split: ... lines main X / worker Y avg`, then [PERF] composite and fps in a battle at slider 0. Slider-on battles still need their g3soft/right-eye cost cut (not addressed).
 
+## 2026-10-26 — Wireless M0 results + M1 local wireless layer (Claude; compiles and links on Nathan's PC with run 105, untested on hardware)
+- Merged after run 105: `wireless` is settings item 84 (run 105's `wide_split` is 83).
+- M0 (`tools/uds_probe`, two New 3DS): RTT p50 4-6 ms, p99 13-20 ms. 0.5-2.5% loss, all of it on broadcast frames; unicast lost nothing. Details in docs/WIRELESS.md.
+- M1: `platform/wm_uds.c` + `platform/uds_ctru.c` replace pspoke's `wm_absent.o` in `full/Makefile`. New toggle `wireless` (Game tab "Local wireless (test)", default OFF; OFF = wm_absent.c code unchanged). ON = the DS WM API over 3DS UDS with unicast and resends. Log tag `[WIRELESS]`.
+- Test plan: build, then on BOTH consoles with COPIED saves turn the toggle on, Pokemon Center 2F > Union Room, then trade one Pokemon. Send both log.txt files. Then check both saves with tools/savecheck.py and in DeSmuME.
+
+## 2026-10-26 — Wireless / Wi-Fi feasibility (docs only, Claude)
+- New `docs/WIRELESS.md` (same file in the SoulSilver repo). Local 3DS-to-3DS play (trade, battle, Union Room, Underground, Platinum port <-> SoulSilver port) is realistic by replacing pspoke's `wm_absent.c` with a UDS-backed WM layer. Local play with a real DS is not possible from native 3DS mode. Trades with legit games go online through a revival server (Wiimmfi), with GTS first.
+- Recommended first milestone: M1 local trade between two 3DSes, after an M0 UDS latency probe. Nothing is built or tested. No code changed.
+
 ## 2026-10-26 — Run 104: battle frame drops (hardware run103 log)
 - wide_3d_alpha works on hardware: no reason-4 decline in the run103 log (only reason 2/3 lines; reason 3 = battle intro windows).
 - Recurring 70 ms battle-start drop (f=752/1174/1746/2301, tris 6, "capture..tComp" ~70) followed every `[HUNT] species N met` line: the shiny-hunt counter wrote hunt.txt synchronously (fopen/write/remove/rename on SD) on the game thread. The same write ran every 2 min during play. Fix: new Debug toggle `hunt_async_save` (default ON, same file contents): the text is built in memory and written by a low-priority thread.
