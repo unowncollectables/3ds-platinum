@@ -21,6 +21,43 @@ static C3D_Tex *pendFree[512]; static unsigned pendN; static C3D_Tex *oldFree[51
    (3D layer shows one frame late). Frees are held one extra frame. */
 int G3G_Async = 0; static int pendRB, pendEyes;
 static u32 clearRGBA; static float clearD; static int eyes;
+/* run 110 gpu_direct3d, ported from the SoulSilver port (Claude, 2026-10-26; it works well on hardware there): the 3D layer
+   stays on the GPU. The old path per 3D frame is draw -> wait -> readback DMA -> CPU 6-bit convert (NativeFrame) -> CPU
+   re-swizzle into the compositor's texture -> upload. With direct on, G3G_End queues the draw and returns without waiting;
+   gpucomp.c samples the eye target rt[e] itself as the 3D-layer texture and NativeFrame is left stale. Any consumer that needs
+   the pixels on the CPU (CPU/wide composite, capture, stereo fallback, dumps) calls G3G_DirectResolve() first.
+   Only plain 256x256 1x frames, rb_sync, gpu_compose=2, no CPU fog. */
+static int dirCfg = -1, dirValid, dirPend, dirEyes, dirOut; static u32 *dirKey[2];
+static unsigned dirDirect, dirResolved, dirUsed, dirPlain, dirWhy[4]; static unsigned long long dirUs, dirResUs, dirPlainUs;
+extern int P3DS_GpuComposeCfg(void);
+int G3G_DirectCfg(void) { if (dirCfg < 0) { extern int P3DS_CfgInt(const char *, int); dirCfg = P3DS_CfgInt("gpu_direct3d", 1) != 0; PSPNativeMemLog("[GPU3D] gpu_direct3d=%d", dirCfg); } return dirCfg; }
+static void dirSync(void) { if (dirOut) { dirOut = 0; C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); } }
+void G3G_DirectSynced(void) { dirOut = 0; }
+int G3G_DirectPending(void) { return dirPend; }
+void G3G_DirectInvalidate(void) { dirValid = dirPend = 0; }
+C3D_Tex *G3G_DirectTex(const u32 *f) {
+    if (!dirValid || !f) return NULL;
+    for (int e = 0; e < dirEyes; e++) if (dirKey[e] == f) { dirUsed++; return &rt[e]; }
+    return NULL;
+}
+static void rbQueue(int e); static void rbConvert(int e, u32 *out);
+void G3G_DirectResolve(void) {
+    if (!dirPend || ok != 1) return;
+    u64 t0 = svcGetSystemTick(); dirPend = 0; dirResolved++;
+    C3D_FrameBegin(0);
+    for (int e = 0; e < dirEyes; e++) if (dirKey[e]) rbQueue(e);
+    C3D_FrameEnd(0);
+    C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); dirOut = 0;
+    for (int e = 0; e < dirEyes; e++) if (dirKey[e]) rbConvert(e, dirKey[e]);
+    dirResUs += (unsigned long long)(svcGetSystemTick() - t0) / 268;
+}
+static void dirLog(void) {
+    static unsigned n; if (++n % 600 != 0) return;
+    PSPNativeMemLog("[GPU3D] direct 600 3D frames: %u direct (avg End %u us), %u normal (avg End %u us), compositor sampled the target %u times, %u resolved to the CPU (avg %u us) | not direct: off-path %u, fog-cpu %u, async/hi/wide %u, compose!=2 %u",
+        dirDirect, dirDirect ? (unsigned)(dirUs / dirDirect) : 0, dirPlain, dirPlain ? (unsigned)(dirPlainUs / dirPlain) : 0, dirUsed,
+        dirResolved, dirResolved ? (unsigned)(dirResUs / dirResolved) : 0, dirWhy[0], dirWhy[1], dirWhy[2], dirWhy[3]);
+    dirDirect = dirPlain = dirUsed = dirResolved = 0; dirUs = dirResUs = dirPlainUs = 0; memset(dirWhy, 0, sizeof dirWhy);
+}
 int G3G_TexFlip = 1, G3G_FlipY = 0, G3G_ZInv = 0;  /* run 18: original mapping is correct (run 17 breakage was the texture V flip) */
 #define RB_FLAGS (GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
     GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
@@ -239,6 +276,7 @@ static void texFill(C3D_Tex *t, const u32 *px, unsigned w, unsigned h) {
 }
 void G3G_TexFree(void *t) { if (!t) return; if (pendN < 512) pendFree[pendN++] = t; else { C3D_TexDelete(t); free(t); } }
 void G3G_Begin(u32 nativeClear, unsigned clearDepth16, int stereo) {
+    dirSync();   /* gpu_direct3d: the previous frame's draw may still be running; buffers and textures are about to change */
     unsigned r = nativeClear & 63, g = (nativeClear >> 8) & 63, b = (nativeClear >> 16) & 63, a = (nativeClear >> 24) & 31;
     clearRGBA = ((r << 2 | r >> 4) << 24) | ((g << 2 | g >> 4) << 16) | ((b << 2 | b >> 4) << 8) | (a * 255 / 31);
     clearD = clearDepth16 / 65535.0f; eyes = stereo ? 2 : 1; vn[0] = vn[1] = bn[0] = bn[1] = 0;
@@ -333,9 +371,19 @@ void G3G_End(u32 *outL, u32 *outR) {
         fogFrame = fogCfg; if (fogFrame == 1) { fogLutSetup(); const u32 fc = *(const u32 *)(PSPNative_GfxRegisters + 0x358);
             C3D_FogColor(((fc & 31) * 255 / 31) | (((fc >> 5) & 31) * 255 / 31) << 8 | (((fc >> 10) & 31) * 255 / 31) << 16); }
         if (fogFrame && ++fogFrames % 600 == 1) PSPNativeMemLog("[GPU3D] fog3d: fog frame (DISP3DCNT %04x, FOG_COLOR %08lx, offset %04x)", *(const u16 *)(PSPNative_GfxRegisters + 0x60), (unsigned long)*(const u32 *)(PSPNative_GfxRegisters + 0x358), *(const u16 *)(PSPNative_GfxRegisters + 0x35C)); }
+    int direct = 0;
+    if (G3G_DirectCfg()) {
+        if (!rs || !outL) dirWhy[0]++;
+        else if (fogFrame == 2) dirWhy[1]++;
+        else if (G3G_Async || curW != 256 || curHi != 0 || depthLin || wideFrame || sharedTgt) dirWhy[2]++;
+        else if (P3DS_GpuComposeCfg() != 2) dirWhy[3]++;
+        else direct = 1;
+    }
+    if (!direct) { if (dirValid) dirSync(); dirValid = dirPend = 0; }
     P3DS_Crumb("g3e-begin", 0); /* run 65: locate the boot g3 stall */
     C3D_FrameBegin(0);
     P3DS_Crumb("g3e-draw", 0);
+    if (!G3G_Async && oldN) { for (unsigned i = 0; i < oldN; i++) { C3D_TexDelete(oldFree[i]); free(oldFree[i]); } oldN = 0; }   /* gpu_direct3d: textures held from the previous frame; FrameBegin waited */
     if (G3G_Async) { /* previous frame's GPU work is finished (FrameBegin waited): read it back, then free its textures */
         if (pendRB) for (int e = 0; e < pendEyes; e++) { if (rs) rbConvert(e, e ? outR : outL); else readback(e, e ? outR : outL); }
         for (unsigned i = 0; i < oldN; i++) { C3D_TexDelete(oldFree[i]); free(oldFree[i]); }
@@ -374,13 +422,18 @@ void G3G_End(u32 *outL, u32 *outR) {
             C3D_SyncDisplayTransfer((u32 *)tgt[e]->frameBuf.depthBuf, GX_BUFFER_DIM(curW, 256), drb[e], GX_BUFFER_DIM(curW, 256), RB_FLAGS); }
         if (rs && sharedTgt) rbQueue(e);   /* shared 2x target: copy this eye out before the next eye clears it */
     }
-    if (rs && !sharedTgt) for (int e = 0; e < eyes; e++) rbQueue(e);  /* GPU runs these after the draws, same queue */
+    if (rs && !sharedTgt && !direct) for (int e = 0; e < eyes; e++) rbQueue(e);  /* GPU runs these after the draws, same queue */
     P3DS_Crumb("g3e-end", 0);
     C3D_FrameEnd(0);
     P3DS_Crumb("g3e-wait", 0);
-    if (rs && !G3G_Async) { C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); }
+    if (rs && !G3G_Async && !direct) { C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); }
     P3DS_Crumb("g3e-done", 0); /* exact wait: queue (draw + readback DMA) done */
     if (G3G_Async) { pendRB = 1; pendEyes = eyes; memcpy(oldFree, pendFree, pendN * sizeof *pendFree); oldN = pendN; pendN = 0; }
+    else if (direct) {   /* no wait, no readback: the compositor samples rt[e]; this frame's freed textures live until the next FrameBegin */
+        pendRB = 0; for (unsigned i = 0; i < pendN; i++) { if (oldN < 512) oldFree[oldN++] = pendFree[i]; else { dirSync(); C3D_TexDelete(pendFree[i]); free(pendFree[i]); } } pendN = 0;
+        dirValid = dirPend = 1; dirEyes = eyes; dirKey[0] = outL; dirKey[1] = eyes > 1 ? outR : NULL; dirOut = 1; dirDirect++;
+        G3G_StripValid = 0;
+    }
     else {
         pendRB = 0; for (unsigned i = 0; i < oldN; i++) { C3D_TexDelete(oldFree[i]); free(oldFree[i]); } oldN = 0;
         { u64 tc = svcGetSystemTick(); if (rs && eyes == 2 && outR && convSplitStart(outR)) { rbConvert(0, outL); convSplitWait(); } else for (int e = 0; e < eyes; e++) { if (rs) rbConvert(e, e ? outR : outL); else readback(e, e ? outR : outL); } G3G_ConvUs = (unsigned)((svcGetSystemTick() - tc) / 268); }
@@ -389,6 +442,7 @@ void G3G_End(u32 *outL, u32 *outR) {
         pendN = 0;
     }
     lastUs = (unsigned)((svcGetSystemTick() - t0) / 268);
+    if (G3G_DirectCfg()) { if (direct) dirUs += lastUs; else { dirPlain++; dirPlainUs += lastUs; } dirLog(); }
     { static unsigned f; if (++f % 120 == 0) { unsigned late = 0, tx = 0; for (unsigned i = 0; i < bn[0]; i++) { if (bt[0][i].late) late += bt[0][i].count / 3; if (bt[0][i].tex) tx += bt[0][i].count / 3; }
         PSPNativeMemLog("[GPU3D] frame: eyes %d | tris %u (textured %u, translucent %u) | batches %u | gpu %u us", eyes, vn[0] / 3, tx, late, bn[0], lastUs); } }
 }

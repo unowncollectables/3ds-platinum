@@ -327,3 +327,8 @@ wide_split_r (Debug): OFF / HALF / SHARED. SHARED lets whichever core is free dr
 
 wide_windows (Debug, default ON): the wide view draws screens that use DS windows (battle intro) itself.
 wide_split_r now defaults to SHARED.
+Run 110 (Debug tab):
+gpu_direct3d "GPU 3D direct" (default ON): the 3D layer stays on the GPU when GPU compose draws the frame (no readback). From the SoulSilver port.
+stereo_gpu_battle "3D battles on GPU" (default ON): with the 3D slider up, battles and menus are composed on the GPU for both eyes. These show the DS 4:3 layout (no wide side panels).
+gpu_blend_3d "GPU blend by 3D" (default ON): GPU compose also takes blend frames next to the 3D layer (battles); translucent move effects blend like the DS.
+wide_split_r is OFF by default again (SHARED made Run 109 battles slower).

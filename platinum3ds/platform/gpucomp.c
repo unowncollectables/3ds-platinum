@@ -1,3 +1,5 @@
+/* run 110: ported from the SoulSilver port (unowncollectables/Pokemon-Soulsilver-New3ds, runs 17 + 60: gpu_blend
+   alpha/brightness on the GPU, per-eye 3D texture reuse outside the overworld). */
 /* platinum3ds run 60: GPU 2D compositor stage 1 (gpu_compose=2, default 0 = off, never called).
  * Engine A only, and only for frames using the simple subset of the DS 2D engine:
  *   mode 0 text BGs (4bpp / 8bpp without ext palettes), BG0 = 3D layer at HOFS 0, plain OBJs (no affine / semi / window /
@@ -15,9 +17,11 @@
 #include <3ds.h>
 #include <citro3d.h>
 #include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include "blit_shbin.h"
 extern void PSPNativeMemLog(const char *, ...);
+extern int P3DS_CfgInt(const char *, int);
 extern void P3DS_Crumb(const char *tag, void *caller);  /* watchdog crumbs (only on gpu_compose>=2 frames) */
 
 #define AW 512
@@ -28,11 +32,17 @@ extern void P3DS_Crumb(const char *tag, void *caller);  /* watchdog crumbs (only
 typedef struct { float x, y, u, v; } GV;
 typedef struct { u32 key; u32 stamp; u32 palv; u16 slot; u8 empty, n; u8 raw[64]; } GE;
 static GE *tab; static unsigned slotsUsed, frameNo;
-static C3D_Tex atlas, tex3d, rtTex; static C3D_RenderTarget *rt;
+static C3D_Tex atlas, tex3d, tex3dB, rtTex; static C3D_Tex *t3cur = &tex3d;
+extern int P3DS_InField; static C3D_RenderTarget *rt;
 static GV *vb; static u32 *rb;
 static DVLB_s *dvlb; static shaderProgram_s prog; static int uProj; static int ready = -1;
 static u8 mort[64];
 static unsigned dirtyLo, dirtyHi;
+static int relax3d(void) { static int v = -1; if (v < 0) { v = P3DS_CfgInt("gpu_blend_3d", 1) != 0; PSPNativeMemLog("[GPUC] gpu_blend_3d=%d", v); } return v; }
+unsigned P3DS_GcBlendOn, P3DS_GcFxFrames, P3DS_GcBlendFrames, P3DS_GcBlendRej;  /* gpu_blend stats, logged by render3ds.cpp */
+static int blendSet = -1;  /* ss3ds: set from the settings app (System > GPU blend) before or after init */
+int P3DS_GpuBlendCfg(void) { if (blendSet < 0) blendSet = P3DS_CfgInt("gpu_blend", 1) != 0; return blendSet; }
+void P3DS_SetGpuBlendCfg(int v) { blendSet = v != 0; P3DS_GcBlendOn = (unsigned)blendSet; PSPNativeMemLog("[GPUC] gpu_blend=%u (set from settings)", P3DS_GcBlendOn); }
 unsigned P3DS_GcWalkUs, P3DS_GcConvUs, P3DS_GcOutUs, P3DS_GcQuads, P3DS_GcDecoded, P3DS_GcResets, P3DS_GcCpuUs, P3DS_GcGpuUs;
 
 #define RB_FLAGS (GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
@@ -47,8 +57,9 @@ static int init(void) {
     vb = (GV *)linearAlloc(MAXQ * 6 * sizeof(GV));
     rb = (u32 *)linearAlloc(256 * 256 * 4);
     if (!tab || !vb || !rb) { PSPNativeMemLog("[GPUC] init: out of memory"); return 0; }
-    if (!C3D_TexInit(&atlas, AW, AH, GPU_RGBA8) || !C3D_TexInit(&tex3d, 256, 256, GPU_RGBA8)) { PSPNativeMemLog("[GPUC] init: tex alloc failed"); return 0; }
+    if (!C3D_TexInit(&atlas, AW, AH, GPU_RGBA8) || !C3D_TexInit(&tex3d, 256, 256, GPU_RGBA8) || !C3D_TexInit(&tex3dB, 256, 256, GPU_RGBA8)) { PSPNativeMemLog("[GPUC] init: tex alloc failed"); return 0; }
     C3D_TexSetFilter(&atlas, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&atlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    C3D_TexSetFilter(&tex3dB, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&tex3dB, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE); memset(tex3dB.data, 0, 256 * 256 * 4); GSPGPU_FlushDataCache(tex3dB.data, 256 * 256 * 4);
     C3D_TexSetFilter(&tex3d, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&tex3d, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     memset(atlas.data, 0, AW * AH * 4); memset(tex3d.data, 0, 256 * 256 * 4);
     GSPGPU_FlushDataCache(atlas.data, AW * AH * 4); GSPGPU_FlushDataCache(tex3d.data, 256 * 256 * 4);
@@ -57,6 +68,8 @@ static int init(void) {
     dvlb = DVLB_ParseFile((u32 *)blit_shbin, blit_shbin_size);
     shaderProgramInit(&prog); shaderProgramSetVsh(&prog, &dvlb->DVLE[0]);
     uProj = shaderInstanceGetUniformLocation(prog.vertexShader, "projection");
+    P3DS_GcBlendOn = (unsigned)P3DS_GpuBlendCfg();
+    PSPNativeMemLog("[GPUC] gpu_blend=%u (default 1 = GPU path; gpu_blend=0 in config.txt = alpha blend / brightness fade frames use the melonDS path)", P3DS_GcBlendOn);
     PSPNativeMemLog("[GPUC] GPU compositor ready: atlas %ux%u (%u tiles), %u quads max", AW, AH, SLOTS, MAXQ);
     ready = 1; return 1;
 }
@@ -68,6 +81,7 @@ static const s32 SH[16] = { 8,8,16,8, 16,8,32,8, 32,16,32,8, 64,32,64,8 };
 
 /* 0 = this frame can be composed on the GPU; else a reason bit */
 int P3DS_GcEligible(const u8 *regs, const u16 *oam) {
+    if (ready < 0) init();  /* reads gpu_blend */
     const u32 dc = rg(regs, 0);
     if (((dc >> 16) & 3) != 1) return 1;
     if (dc & 0x80) return 2;
@@ -80,7 +94,9 @@ int P3DS_GcEligible(const u8 *regs, const u16 *oam) {
         const u16 c = rh(regs, 8 + i * 2);
         if ((c & 0x40) && (mos & 0xFF)) return 32;
         if ((c & 0x80) && (dc & (1u << 30))) return 64; }
-    { const u16 bl = rh(regs, 0x50); if ((bl & 0x3F00) || ((bl & 0xC0) && (bl & 0x3F))) return 128; }
+    { const u16 bl = rh(regs, 0x50);
+      if (P3DS_GcBlendOn) { if ((bl & 0x3F00) && (dc & 0x108) == 0x108 && ((bl & 1) || !relax3d())) return 128; }  /* 3D layer alpha blend stays on melonDS; run 110 gpu_blend_3d=1: only when the 3D layer itself is a first target */
+      else if ((bl & 0x3F00) || ((bl & 0xC0) && (bl & 0x3F))) return 128; }
     { const u16 mb = rh(regs, 0x6C); const unsigned m = mb >> 14; if ((m == 1 || m == 2) && (mb & 0x1F)) return 256; }
     if (rg(regs, 0x64) & 0x80000000u) return 512;
     if (dc & 0x1000) for (int i = 0; i < 128; i++) { const u16 a0 = oam[i * 4]; if ((a0 & 0x300) == 0x200) continue;
@@ -130,6 +146,7 @@ static int tile(int obj, int bpp8, unsigned bank, const u8 *src, unsigned addr) 
     return s;
 }
 static unsigned nq;
+static u32 blendA, blendB, blendY;  /* clamped BLDALPHA EVA/EVB and BLDY EVY of the frame being composed */
 static void quad(int slot, float x, float y, int hf, int vf) {
     if (nq >= MAXQ) { fail = 1; return; }
     const unsigned tx = slot % (AW / 8), ty = slot / (AW / 8);
@@ -140,9 +157,9 @@ static void quad(int slot, float x, float y, int hf, int vf) {
     v[0] = (GV){ x, y, u0, vt }; v[1] = (GV){ x, y + 8, u0, vb_ }; v[2] = (GV){ x + 8, y, u1, vt };
     v[3] = (GV){ x + 8, y, u1, vt }; v[4] = (GV){ x, y + 8, u0, vb_ }; v[5] = (GV){ x + 8, y + 8, u1, vb_ };
 }
-typedef struct { unsigned first, count; int is3d; } GB;
+typedef struct { unsigned first, count; int is3d; int fx; } GB;  /* fx: 0 none, 1 alpha blend, 2 brighten, 3 darken (BLDCNT effect of this layer) */
 static GB bat[32]; static unsigned nb;
-static void batchBegin(int is3d) { if (nb && bat[nb - 1].is3d == is3d && !is3d) return; bat[nb].first = nq; bat[nb].is3d = is3d; bat[nb].count = 0; nb++; }
+static void batchBegin(int is3d, int fx) { if (nb && bat[nb - 1].is3d == is3d && !is3d && bat[nb - 1].fx == fx) return; bat[nb].first = nq; bat[nb].is3d = is3d; bat[nb].fx = fx; bat[nb].count = 0; nb++; }
 static void batchEnd(void) { bat[nb - 1].count = nq - bat[nb - 1].first; }
 
 /* per-frame memo per BG: map entry -> tile result (most map entries repeat, e.g. the blank tile) */
@@ -184,16 +201,57 @@ static void drawOBJ(const u16 *oam, const u8 *ov, u32 dc, unsigned prio) {
             const int dcx = hf ? (w / 8 - 1 - c) : c, dry = vf ? (hh / 8 - 1 - r) : r;
             quad(s, (float)(x + dcx * 8), (float)(y + dry * 8), hf, vf); } }
 }
+/* run 17: outside the overworld the 3D layer is often unchanged between frames (battle backdrop, menus: ~3 ms of conversion per eye in the 2026-10-26 log).
+   Each eye (frame buffer pointer) gets its own texture; a content hash decides whether the converted texture can be reused. Overworld: never hashed. */
+static const u32 *t3ptr[2]; static u32 t3hash[2]; static int t3ok[2]; static unsigned t3hit, t3miss;
+static void conv3dRaw(const u32 *f, C3D_Tex *tx);
+extern C3D_Tex *G3G_DirectTex(const u32 *f); extern void G3G_DirectSynced(void);
 static void conv3d(const u32 *f) {
+    /* gpu_direct3d: g3gpu left this eye's 3D layer in its render target (tiled RGBA8, row 255-y = DS row y, same as conv3dRaw writes): sample it as is */
+    { C3D_Tex *dt = G3G_DirectTex(f); if (dt) { t3cur = dt; return; } }
+    int slot = (!t3ptr[0] || t3ptr[0] == f) ? 0 : (!t3ptr[1] || t3ptr[1] == f) ? 1 : -1;
+    if (slot < 0) { t3ok[0] = 0; slot = 0; t3ptr[0] = f; }
+    t3ptr[slot] = f; t3cur = slot ? &tex3dB : &tex3d;
+    if (!P3DS_InField) {
+        u32 h0 = 2166136261u, h1 = 0x9E3779B9u, h2 = 0x85EBCA6Bu, h3 = 0xC2B2AE35u;
+        for (unsigned i = 0; i < 256 * 192; i += 4) { h0 = (h0 ^ f[i]) * 16777619u; h1 = (h1 ^ f[i + 1]) * 16777619u; h2 = (h2 ^ f[i + 2]) * 16777619u; h3 = (h3 ^ f[i + 3]) * 16777619u; }
+        const u32 h = h0 ^ (h1 * 3u) ^ (h2 * 5u) ^ (h3 * 7u);
+        if (t3ok[slot] && t3hash[slot] == h) t3hit++;
+        else { conv3dRaw(f, t3cur); t3hash[slot] = h; t3ok[slot] = 1; t3miss++; }
+        { static unsigned n; if (++n % 600 == 0) PSPNativeMemLog("[GPUC] 3D layer texture outside the overworld: reused %u, converted %u of the last 600 (~3 ms saved per reuse)", t3hit, t3miss), t3hit = t3miss = 0; }
+        return;
+    }
+    t3ok[slot] = 0; conv3dRaw(f, t3cur);
+}
+static void conv3dRaw(const u32 *f, C3D_Tex *tx) {
     /* NativeFrame 6-bit 0xAA_BB_GG_RR (alpha 5-bit) -> PICA RGBA8 (R<<24|G<<16|B<<8|A), 8-bit expand like melonDS,
        alpha 0 -> transparent. Branch-free per pixel, 8 pixels per tile row with constant Morton offsets. */
-    u32 *d = (u32 *)tex3d.data;
+    u32 *d = (u32 *)tx->data;
     for (unsigned y = 0; y < 192; y++) { const unsigned my = 255 - y; const u8 *m = mort + (my & 7) * 8; u32 *drow = d + (my >> 3) * 32 * 64;
         const u32 *s = f + y * 256;
         for (unsigned tx = 0; tx < 32; tx++, s += 8) { u32 *t = drow + tx * 64;
             for (unsigned x = 0; x < 8; x++) { const u32 c = s[x], v = c & 0x3F3F3Fu, e = (v << 2) | ((v >> 4) & 0x030303u);
                 t[m[x]] = (c >> 24) ? (__builtin_bswap32(e) | 0xFFu) : 0u; } } }
-    GSPGPU_FlushDataCache(tex3d.data, 256 * 256 * 4);
+    GSPGPU_FlushDataCache(tx->data, 256 * 256 * 4);
+}
+
+/* GPU state for one layer's colour effect. 0: plain replace. 1: out = src*EVA/16 + dst*EVB/16 (blend constant: A = EVA, RGB = EVB).
+ * 2/3: TEV interpolate texture with white/black by EVY/16 (colour only; texture alpha is kept for the alpha test). */
+static void setFx(int fx) {
+    C3D_TexEnv *env = C3D_GetTexEnv(0); C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, 0, 0); C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+    if (fx >= 2) {
+        const u32 ca = (blendY * 255 + 8) >> 4, cc = fx == 2 ? 0xFF : 0;
+        C3D_TexEnvColor(env, (ca << 24) | (cc << 16) | (cc << 8) | cc);
+        C3D_TexEnvSrc(env, C3D_RGB, GPU_CONSTANT, GPU_TEXTURE0, GPU_CONSTANT);
+        C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_ALPHA);
+        C3D_TexEnvFunc(env, C3D_RGB, GPU_INTERPOLATE);
+    } else { C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, 0, 0); C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE); }
+    if (fx == 1) {
+        const u32 a = (blendA * 255 + 8) >> 4, b = (blendB * 255 + 8) >> 4;
+        C3D_BlendingColor((a << 24) | (b << 16) | (b << 8) | b);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_CONSTANT_ALPHA, GPU_CONSTANT_COLOR, GPU_ONE, GPU_ZERO);
+    } else C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 }
 
 /* returns 1 and fills out[256*192] (0xFFBBGGRR) on success; 0 = not composed (out untouched, caller falls back) */
@@ -205,14 +263,30 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     if (slotsUsed > SLOTS - 3000 || slotsUsed * 2 > HSIZE - 6000) { memset(tab, 0, HSIZE * sizeof(GE)); slotsUsed = 0; P3DS_GcResets++; }
     palPrep(bgpal, 0); palPrep(objpal, 1);
     const u32 dc = rg(regs, 0);
-    int has3d = 0;
+    int has3d = 0, blend3d = 0;
+    /* colour effects (gpu_blend=1). Layers are drawn bottom to top, so blending with "what is below" is GPU blending with
+     * the render target. DS semantics (blend only with a second-target pixel directly below) are reproduced exactly when
+     * every layer drawn below a first-target layer is a second target and not itself a first target, plus the backdrop;
+     * anything else returns 0 and the melonDS path is used. Brightness up/down needs no second target: per-layer TEV. */
+    const u32 bl = P3DS_GcBlendOn ? rh(regs, 0x50) : 0, eff = (bl >> 6) & 3, firstM = bl & 0x3F, secondM = (bl >> 8) & 0x3F;
+    const u32 eva = rh(regs, 0x52) & 0x1F, evb = (rh(regs, 0x52) >> 8) & 0x1F, evy = rh(regs, 0x54) & 0x1F;
+    blendA = eva > 16 ? 16 : eva; blendB = evb > 16 ? 16 : evb; blendY = evy > 16 ? 16 : evy;
+    u32 belowM = 0; int usedFx = 0;
     for (int p = 3; p >= 0; p--) {
         for (int i = 3; i >= 0; i--) { if (!(dc & (0x100u << i)) || (rh(regs, 8 + i * 2) & 3) != (unsigned)p) continue;
-            if (i == 0 && (dc & 8)) { batchBegin(1); bat[nb - 1].count = 6; has3d = 1; continue; }
-            batchBegin(0); drawBG(regs, bgv, dc, i); batchEnd(); }
-        if (dc & 0x1000) { batchBegin(0); drawOBJ(oam, objv, dc, p); batchEnd(); }
+            const int fx = (eff && (firstM & (1u << i))) ? (int)eff : 0;
+            if (i == 0 && (dc & 8)) { if (fx == 1) { P3DS_GcBlendRej++; fail = 1; break; }
+                batchBegin(1, fx); bat[nb - 1].count = 6; has3d = 1; blend3d = relax3d() && (bl & 0x3F00) && !fx && !(belowM & ~secondM) && (belowM || (bl & 0x2000)); belowM |= 1; if (fx) usedFx = 1; continue; }
+            batchBegin(0, fx); const unsigned q0 = nq; drawBG(regs, bgv, dc, i); batchEnd();
+            if (nq > q0) { if (fx == 1 && ((belowM & ~secondM) || (belowM & firstM) || !(bl & 0x2000))) { P3DS_GcBlendRej++; fail = 1; break; }
+                belowM |= 1u << i; if (fx) usedFx = fx; } }
+        if (fail) break;
+        if (dc & 0x1000) { const int fx = (eff && (firstM & 0x10)) ? (int)eff : 0; batchBegin(0, fx); const unsigned q0 = nq; drawOBJ(oam, objv, dc, p); batchEnd();
+            if (nq > q0) { if (fx == 1 && ((belowM & ~secondM) || (belowM & firstM) || !(bl & 0x2000))) { P3DS_GcBlendRej++; fail = 1; }
+                belowM |= 0x10; if (fx) usedFx = fx; } }
         if (fail) break; }
     if (fail) { P3DS_GcCpuUs = (svcGetSystemTick() - t0) / 268; return 0; }
+    if (usedFx == 1) P3DS_GcBlendFrames++; else if (usedFx) P3DS_GcFxFrames++;
     /* the 3D layer quad lives after the tile quads */
     const u64 tw = svcGetSystemTick(); P3DS_GcWalkUs = (unsigned)((tw - t0) / 268);
     unsigned q3 = nq; if (has3d) { GV *v = vb + nq * 6; nq++;
@@ -224,9 +298,14 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     GSPGPU_FlushDataCache(vb, nq * 6 * sizeof(GV));
     P3DS_GcQuads = nq;
     const u64 t1 = svcGetSystemTick(); P3DS_GcConvUs = (unsigned)((t1 - tw) / 268);
-    const u32 bd = col8(bgpal[0]);
+    u32 bd = col8(bgpal[0]);
+    if (eff >= 2 && (firstM & 0x20)) {  /* backdrop as first target of brightness up/down (bias 8 / 7, as ColorBrightness*) */
+        u32 c[3] = { bd >> 24, (bd >> 16) & 255, (bd >> 8) & 255 };
+        for (int k = 0; k < 3; k++) c[k] = eff == 2 ? c[k] + (((255 - c[k]) * blendY + 8) >> 4) : c[k] - ((c[k] * blendY + 7) >> 4);
+        bd = (c[0] << 24) | (c[1] << 16) | (c[2] << 8) | 0xFF; }
     P3DS_Crumb("gc-draw", 0);
     C3D_FrameBegin(0);
+    G3G_DirectSynced();   /* FrameBegin waited for every queued draw, including g3gpu's direct 3D frame */
     C3D_RenderTargetClear(rt, C3D_CLEAR_ALL, bd, 0);
     C3D_FrameDrawOn(rt);
     C3D_BindProgram(&prog);
@@ -240,8 +319,15 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
     { C3D_TexEnv *env = C3D_GetTexEnv(0); C3D_TexEnvInit(env); C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, 0, 0); C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
       for (int k = 1; k < 6; k++) C3D_TexEnvInit(C3D_GetTexEnv(k)); }
-    for (unsigned b = 0; b < nb; b++) { if (bat[b].is3d) { C3D_TexBind(0, &tex3d); C3D_DrawArrays(GPU_TRIANGLES, q3 * 6, 6); }
-        else if (bat[b].count) { C3D_TexBind(0, &atlas); C3D_DrawArrays(GPU_TRIANGLES, bat[b].first * 6, bat[b].count * 6); } }
+    int curFx = 0;
+    for (unsigned b = 0; b < nb; b++) { if (!bat[b].is3d && !bat[b].count) continue;
+        if (bat[b].fx != curFx) { curFx = bat[b].fx; setFx(curFx); }
+        if (bat[b].is3d) { C3D_TexBind(0, t3cur);
+            /* run 110 gpu_blend_3d: translucent 3D pixels (move effects) blend with the second-target layers below like the DS.
+               The 3D target was cleared to alpha 0, so its colour is already alpha-weighted: premultiplied blend. */
+            if (blend3d) C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ZERO);
+            C3D_DrawArrays(GPU_TRIANGLES, q3 * 6, 6); if (blend3d) setFx(curFx); }
+        else { C3D_TexBind(0, &atlas); C3D_DrawArrays(GPU_TRIANGLES, bat[b].first * 6, bat[b].count * 6); } }
     C3D_SyncDisplayTransfer((u32 *)rtTex.data, GX_BUFFER_DIM(256, 256), rb, GX_BUFFER_DIM(256, 256), RB_FLAGS);
     C3D_FrameEnd(0);
     P3DS_Crumb("gc-wait", 0);

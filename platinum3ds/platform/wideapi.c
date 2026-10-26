@@ -20,7 +20,8 @@ static short splits[2][MAX_SPLITS * 7]; static int nSplits[2];
 static int on = -1;
 void P3DS_SetWideLayouts(int v) { on = v != 0; PSPNativeMemLog("[WIDE] wide_layouts=%d (settings)", on); }
 int P3DS_WideLayoutsOn(void) { if (on < 0) { on = P3DS_CfgInt("wide_layouts", 0) != 0; PSPNativeMemLog("[WIDE] run83 wide-layout API linked, wide_layouts=%d (%s %s)", on, __DATE__, __TIME__); } return on; }
-int NitroPort_WideScreenExtra(void) { return P3DS_WideLayoutsOn() ? 32 : 0; }
+extern int P3DS_GpuBattleUp;  /* render3ds.cpp run 110: slider up + stereo_gpu_battle: GPU-composed 4:3 frames, so no wide HUD offsets */
+int NitroPort_WideScreenExtra(void) { return P3DS_WideLayoutsOn() && !P3DS_GpuBattleUp ? 32 : 0; }
 int NitroPort_WidePictures(void) { return 0; }
 int NitroPort_SunShadows(void) { return 0; }
 
