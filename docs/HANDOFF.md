@@ -2,6 +2,11 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Wireless M0 results + M1 local wireless layer (Claude, NOT built, untested)
+- M0 (`tools/uds_probe`, two New 3DS): RTT p50 4-6 ms, p99 13-20 ms. 0.5-2.5% loss, all of it on broadcast frames; unicast lost nothing. Details in docs/WIRELESS.md.
+- M1: `platform/wm_uds.c` + `platform/uds_ctru.c` replace pspoke's `wm_absent.o` in `full/Makefile`. New toggle `wireless` (Game tab "Local wireless (test)", default OFF; OFF = wm_absent.c code unchanged). ON = the DS WM API over 3DS UDS with unicast and resends. Log tag `[WIRELESS]`.
+- Test plan: build, then on BOTH consoles with COPIED saves turn the toggle on, Pokemon Center 2F > Union Room, then trade one Pokemon. Send both log.txt files. Then check both saves with tools/savecheck.py and in DeSmuME.
+
 ## 2026-10-26 — Wireless / Wi-Fi feasibility (docs only, Claude)
 - New `docs/WIRELESS.md` (same file in the SoulSilver repo). Local 3DS-to-3DS play (trade, battle, Union Room, Underground, Platinum port <-> SoulSilver port) is realistic by replacing pspoke's `wm_absent.c` with a UDS-backed WM layer. Local play with a real DS is not possible from native 3DS mode. Trades with legit games go online through a revival server (Wiimmfi), with GTS first.
 - Recommended first milestone: M1 local trade between two 3DSes, after an M0 UDS latency probe. Nothing is built or tested. No code changed.

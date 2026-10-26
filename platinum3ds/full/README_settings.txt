@@ -311,3 +311,9 @@ wide_3d_alpha (Debug, default ON): wide layouts draw 3D fade-ins such as battle 
 
 hunt_async_save (Debug, default ON): the shiny-hunt file is written in the background, removing the ~70 ms drop at wild battle start.
 field_prof (Debug): OFF / ON / AUTO (default) - AUTO profiles 8 s after each battle start/end.
+
+wireless (Game tab "Local wireless (test)", default OFF): 1 = the game's DS wireless (Union Room, Pokemon Center
+2F trades/battles, Underground with friends) runs over 3DS local wireless, 3DS to 3DS only (another console running
+this port; real DS consoles can't join, see docs/WIRELESS.md). Takes effect the next time the game turns wireless on
+(entering the Union Room or the Underground). OFF = exactly as before: a radio with nobody in range. Test with
+copies of your save on both consoles; a trade writes the save through the game's own code. Log tag [WIRELESS].

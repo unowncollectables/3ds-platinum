@@ -12,8 +12,9 @@ A      := $(W)/native-audio-app
 DEFS   := -O2 -DSDK_PORT -DSDK_X86 -DSDK_TS -DSDK_4M -DSDK_FINALROM -DNNS_FINALROM -DSDK_VERSION_MAJOR=4 -DSDL_MAIN_HANDLED -DMELONDS_PSP -DPSP_NATIVE_RGBA_OUTPUT=1 -DPOKEPLATINUM_GENERATED_ENUM -ffunction-sections -fdata-sections
 INC    := -I$(W)/native-probe/backing/include -I$(W)/native-graphics/alias-proof/include -I$(W)/native-probe/generated -I$(W)/native-graphics/libntr/include -I$(W)/../melon -I$(W)/native-render-opt -I$(A)/overlays/include
 PLAT   := ../platform
-POBJS  := build/heapfast.o build/lowermenu.o build/main3ds.o build/logring.o build/psp_ctru.o build/sdl_ctru.o build/stubs3ds.o build/render3ds.o build/g3soft.o $(if $(filter 1,$(CRUMBS)),build/ov5crumbs.o) $(if $(filter 1,$(PROF)),build/ov5prof.o build/ov5profc.o) build/gpuscale.o build/blit_shbin.o build/g3gpu.o build/g3_shbin.o build/gpucomp.o build/romcache3ds.o build/p3ds_gamefont.o build/p3ds_foltalk.o build/wideapi.o build/widecomp.o build/speedcheck.o build/hunt.o
-APPOBJS:= sas_out.o vram_dirty.o stackprobe.o ctrdg_absent.o search_disabled.o wm_absent.o fx_mtx_native.o cadence.o audio_bank.o audio_loader.o audio_out.o audio_backend.o audio_seq.o audio_exchannel.o audio_channel.o audio_engine.o mic_pm.o os_sync.o offline.o gx_dma.o frame.o owner_lock.o threads.o alarms.o overlay.o config.o platform.o input.o romfs.o backup.o backing.o graphics_registers.o trainer_ai.o mi_memory.o mi_dma.o memprobe.o power.o
+POBJS  := build/heapfast.o build/lowermenu.o build/main3ds.o build/logring.o build/psp_ctru.o build/sdl_ctru.o build/stubs3ds.o build/render3ds.o build/g3soft.o $(if $(filter 1,$(CRUMBS)),build/ov5crumbs.o) $(if $(filter 1,$(PROF)),build/ov5prof.o build/ov5profc.o) build/gpuscale.o build/blit_shbin.o build/g3gpu.o build/g3_shbin.o build/gpucomp.o build/romcache3ds.o build/p3ds_gamefont.o build/p3ds_foltalk.o build/wideapi.o build/widecomp.o build/speedcheck.o build/hunt.o build/wm_uds.o build/uds_ctru.o
+# wireless M1: pspoke's wm_absent.o is replaced by build/wm_uds.o (same behaviour with wireless=0; docs/WIRELESS.md).
+APPOBJS:= sas_out.o vram_dirty.o stackprobe.o ctrdg_absent.o search_disabled.o fx_mtx_native.o cadence.o audio_bank.o audio_loader.o audio_out.o audio_backend.o audio_seq.o audio_exchannel.o audio_channel.o audio_engine.o mic_pm.o os_sync.o offline.o gx_dma.o frame.o owner_lock.o threads.o alarms.o overlay.o config.o platform.o input.o romfs.o backup.o backing.o graphics_registers.o trainer_ai.o mi_memory.o mi_dma.o memprobe.o power.o
 RENDER := $(W)/native-render-opt/native_gpu.o $(W)/native-render-opt/GPU2D_Soft.o $(W)/native-stack-render/g3_handler.o $(W)/native-stack-render/frontend.o
 LIBS   := -Wl,--start-group $(A)/overlays/libplatinum-overlays.a $(A)/overlays/libinternal-overlays.a $(W)/native-probe/libnetwork-probe.a $(A)/libsdk-filtered.a -Wl,--end-group
 ARCH   := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
@@ -28,9 +29,9 @@ build/%.o: $(PLAT)/%.S
 	@mkdir -p build; /opt/devkitpro/devkitARM/bin/arm-none-eabi-as -march=armv6k -mfloat-abi=hard -mfpu=vfp $< -o $@
 build/%.o: $(PLAT)/%.cpp
 	@mkdir -p build; $(CXX) $(DEFS) $(INC) -std=gnu++17 -fno-exceptions -fno-rtti -fpermissive -c $< -o $@
-build/sdl_ctru.o build/psp_ctru.o: INC :=
+build/sdl_ctru.o build/psp_ctru.o build/uds_ctru.o: INC :=
 # libctru/citro3d ABI uses short enums; game-facing code uses int enums (pspoke/DS data layout).
-build/sdl_ctru.o build/psp_ctru.o build/gpuscale.o build/gpucomp.o: DEFS += -fshort-enums
+build/sdl_ctru.o build/psp_ctru.o build/uds_ctru.o build/gpuscale.o build/gpucomp.o: DEFS += -fshort-enums
 build/blit_shbin.h build/blit_shbin.s: $(PLAT)/shaders/blit.v.pica
 	@mkdir -p build; /opt/devkitpro/tools/bin/picasso -o build/blit.shbin $< && cd build && /opt/devkitpro/tools/bin/bin2s -H blit_shbin.h blit.shbin > blit_shbin.s
 build/blit_shbin.o: build/blit_shbin.s

@@ -149,6 +149,48 @@ Risks and limits:
   and only use copies, as `AGENTS.md` requires.
 - **Toggle rule:** one master toggle per mode (below). Off means today's `wm_absent.c` behaviour, bit for bit.
 
+## M0 results (2026-10-26, New 3DS XL + New 3DS, about 1 m apart)
+
+| Run | Lost | RTT p50 / p95 / p99 | Worst gap at the client |
+|---|---|---|---|
+| 60 Hz | 20 of 3600 (0.6%) | 4 / 9 / 13 ms | 42 ms |
+| 60 Hz | 58 of 3600 (1.6%) | 6 / 13 / 20 ms | 50 ms |
+| 60 Hz | 90 of 3600 (2.5%) | 5 / 11 / 18 ms | 50 ms |
+| 30 Hz | 21 of 1800 (1.2%) | 5 / 9 / 14 ms | 98 ms |
+
+- Every lost packet was a host **broadcast** that the client never saw ("missed pings" = lost). Not one unicast reply
+  was lost. 802.11 broadcast frames are never acknowledged or retried; unicast frames are.
+- At the ports' 30 fps (33 ms a frame) the round trip fits inside one frame almost always. The beacon carries
+  112 bytes of app data intact (the DS game info size).
+- Design consequences for M1: send unicast to each peer (never broadcast), number the messages, and resend anything
+  not acknowledged, because the game's CommSys expects the DS MP guarantee that data arrives.
+
+## M1 status (2026-10-26): written, not built or tested
+
+`platinum3ds/platform/wm_uds.c` (DS WM API, replaces pspoke's `wm_absent.o` in the link) and
+`platinum3ds/platform/uds_ctru.c` (libctru UDS, worker thread). Toggle `wireless` (Settings > Game > "Local wireless
+(test)", default OFF). OFF runs pspoke's `wm_absent.c` code unchanged (copied into `wm_uds.c`).
+
+How it maps (checked against pret/pokeplatinum `src/wireless_manager.c`):
+- Parent: `WM_SetParentParameter`/`WM_SetGameInfo`/`WM_SetEntry` fill a 128-byte beacon (`P3W1`: GGID, TGID, entry
+  attribute, user game info). `WM_StartParent` creates the UDS network on the worker thread, and `PARENT_START`
+  is reported once it is up. Beacon-sent ticks continue as before.
+- Child: `WM_StartScan` returns one found parent per call, rebuilt as a DS `WMBssDesc`/`WMGameInfo`, so the game's
+  GGID and entry checks and its room lists work unchanged. `WM_StartConnectEx` joins over UDS, then sends a hello
+  with the child SSID (the parent game checks `ssid[0]` = comm type and "DP"). The parent answers with the aid
+  (UDS node - 1), and then each side gets `CONNECTED`.
+- Data: `WM_SetMPDataToPortEx` queues a copy per connected destination (go-back-N, resend after 50 ms, peer dropped
+  after 5 s without an acknowledgement or 6 s of silence). The send callback comes a frame later. Received data
+  goes to the port callbacks as `PORT_RECV` with the sender's aid. A leaving peer gives `DISCONNECTED` to the
+  parent/connect callback and to every port, which is what the game's `recvFunc(aid, NULL, 0)` path expects.
+- All callbacks run from `PSPNativeWMPump` (game thread, once a frame). Slow UDS calls run on a worker thread.
+- `[WIRELESS]` log lines: mode chosen, hosting/connecting, children joining/leaving with resend counts, and a
+  10 s summary (tx, rx, resent).
+
+Not handled yet / known risks: the main-menu passive search stays disabled (pspoke `search_disabled.c`). A console
+that sleeps or goes to HOME drops out like a DS out of range. Throughput is one message per frame each way (the DS
+does about 60/s), so big transfers may be slower than on DS. Untested: everything on hardware.
+
 ## Recommended first milestone: M1, local trade between two 3DSes
 
 "Two New 3DSes, each running the Platinum port with a copied save, meet in the Pokemon Center's Union Room (or the
@@ -162,7 +204,7 @@ and it unlocks the Underground, local battles and Platinum-to-SoulSilver trades 
 | Step | What | Where | Size |
 |---|---|---|---|
 | M0 | UDS probe: **written**, `tools/uds_probe/` in 3ds-platinum (a standalone .3dsx, no game code). It hosts or joins a UDS network and logs round-trip time, loss and jitter for 192/38-byte packets at 60 or 30 Hz over 60 s to `sdmc:/3ds/uds_probe.txt` (`[UDS]` lines). Needs two consoles. Nathan has a New 3DS XL and a New 3DS | `tools/uds_probe/` | small, done |
-| M1a | `wm_uds.c`: the full WM API on UDS (table above), selected at run time by `wireless=1` (System tab, default OFF). Off falls through to the current `wm_absent.c` code (both in one file, or two files behind a dispatch). Log tag `[WIRELESS]`: every state change and connect/disconnect, MP cycle stats every 10 s | pspoke-patch (services/) + Makefile | medium |
+| M1a | **written** `wm_uds.c` + `uds_ctru.c` (see M1 status): the full WM API on UDS, selected at run time by `wireless=1` (Game tab, default OFF). Off falls through to the current `wm_absent.c` code (both in one file, or two files behind a dispatch). Log tag `[WIRELESS]`: every state change and connect/disconnect, MP cycle stats every 10 s | pspoke-patch (services/) + Makefile | medium |
 | M1b | Make the beacon game info and scan results byte-exact, so the Union Room lists the other 3DS. Map aids and node IDs | same | small |
 | M1c | Hardware test: Union Room trade, then the Wireless Trade desk, then a local battle, on two copied saves. Then savecheck.py and a cart/DeSmuME load of both saves | Nathan + logs | test |
 | M2 | Underground with 2 to 5 players (the most timing-sensitive; may need wall-clock MP pacing) | wm_uds.c | medium |
