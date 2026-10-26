@@ -25,7 +25,7 @@ static int uiRow = 4;
    verbose_boot=1 brings the checklist console back. Errors/crashes always switch to the full checklist + red box. */
 static int quietBoot = -1;
 static int isQuiet(void) { if (quietBoot < 0) { quietBoot = 1; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l[64]; int v; while (fgets(l, sizeof l, f)) if (sscanf(l, "verbose_boot=%d", &v) == 1) quietBoot = !v; fclose(f); } } return quietBoot; }
-static void uiInit(void) { consoleSelect(&con); consoleClear(); if (isQuiet()) return; /* run 64 clean launch: quiet boot = plain black (the credits splash is drawn by render3ds) */ __real_printf("\x1b[1;1H\x1b[36;1m  Platinum 3DS\x1b[0m  \x1b[2mdev build\x1b[0m\n  ------------------------------\n"); }
+static void uiInit(void) { consoleSelect(&con); consoleClear(); if (isQuiet()) return; /* run 64 clean launch: quiet boot = plain black (the credits splash is drawn by render3ds) */ __real_printf("\x1b[1;1H\x1b[36;1m  Platinum 3DS\x1b[0m  \x1b[2mv1.0\x1b[0m\n  ------------------------------\n"); }
 static const char *stepNames[16]; static int stepOk[16], nSteps;
 static void uiStepDraw(const char *name, int ok);
 static void uiStep(const char *name, int ok) { if (nSteps < 16) { stepNames[nSteps] = name; stepOk[nSteps++] = ok; } uiStepDraw(name, ok); }
@@ -200,6 +200,13 @@ int P3DS_TouchRead(int *x, int *y) {
           if (cs.dy > -40 && cs.dy < 40) armed = 1;
           if (!inj && armed && P3DS_InField && (cs.dy >= 80 || cs.dy <= -80)) { armed = 0; inj = 4; injY = cs.dy > 0 ? 64 : 128; }
           if (inj) { inj--; *x = 240; *y = injY; touchPrev = 1; return 1; } } }
+    { extern int P3DS_LowerMenuDraw; extern int NitroPort_LowerMenuTouch(int, int, int, int *, int *);
+      { extern int lmTouchInj; if (P3DS_LowerMenuDraw && lmTouchInj > 0) { lmTouchInj--; *x = 240; *y = 64; touchPrev = 1; return 1; } } /* run 102 POKETCH button */
+      if (P3DS_LowerMenuDraw) { /* run 100 lower_menu: the menu owns the screen; only touches that began in its panel reach the game */
+        int down = (hidKeysHeld() & KEY_TOUCH) != 0, mx = 0, my = 0; if (down) hidTouchRead(&t);
+        int ok = NitroPort_LowerMenuTouch(down, down ? t.px : 0, down ? t.py : 0, &mx, &my);
+        touchPrev = down; if (!down || !ok || mx < 0 || mx > 255 || my < 0 || my > 191) return 0;
+        *x = mx; *y = my; return 1; } }
     if (!(hidKeysHeld() & KEY_TOUCH)) {
         /* run 47 touch_latch=1 (default): the game samples touch once per game frame (~35-45 ms); a quick tap that
            starts and ends between two samples was lost (felt like taps registering late / needing a 2nd tap). Look at

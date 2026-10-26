@@ -1,4 +1,4 @@
-# Platinum 3DS
+# Platinum 3DS v1.0
 
 A native **New Nintendo 3DS** homebrew port of Pokémon Platinum (US, Rev 1), built on top of
 [pspoke](https://github.com/IbrahimIrfan/pspoke) (GPL-3.0), which compiles the community decompilation
@@ -11,7 +11,15 @@ audio fixes, a settings menu and HGSS-style following Pokémon.
 > decompilation projects and **your own legally dumped cartridge**. Not affiliated with or endorsed by Nintendo,
 > Game Freak, Creatures or The Pokémon Company. Do not ask for ROMs or builds.
 
-New 3DS / New 2DS only (needs the extra RAM and CPU cores). Private personal project; experimental.
+New 3DS / New 2DS only (needs the extra RAM and CPU cores). Private personal project.
+
+**Version 1.0** (run 100): wide view and wide battle/menu layouts, stereoscopic 3D, following Pokémon, a settings app
+(L+R+Y) with per-option help, optional bottom-screen icon menu (ported from GabeSud0), shiny-hunt tools, and an animated
+3D HOME Menu banner for the `.cia`. The save format is unchanged: only the game writes `platinum.sav`.
+
+**Credits:** port by Unown Collectables (with 3DS Homebrew Dev); built on [pspoke](https://github.com/IbrahimIrfan/pspoke)
+and the pret/pokeplatinum decompilation; wide layouts, banner and the bottom icon menu adapted from
+[GabeSud0/pokeplatinum-3ds](https://github.com/GabeSud0/pokeplatinum-3ds) (GPL-3.0). See `THIRD_PARTY.md`.
 
 ## What you need
 

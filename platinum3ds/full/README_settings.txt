@@ -1,8 +1,30 @@
-Platinum 3DS port - settings (sdmc:/3ds/platinum3ds/config.txt)
+Platinum 3DS v1.0 - settings (sdmc:/3ds/platinum3ds/config.txt)
 ================================================================
 Put one setting per line, like:   wideview=1
 Anything not in the file uses its default. Delete a line to go back to the default.
 If something looks or sounds wrong after a change, delete that line (or the whole config.txt).
+
+VERSION 1.0 (run 100)
+  Every option below can be changed in the settings app (L+R+Y); the selected row now shows a short help line on the
+  top screen. Experimental/diagnostic options live in the hidden Debug tab (press SELECT in the settings app).
+  New in 1.0:
+  lower_menu=0      Keys tab "Bottom icon menu". 1 = GabeSud0's bottom-screen icon menu (MAP, POKEMON, BAG, TRAINER,
+                    POKEDEX, POKETCH, SAVE, OPTIONS + two item squares) drawn around the field's lower screen, which
+                    sits in the panel on the left. Tapping a button opens that start-menu entry (same path as the
+                    settings Menu tab); the item squares press Y (registered item); MAP and POKETCH have no action
+                    yet. Touches inside the panel go to the game as before. Only in the field; off = nothing changes.
+                    Icons are read from your ROM (graphic/menu_gra.narc). Default 0.
+  heap_fast=1       (run 101, Debug "Fast heap free") skips a slow table scan on every game heap free when it cannot
+                    find anything (same result); shorter load hitches (battle end, menus). Read at startup.
+  dc_flush_skip=1   (run 102, Debug "Skip game cache flushes") skips the game's DS cache flushes, which do nothing
+                    useful on the 3DS port. Read at startup. 0 = flush as before.
+  lower_menu MAP opens the Bag (Town Map is in Key Items); POKETCH switches to the next Pokétch app.
+  field_prof=0      (run 101, Debug "Load-hitch profiler") logs the slowest game functions of any frame >= 70 ms ([PROF]).
+  Settings app top screen shows your play time (read from the game's data, never written).
+  splash_ms=3000    the boot credits now list Unown Collectables, 3DS Homebrew Dev, pspoke/pret and GabeSud0
+                    (A skips). credits_splash=0 turns it off.
+  log_level=1       periodic diagnostic lines (wide haze, GPU-compose stereo, bottom skip, present skip, tearfix)
+                    are only written at log_level=2 ("Log detail" in Debug); perf summaries stay.
 
 HOTKEYS (hold L and R, then press the button; the game never sees these presses)
   L+R+SELECT  cycle screen scale: 1:1 / 1.25x / fill (remembered) - happens when you let go of SELECT
@@ -280,6 +302,9 @@ Run 80
   wide_stereo=1       (run 97, Debug tab "Wide layout 3D depth": with wide_layouts and the 3D slider up, the right eye gets its own wide picture with the right-eye 3D layer, so battles keep slider depth. 0 = right eye copies the left (run 96: flat, a little faster))
   wide_stereo_par=1   (run 97: that right-eye picture is composed on core 2 while the main thread does the left eye. 0 = both on the main thread)
   wide_dirty=1        (run 98, Debug tab "Wide redraw changed lines": widecomp redraws only lines whose inputs changed, plus a rolling 8-line refresh. 2 = verify against a full redraw (slow, logs mismatches), 0 = full redraw (run 97))
+  wide_dirty_regs=1   (run 100, Debug tab "Ignore timing registers": wide_dirty hashes only the registers widecomp reads, so VCOUNT/DISPSTAT/3D/capture register changes no longer force a full redraw. 0 = hash all 0x80 bytes (run 99))
   wide_early_check=1  (run 99: wide_early is only used when widecomp will accept the frame; a declined frame in stereo (Poke Ball send-out) no longer falls to the slow serial right-eye redraw. 0 = run 98)
 Run 88
   shiny_suite=0        (settings app Extra tab "Shiny hunt suite": 1 = shiny hunt counters in hunt.txt (encounters, since last shiny, soft resets, time, shinies), a chime + flash when a wild shiny appears, and a hunt panel on the Ball tab: Left/Right species, X twice reset, A export CSV to hunts/)
+
+wide_3d_alpha (Debug, default ON): wide layouts draw 3D fade-ins such as battle send-outs themselves instead of the slow path. OFF = old behaviour.

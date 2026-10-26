@@ -1429,3 +1429,24 @@ Off by default; each has a settings-app row; nothing writes to platinum.sav (che
 ## Run 99 (2026-10-25, Grok Bot) - Poke Ball send-out hitch
 - wide_early_check=1: declined widecomp frames in stereo keep the parallel right-eye path (send-out hitch 48-57 ms in the hw log).
 - Battle-end hitch (87 ms game-side during the field reload) analysed, not fixed. See docs/HANDOFF.md.
+
+## Run 100 (2026-10-25, Grok Bot)
+- wide_dirty_regs=1: fewer full widecomp redraws (only registers composeNow reads are hashed). Other run-100 goals deferred; see docs/HANDOFF.md.
+
+## Run 100 = v1.0 (2026-10-25)
+
+Bottom icon menu (lower_menu, GabeSud0 port, default 0), v1.0 version string and credits splash, settings help lines, quieter log_level 1, wide_dirty_regs. Battle-end hitch, async readback, mono split not done (see HANDOFF). Builds: 3dsx adb863b6ecb81a741e7dbfe6335a9a5544a2d0df, CIA 59ba3ce209df4f3c9673c0342deb131221ea565f.
+
+## Run 101 = v1.0 (2026-10-25)
+
+field_prof profiler (default 0), heap_fast (default 1: skips pspoke's 8192-entry table scan per heap free; emulator free time 1232 ms -> 1.5 ms), lower menu gender icon, play time in settings, Debug tab tidy. Builds: 3dsx 194b9cf473791bbaaf3c71de6af793b72c76ec2a, CIA a8e7c54261a3635c4844ac21c91b04c86739a237.
+
+## Run 102 = v1.0 (2026-10-25)
+
+lower menu MAP/POKETCH actions, menu hidden behind settings, play time checked, dc_flush_skip (default 1). Builds: 3dsx a49f1cd39acf018a6282f786aa28d3bf6d98abc7, CIA 17f02de4b388423744f605e75536bc73a440098d.
+
+## Run 103 = v1.0 (2026-10-25)
+
+MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, line 52) but not fixed. Builds: see HANDOFF / report.
+
+- Run 103: wide_3d_alpha — 3D fade-in (battle send-out) composed on the wide path instead of the slow fallback.
