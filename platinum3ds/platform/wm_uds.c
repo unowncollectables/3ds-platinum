@@ -30,6 +30,8 @@ static WMCallbackFunc parentCallback;
 static unsigned long long nextBeacon;
 static u16 beaconMs=200,tgid;
 static unsigned long long now(void){return P3U_NowUs();}
+/* Time since x, never negative (x may be stamped after the caller read the clock). */
+static unsigned long long since(unsigned long long t,unsigned long long x){return t>x?t-x:0;}
 /* Queue a result for fn, delivered no sooner than ms (and at least one frame) from now. NULL fn: nothing to deliver. */
 static WMResult*post(WMCallbackFunc fn,u16 apiid,unsigned ms){
  static WMResult unused;
@@ -234,7 +236,7 @@ static void netPump(void) {
 		enqueue(0, PORT_HELLO, childSsid, sizeof childSsid);
 		connecting = 2;
 	}
-	if (role == 2 && connecting && (st == P3U_FAILED || t - connectSince > 8000000)) {
+	if (role == 2 && connecting && (st == P3U_FAILED || since(t, connectSince) > 8000000)) {
 		PSPNativeMemLog("[WIRELESS] connect %s", st == P3U_FAILED ? "failed" : "timed out");
 		connecting = 0; P3U_Leave();
 		if (connectCallback) post(connectCallback, WM_APIID_START_CONNECT, 0)->base.errcode = WM_ERRCODE_FAILED;
@@ -248,20 +250,20 @@ static void netPump(void) {
 	for (int a = 0; a < PEERS; a++) {
 		Peer *p = &peers[a];
 		if (!p->up) continue;
-		if (t - p->lastRx > PEER_TIMEOUT_US) { peerDown(a, "timeout"); continue; }
+		if (since(t, p->lastRx) > PEER_TIMEOUT_US) { peerDown(a, "timeout"); continue; }
 		/* Resend everything unacknowledged, oldest first, when the oldest is overdue (go-back-N). */
 		if (p->txCount) {
 			TxMsg *m0 = &p->tx[p->txHead];
-			if (t - m0->firstAt > GIVEUP_US) { peerDown(a, "no ack"); if (role == 1) P3U_Eject((u16)(a + 1)); continue; }
-			if (t - m0->sentAt > RESEND_US)
+			if (since(t, m0->firstAt) > GIVEUP_US) { peerDown(a, "no ack"); if (role == 1) P3U_Eject((u16)(a + 1)); continue; }
+			if (since(t, m0->sentAt) > RESEND_US)
 				for (int i = 0; i < p->txCount; i++) {
 					TxMsg *m = &p->tx[(p->txHead + i) % TXQ];
 					rawSend(a, PK_DATA, m->seq, m->port, m->data, m->len); m->sentAt = t; p->resent++; stResent++;
 				}
 		}
-		if (p->ackDue || t - p->lastTx > PING_US) rawSend(a, p->ackDue ? PK_ACK : PK_PING, 0, 0, NULL, 0);
+		if (p->ackDue || since(t, p->lastTx) > PING_US) rawSend(a, p->ackDue ? PK_ACK : PK_PING, 0, 0, NULL, 0);
 	}
-	if (t - stSince > 10000000 && (stTx || stRx)) {
+	if (since(t, stSince) > 10000000 && (stTx || stRx)) {
 		PSPNativeMemLog("[WIRELESS] 10 s: role %d aid %u peers %04x tx %lu rx %lu resent %lu", role, myAid, connectedBitmap(),
 		                (unsigned long)stTx, (unsigned long)stRx, (unsigned long)stResent);
 		stTx = stRx = stResent = 0; stSince = t;

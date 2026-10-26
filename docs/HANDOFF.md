@@ -2,6 +2,10 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Wireless: host test + fix (Claude)
+- New `tools/wm_uds_test.c`: two processes run the real `wm_uds.c` against a mock UDS (socketpair with loss/dup/reorder) and a fake game shaped like pret's `wireless_manager.c` (parent params, scan + GGID/entry filter, connect with child SSID, MP, port send/recv). It checks every message arrives once, in order, intact. Scenarios: clean, 2.5% loss, 5% loss + dup + reorder, 15% loss, host vanishing mid-trade. All pass.
+- Bug it found (fixed): `netPump` read the clock, then the child's hello stamped a later time, so `t - firstAt` wrapped and the brand-new link was dropped as "no ack" right after connecting. All age checks now use `since()`, which never goes negative. This would very likely have broken the first hardware trade.
+
 ## 2026-10-26 — Run 108: slider-on battles (Grok Bot, branch `run108`)
 - Stall cause: there is no extra stall in the vblank wait. The game's VBlank waits run on a fixed 60 Hz grid (pspoke cadence.c, 2 waits per game frame). The Run 104 hardware log shows steady slider-on battles at 34.2-34.3 ms/frame = g3soft 21.6 (of which G3G_End GPU draw+readback ~10.6 ms for 2 eyes, incl. ~5.4 ms CPU convert) + composite 10.7 + present 1.7. That is ~1 ms over the 33.3 ms budget, so frames miss the next tick and wait for the one after (the "vblank wait 14 ms" in 40-44 ms frames). Fix = cut work below 33 ms, not change the wait.
 - Worst slider-on drops are the battle intro (DISPCNT 00119F18 = OBJ window, wide declines with reason 3): 45-50 ms composite, 14-15 fps on hardware, right eye rendered by engine A a second time.
