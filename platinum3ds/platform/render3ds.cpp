@@ -868,7 +868,7 @@ static const MItem mItems[]={
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,2,1,1,1,1,1,0,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,2,1,1,1,1,1,0,1,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
 static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
@@ -1231,11 +1231,12 @@ static int Present(bool){
  if(splitNow){memcpy((void*)&engineAS,(const void*)&engineA,sizeof engineA);line0Done=false;bSplit=true;splitN++;}
  /* run 97 wide_stereo_par=1: with wide_early in stereo, the right eye's wide compose runs on core 2 (after engine B) while
     the main thread composes the left eye: both eyes keep their own 3D layer at about the cost of one. */
- bWideROk=false;{static int wsp=-1;if(wsp<0){wsp=P3DS_CfgInt("wide_stereo_par",1);PSPNativeMemLog("[WIDE] wide_stereo_par=%d",wsp);}
+ bWideROk=false;bWrSplit=false; /* run 107: was left true from an earlier stereo frame; a later mono frame then waited forever on wrDone (watchdog hang at slider 1 -> 0) */
+ {static int wsp=-1;if(wsp<0){wsp=P3DS_CfgInt("wide_stereo_par",1);PSPNativeMemLog("[WIDE] wide_stereo_par=%d",wsp);}
   static int wsc2=-1;if(wsc2<0)wsc2=P3DS_CfgInt("wide_stereo",1);
   if(wsp&&wsc2&&wlEarlyWant&&stereo&&rightEye&&(PSPNative_GfxRegisters[0]&8)){wideRRegs=PSPNative_GfxRegisters;
    wideRSrc={GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,GPU::VRAMFlat_ABGExtPal,GPU::VRAMFlat_AOBJExtPal,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,rightEye};
-   static int wsr=-1;if(wsr<0){wsr=P3DS_CfgInt("wide_split_r",1)!=0&&P3DS_CfgInt("wide_dirty",1)==1;if(wsr){LightEvent_Init(&wrGo,RESET_ONESHOT);LightEvent_Init(&wrDone,RESET_ONESHOT);}PSPNativeMemLog("[WIDE] wide_split_r=%d",wsr);}
+   static int wsr=-1;if(wsr<0){wsr=P3DS_CfgInt("wide_split_r",0)!=0&&P3DS_CfgInt("wide_dirty",1)==1;if(wsr){LightEvent_Init(&wrGo,RESET_ONESHOT);LightEvent_Init(&wrDone,RESET_ONESHOT);}PSPNativeMemLog("[WIDE] wide_split_r=%d",wsr);}
    bWrSplit=wsr!=0;wrSp.n[0]=wrSp.n[1]=0;bWideR=true;}}
  static int wsplitCfg=-1;if(wsplitCfg<0){wsplitCfg=P3DS_CfgInt("wide_split",1);if(wsplitCfg){LightEvent_Init(&wmGo,RESET_ONESHOT);LightEvent_Init(&wmDone,RESET_ONESHOT);}PSPNativeMemLog("[WIDE] wide_split=%d",wsplitCfg);}
  static int wdCfg=-1;if(wdCfg<0)wdCfg=P3DS_CfgInt("wide_dirty",1);

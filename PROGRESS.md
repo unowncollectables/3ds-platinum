@@ -1459,3 +1459,7 @@ MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, li
 ## Run 106 (2026-10-26)
 
 - battle_log (default 1): [SPIKE] stage lines for every battle/menu frame over 40 ms. Logging only. See docs/HANDOFF.md.
+
+## Run 107 (2026-10-26)
+
+- Fixed the wide_split_r hang (stale flag after stereo -> mono); wide_split_r default OFF. See docs/HANDOFF.md.

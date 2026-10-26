@@ -2,6 +2,11 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 107: hang + slowdown from wide_split_r (branch `run107`, Claude)
+- Hardware log of the run 106 build: watchdog hang at frame 1710 (main thread's last crumb g3e-done, never b-wait; worker finished its jobs) right after the 3D slider went 1.0 -> 0.0. Cause: `bWrSplit` (wide_split_r) was only set in stereo frames and never cleared, so the first mono wide-early frame after a stereo one waited forever on `wrDone` that the worker never signalled. Fixed: cleared every frame before the stereo block.
+- Slowdown: slider-1 battle/menu frames got slower (composite 37-50 ms, engineA stage 45-51, 14-27 fps; run 105 build had 15-31 ms). The right eye used to run entirely on core 2 in parallel with the main thread's left eye; the static line split made main do its left eye plus half of the right and wait for the worker (engine B + its half). `wide_split_r` now defaults to OFF (0 = old behaviour); a version that lets whichever thread is free claim the next lines would be needed to make it a gain.
+- Slider-0 battles in the same log are fine (28-30 fps, composite 4-13 ms), so `wide_split` and `battle_log` stay ON.
+
 ## 2026-10-26 — Run 106: battle frame log (branch `run106`, Claude)
 - Run 105 hardware log (wide_split works, balanced 74/73 lines): slider-0 battles run 29-30 fps, composite 8-17 ms (run 103: 17-27), game thread idle 9-20 ms/frame, but the slowest frame of nearly every second is 40-56 ms (one lost vblank a second). The log could not say where it goes (SPIKE only logs frames over 70 ms).
 - New Debug toggle `battle_log` ("Battle frame log", default ON, 0 = old): outside the field every frame over 40 ms logs the usual [SPIKE] stage lines (compose stages, B-wait, game-wait = vblank wait, romfs ms/misses, g3soft+game) plus field/slider/bottom drawn-or-reused/wide_split lines, at most 40 lines per stay outside the field (battle/menu), and a `[BATT]` summary line when each stay ends (frames, avg ms, counts over 34/40/50 ms, max, slider). First hardware log of it: 200 lines were used up by the title/menu at frames 2-4360 (the cap was global), and the slider was 1.00 all session. Only logging; spike_ms behaviour for field frames is unchanged (it only applies when spike_ms > 40).
