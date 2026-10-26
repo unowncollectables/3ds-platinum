@@ -201,6 +201,7 @@ int P3DS_TouchRead(int *x, int *y) {
           if (!inj && armed && P3DS_InField && (cs.dy >= 80 || cs.dy <= -80)) { armed = 0; inj = 4; injY = cs.dy > 0 ? 64 : 128; }
           if (inj) { inj--; *x = 240; *y = injY; touchPrev = 1; return 1; } } }
     { extern int P3DS_LowerMenuDraw; extern int NitroPort_LowerMenuTouch(int, int, int, int *, int *);
+      { extern int lmTouchInj; if (P3DS_LowerMenuDraw && lmTouchInj > 0) { lmTouchInj--; *x = 240; *y = 64; touchPrev = 1; return 1; } } /* run 102 POKETCH button */
       if (P3DS_LowerMenuDraw) { /* run 100 lower_menu: the menu owns the screen; only touches that began in its panel reach the game */
         int down = (hidKeysHeld() & KEY_TOUCH) != 0, mx = 0, my = 0; if (down) hidTouchRead(&t);
         int ok = NitroPort_LowerMenuTouch(down, down ? t.px : 0, down ? t.py : 0, &mx, &my);

@@ -16,6 +16,9 @@ VERSION 1.0 (run 100)
                     Icons are read from your ROM (graphic/menu_gra.narc). Default 0.
   heap_fast=1       (run 101, Debug "Fast heap free") skips a slow table scan on every game heap free when it cannot
                     find anything (same result); shorter load hitches (battle end, menus). Read at startup.
+  dc_flush_skip=1   (run 102, Debug "Skip game cache flushes") skips the game's DS cache flushes, which do nothing
+                    useful on the 3DS port. Read at startup. 0 = flush as before.
+  lower_menu MAP opens the Bag (Town Map is in Key Items); POKETCH switches to the next Pokétch app.
   field_prof=0      (run 101, Debug "Load-hitch profiler") logs the slowest game functions of any frame >= 70 ms ([PROF]).
   Settings app top screen shows your play time (read from the game's data, never written).
   splash_ms=3000    the boot credits now list Unown Collectables, 3DS Homebrew Dev, pspoke/pret and GabeSud0

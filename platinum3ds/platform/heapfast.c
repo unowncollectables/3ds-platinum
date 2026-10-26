@@ -26,3 +26,10 @@ REG(2, NNS_G2dGetUnpackedCharacterData) REG(2, NNS_G2dGetUnpackedBGCharacterData
 #define CHK(k, name) extern void __real_##name(void *, void *); void __wrap_##name(void *s, void *e) { if (hit(k, s, e)) { scans++; __real_##name(s, e); } else skips++; }
 CHK(0, WIN_CheckAndFreeAnimBank) CHK(1, WIN_CheckAndFreeCellBank) CHK(2, WIN_CheckAndFreeCharData)
 void P3DS_HeapFastStats(void) { static unsigned n; if (++n % 1800 == 0 && cfg > 0) PSPNativeMemLog("[HEAP] heap_fast: %u table scans skipped, %u run | live %d/%d/%d", skips, scans, nLive[0], nLive[1], nLive[2]); }
+/* run 102 dc_flush_skip (Debug "Skip game cache flushes", default 1): the game calls DC_FlushRange before handing
+   buffers to DS DMA/GPU hardware. In this port those consumers are CPU code (memcpy VRAM, software 2D/3D, mixer), and
+   every buffer that reaches the 3DS GPU/DSP is flushed by our own platform code, so the game's flush (one GSP IPC call
+   each, found by field_prof during map loads) does nothing useful. 0 = flush as before. */
+extern void __real_DC_FlushRange(const void *, unsigned);
+static int dcCfg = -1; static unsigned dcSkips;
+void __wrap_DC_FlushRange(const void *p, unsigned n) { if (dcCfg < 0) { dcCfg = P3DS_CfgInt("dc_flush_skip", 1) != 0; PSPNativeMemLog("[HEAP] dc_flush_skip=%d", dcCfg); } if (dcCfg) { dcSkips++; return; } __real_DC_FlushRange(p, n); }

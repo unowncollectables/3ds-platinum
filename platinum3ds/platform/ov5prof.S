@@ -1439,9 +1439,8 @@
 .Lpt1434: .asciz "NNS_FndAllocFromExpHeapEx"
 .Lpt1435: .asciz "MI_CpuFill8"
 .Lpt1436: .asciz "MI_CpuCopy8"
-.Lpt1437: .asciz "DC_FlushRange"
-.Lpt1438: .asciz "MI_UncompressLZ8"
-.Lpt1439: .asciz "MapMatrix_Load"
+.Lpt1437: .asciz "MI_UncompressLZ8"
+.Lpt1438: .asciz "MapMatrix_Load"
 .section .data.proftab,"aw"
 .global P3DS_ProfNames
 P3DS_ProfNames:
@@ -2884,9 +2883,8 @@ P3DS_ProfNames:
  .word .Lpt1436
  .word .Lpt1437
  .word .Lpt1438
- .word .Lpt1439
 .global P3DS_ProfCount
-P3DS_ProfCount: .word 1440
+P3DS_ProfCount: .word 1439
 .text
 .global P3DS_ProfRet
 .type P3DS_ProfRet,%function
@@ -27327,23 +27325,6 @@ __wrap_MI_CpuCopy8:
  pop {r0-r5,r12,lr}
  b __real_MI_CpuCopy8
  .ltorg
-.global __wrap_DC_FlushRange
-.type __wrap_DC_FlushRange,%function
-__wrap_DC_FlushRange:
- ldr r12,=P3DS_ProfOn
- ldr r12,[r12]
- cmp r12,#0
- beq __real_DC_FlushRange
- push {r0-r5,r12,lr}
- vpush {d0-d7}
- ldr r0,=1437
- mov r1,lr
- bl P3DS_ProfEnter
- str r0,[sp,#92]
- vpop {d0-d7}
- pop {r0-r5,r12,lr}
- b __real_DC_FlushRange
- .ltorg
 .global __wrap_MI_UncompressLZ8
 .type __wrap_MI_UncompressLZ8,%function
 __wrap_MI_UncompressLZ8:
@@ -27353,7 +27334,7 @@ __wrap_MI_UncompressLZ8:
  beq __real_MI_UncompressLZ8
  push {r0-r5,r12,lr}
  vpush {d0-d7}
- ldr r0,=1438
+ ldr r0,=1437
  mov r1,lr
  bl P3DS_ProfEnter
  str r0,[sp,#92]
@@ -27370,7 +27351,7 @@ __wrap_MapMatrix_Load:
  beq __real_MapMatrix_Load
  push {r0-r5,r12,lr}
  vpush {d0-d7}
- ldr r0,=1439
+ ldr r0,=1438
  mov r1,lr
  bl P3DS_ProfEnter
  str r0,[sp,#92]

@@ -1440,3 +1440,7 @@ Bottom icon menu (lower_menu, GabeSud0 port, default 0), v1.0 version string and
 ## Run 101 = v1.0 (2026-10-25)
 
 field_prof profiler (default 0), heap_fast (default 1: skips pspoke's 8192-entry table scan per heap free; emulator free time 1232 ms -> 1.5 ms), lower menu gender icon, play time in settings, Debug tab tidy. Builds: 3dsx 194b9cf473791bbaaf3c71de6af793b72c76ec2a, CIA a8e7c54261a3635c4844ac21c91b04c86739a237.
+
+## Run 102 = v1.0 (2026-10-25)
+
+lower menu MAP/POKETCH actions, menu hidden behind settings, play time checked, dc_flush_skip (default 1). Builds: 3dsx a49f1cd39acf018a6282f786aa28d3bf6d98abc7, CIA 17f02de4b388423744f605e75536bc73a440098d.
