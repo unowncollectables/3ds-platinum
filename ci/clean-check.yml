@@ -1,0 +1,11 @@
+# Move to .github/workflows/clean-check.yml (needs a token with workflow scope, or add it in the GitHub web UI).
+name: Clean check
+on: [push, pull_request]
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - run: git fetch --tags --force origin '+refs/heads/*:refs/remotes/origin/*'
+      - run: python3 scripts/check_clean.py && python3 scripts/check_clean.py --history

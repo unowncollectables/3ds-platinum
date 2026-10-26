@@ -52,3 +52,23 @@ __pycache__/
 # run 82: borrowed HOME Menu banner art/sound (project art, not game data)
 !tools/banner3d/art/*.png
 !platinum3ds/full/cia/chime.wav
+*.srl
+*.3ds
+*.cxi
+*.bcwav
+*.bcstm
+*.nclr
+*.ncgr
+*.nscr
+*.ncer
+*.nanr
+*.nsbmd
+*.nsbtx
+*.jpg
+*.jpeg
+*.gif
+*.7z
+*.rar
+.env
+*.pem
+*.key
