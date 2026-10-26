@@ -4,7 +4,7 @@ Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the
 
 ## 2026-10-26 — Run 106: battle frame log (branch `run106`, Claude)
 - Run 105 hardware log (wide_split works, balanced 74/73 lines): slider-0 battles run 29-30 fps, composite 8-17 ms (run 103: 17-27), game thread idle 9-20 ms/frame, but the slowest frame of nearly every second is 40-56 ms (one lost vblank a second). The log could not say where it goes (SPIKE only logs frames over 70 ms).
-- New Debug toggle `battle_log` ("Battle frame log", default ON, 0 = old): outside the field every frame over 40 ms logs the usual [SPIKE] stage lines (compose stages, B-wait, game-wait = vblank wait, romfs ms/misses, g3soft+game) plus field/slider/bottom drawn-or-reused/wide_split lines, with its own 200-line cap. Only logging; spike_ms behaviour for field frames is unchanged (it only applies when spike_ms > 40).
+- New Debug toggle `battle_log` ("Battle frame log", default ON, 0 = old): outside the field every frame over 40 ms logs the usual [SPIKE] stage lines (compose stages, B-wait, game-wait = vblank wait, romfs ms/misses, g3soft+game) plus field/slider/bottom drawn-or-reused/wide_split lines, at most 40 lines per stay outside the field (battle/menu), and a `[BATT]` summary line when each stay ends (frames, avg ms, counts over 34/40/50 ms, max, slider). First hardware log of it: 200 lines were used up by the title/menu at frames 2-4360 (the cap was global), and the slider was 1.00 all session. Only logging; spike_ms behaviour for field frames is unchanged (it only applies when spike_ms > 40).
 - Not measured here: no toolchain in the cloud. Save time is not a stage (SaveData_Save shows up in [PROF] only).
 
 ## 2026-10-26 — Run 105: battle 30 fps work (branch `run105`, Claude)

@@ -1395,12 +1395,16 @@ static int Present(bool){
      g3soft time includes the game's own CPU work between frame start and the 3D flush (loads, decompression). */
    static int spikeMs=-1;static unsigned spikeN;if(spikeMs<0){spikeMs=70;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"spike_ms=%d",&x)==1)spikeMs=x;fclose(f);}PSPNativeMemLog("[SPIKE] spike_ms=%d",spikeMs);}
    static unsigned lastSpikeF,runLen;/* run 94: a run of back-to-back slow frames (a menu, a 3D-slider present) logs its first frame and then every 30th, so the 60-line cap is not used up by one slow screen */
-   /* run 106 battle_log=1 (default): outside the field (battles, menus) every frame over 40 ms logs the same stage lines, with its
-      own 200-line cap, so a one-frame-a-second hitch in a battle shows where it went without editing spike_ms (0 = old threshold) */
+   /* run 106 battle_log=1 (default): outside the field (battles, menus) every frame over 40 ms logs the same stage lines (40 per episode, see below), so a one-frame-a-second hitch in a battle shows where it went without editing spike_ms (0 = old threshold) */
    static int blCfg=-1;static unsigned battleN;if(blCfg<0){blCfg=P3DS_CfgInt("battle_log",1)!=0;PSPNativeMemLog("[SPIKE] battle_log=%d",blCfg);}
+   /* one episode = one stay outside the field (a battle, a menu): 40 stage lines each, then a [BATT] summary line when it ends */
+   static int epField=1;static unsigned epF0,epN,epSum,ep34,ep40,ep50,epMax;static double epSl;
+   if(blCfg&&total){if(P3DS_InField!=epField){if(!epField&&epN>=30)PSPNativeMemLog("[BATT] f=%u..%u slider %.2f: %u frames, avg %u.%u ms, over 34 ms %u, over 40 ms %u, over 50 ms %u, max %u ms",epF0,frames,epSl,epN,epSum/epN/1000,epSum/epN/100%10,ep34,ep40,ep50,epMax/1000);
+     epField=P3DS_InField;epF0=frames;epN=epSum=ep34=ep40=ep50=epMax=0;battleN=0;epSl=p3dsSlider();}
+    if(!epField){epN++;epSum+=total;if(total>34000)ep34++;if(total>40000)ep40++;if(total>50000)ep50++;if(total>epMax)epMax=total;}}
    const bool bsp=blCfg&&!P3DS_InField&&spikeMs>40&&total>40000u&&total<=(unsigned)spikeMs*1000;
    const bool spk=(spikeMs>0&&total>(unsigned)spikeMs*1000)||bsp;if(spk){runLen=(frames==lastSpikeF+1)?runLen+1:0;lastSpikeF=frames;}
-   if(spk&&(runLen==0||runLen%30==0)&&(bsp?battleN<200:spikeN<60)){if(bsp)battleN++;else spikeN++;struct mallinfo mi=mallinfo();
+   if(spk&&(runLen==0||runLen%30==0)&&(bsp?battleN<40:spikeN<60)){if(bsp)battleN++;else spikeN++;struct mallinfo mi=mallinfo();
     PSPNativeMemLog("[SPIKE] f=%u frame %u ms = g3soft+game %u + composite %u + present %u | romfs %u ms (%u x16K misses) | GetTexture %u ms | GPU tex create %u ms (%u) | tris %u | malloc %u KiB | field %d slider %.2f bottom %s split %d/%d%s",
      frames,total/1000,g3us/1000,comp/1000,gpu/1000,(unsigned)(P3DS_SpkRomTicks/CPU_TICKS_PER_MSEC),P3DS_SpkRomBlocks,(unsigned)(P3DS_SpkGetTexTicks/CPU_TICKS_PER_MSEC),(unsigned)(P3DS_SpkTexTicks/CPU_TICKS_PER_MSEC),P3DS_SpkTexN,P3DS_G3LastTris(),(unsigned)(mi.uordblks/1024),P3DS_InField,(double)p3dsSlider(),P3DS_BottomReused?"reused":"drawn",wmSp.n[0],wmSp.n[1],bsp?" [battle_log]":"");
     /* run 86: second line: the map (and the one before it, whether zone_prefetch had learned it, ms since the change) and the ROM files that missed */
