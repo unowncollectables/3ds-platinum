@@ -2,6 +2,12 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-25 — Run 103 (continued): Tropius send-out dip fix
+- Hardware log (run101): send-out/battle-start spikes 80–84 ms, stage "capture..tComp" 51–53 ms, romfs 0. Cause: `[WIDE] drawing off (reason 4, BLDCNT 0841)` — the send-out fades the 3D Pokémon in with BLDCNT alpha on BG0, widecomp declined, the frame fell back to the full-engine stereo path.
+- Fix: widecomp now blends the 3D layer by its per-pixel alpha onto the 2nd target (DS rule eva=a, evb=32-a, 31 opaque). New Debug toggle `wide_3d_alpha` (default ON; OFF = old decline).
+- Emulator check: Coronet battle start + send-outs stay on the wide path (no reason-4 lines), wide_dirty=2 verify reported no mismatches, screenshots correct. Not measured on hardware yet.
+- Hitch comparison: run101 battle-end game-side spikes 150–152 ms (run99: 112 ms, 87 ms game-side) — not improved, game-side (not compose), needs field_prof ON on hardware. Load spikes are romfs misses (45–369 ms), same as before.
+
 ## 2026-10-25 - Run 103 = v1.0 (Grok Bot), branch `run100` (PR #11), tag `v1.0` moved here
 
 - lower_menu MAP now opens the Bag on the Key Items pocket (start_menu.c patch: P3DS_BagPocketReq ->

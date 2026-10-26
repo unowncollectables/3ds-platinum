@@ -29,6 +29,7 @@ int WC_Compose(const WcPlan *p, const uint8_t *regs, const WcSrc *src, uint32_t 
 /* run 98: 0 off, 1 redraw only changed lines, 2 = 1 plus a full redraw to compare (counts mismatches, shows the full one) */
 void WC_SetDirty(int mode);
 void WC_SetDirtyRegFilter(int on); /* run 100 */
+void WC_Set3dAlpha(int on); /* run 103 */
 void WC_DirtyStats(unsigned *frames, unsigned *rows, unsigned *full, unsigned *bad);
 int WC_ComposeEye(const WcPlan *p, const uint8_t *regs, const WcSrc *src, uint32_t *center, uint32_t *strip, int eye);
 #ifdef __cplusplus

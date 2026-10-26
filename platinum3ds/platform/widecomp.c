@@ -108,10 +108,14 @@ static const u8 SPW[3][4] = {{8, 16, 32, 64}, {16, 32, 32, 64}, {8, 8, 16, 32}},
 
 /* why the compositor can't draw this screen (0 = it can): 1 forced blank, 2 not graphics mode, 3 windows, 4 alpha blending,
    5 a BG that isn't text, 6 BG mosaic, 7 no 3D frame */
+/* run 103 wide_3d_alpha (default 1): the 3D layer blends by its own per-pixel alpha onto the 2nd-target layer below
+   (melonDS/DS rule: eva = alpha, evb = 32 - alpha; alpha 31 = opaque), so frames with BLDCNT alpha on BG0 (the battle
+   send-out: Pokemon fading in) are drawn here instead of declined to the slow full-engine stereo path. 0 = decline. */
+static int alpha3dOn = 1; void WC_Set3dAlpha(int on) { alpha3dOn = on; }
 int WC_Check(const WcPlan *p, const u8 *R, int have3d) {
     const u32 dc = *(const u32 *)R;
     if (dc & 0x80) return 1; if (((dc >> 16) & 3) != 1) return 2; if (dc & 0xE000) return 3;
-    const u16 bc = *(const u16 *)(R + 0x50); if (((bc >> 6) & 3) == 1 && (bc & 1) && (dc & 8)) return 4; /* alpha on the 3D layer: its own alpha, not done here */
+    const u16 bc = *(const u16 *)(R + 0x50); if (!alpha3dOn && ((bc >> 6) & 3) == 1 && (bc & 1) && (dc & 8)) return 4; /* alpha on the 3D layer: its own alpha, not done here */
     for (int i = 0; i < 4; i++) { const WcLayer *l = &p->L[i]; if (!l->on) continue; if (!l->text && !(i == 0 && (dc & 8))) return 5; if (l->mosaic) return 6; }
     if ((dc & 8) && !have3d) return 7;
     return 0;
@@ -143,10 +147,11 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
     const int bgBld = eff >= 2 && bY ? (int)(bc & 0x3F) : 0;
     const int ab = eff == 1 && (bc & 0x3F); const unsigned fm = bc & 0x3F, sm = (bc >> 8) & 0x3F;
     unsigned eva = *(const u16 *)(R + 0x52) & 31, evb = (*(const u16 *)(R + 0x52) >> 8) & 31; if (eva > 16) eva = 16; if (evb > 16) evb = 16;
-    #define PUT(X, C, LY) { if (!done[X]) { row[X] = (C); lay[X] = (u8)(LY); done[X] = 1; if (!(ab && (fm >> (LY) & 1))) { d2[X] = 1; left--; } } \
+    const int t3 = alpha3dOn && (dc & 8);
+    #define PUT(X, C, LY) { if (!done[X]) { row[X] = (C); lay[X] = (u8)(LY); done[X] = 1; if (!((t3 && (LY) == 0) ? (sm && a3[X] < 31) : (ab && (fm >> (LY) & 1)))) { d2[X] = 1; left--; } } \
         else if (!d2[X]) { row2[X] = (C); lay2[X] = (u8)(LY); d2[X] = 1; left--; } }
     for (int y = 0; y < 192; y++) { if (rowMask && !rowMask[y]) continue;
-        u32 row[320], row2[320], spr[320]; u8 lay[320], lay2[320], done[320], d2[320], sprPr[320]; memset(done, 0, sizeof done); memset(d2, 0, sizeof d2); memset(sprPr, 4, sizeof sprPr); memset(spr, 0, sizeof spr);
+        u32 row[320], row2[320], spr[320]; u8 lay[320], lay2[320], done[320], d2[320], sprPr[320], a3[320]; memset(done, 0, sizeof done); memset(d2, 0, sizeof d2); memset(sprPr, 4, sizeof sprPr); memset(spr, 0, sizeof spr);
         int left = 320; int sx0 = 320, sx1 = 0; /* run 98: span of sprite pixels on this line */
         if (dc & 0x1000) for (int n = no - 1; n >= 0; n--) { /* back to front here: the front sprite is painted last */
             const int i = ord[n]; const u16 *a = S->oam + i * 4; const int aff = (a[0] & 0x100) != 0, dbl = (a[0] & 0x300) == 0x300;
@@ -173,7 +178,7 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
             if (li == 0 || p->L[lorder[li - 1]].prio != l->prio) { for (int pr = (li ? p->L[lorder[li - 1]].prio + 1 : 0); pr <= l->prio; pr++) for (int X = sx0; X < sx1; X++) if (!d2[X] && spr[X] && sprPr[X] == pr) { PUT(X, spr[X], 4); spr[X] = 0; } }
             if (!left) break;
             if (L == 0 && (dc & 8)) { /* the 3D layer in BG0's place */
-                for (int s = -32; s < 288; s++) { const int X = s + 32, c = s - p->dx3d; if (d2[X] || c < 0 || c > 255) continue; const u32 v = S->frame3d[y * 256 + c]; if (!(v >> 24)) continue; PUT(X, from3D(v), 0); }
+                for (int s = -32; s < 288; s++) { const int X = s + 32, c = s - p->dx3d; if (d2[X] || c < 0 || c > 255) continue; const u32 v = S->frame3d[y * 256 + c]; if (!(v >> 24)) continue; a3[X] = (u8)((v >> 24) & 31); PUT(X, from3D(v), 0); }
                 continue; }
             const uint8_t ri = p->rowOf[L][y]; short tmp[320]; const short *map; if (ri != 255) map = p->rows[ri]; else { buildRow(p, L, y, tmp); map = tmp; }
             const int py = (int)((y + l->vofs) & (l->h * 8 - 1)); const unsigned ty = (unsigned)(py >> 3) & (l->h - 1); const unsigned fy0 = py & 7;
@@ -189,17 +194,20 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
                 PUT(X, (l->extSlot >= 0 ? toM(*(const u16 *)(S->bgext + l->extSlot * 0x2000 + ((me >> 12) * 256 + ci) * 2)) : lutB[l->bpp8 ? ci : ((me >> 12) * 16 + ci)]), L); } }
         if (left) { /* sprites behind every BG, then the backdrop */
             for (int X = 0; X < 320; X++) if (!d2[X]) { if (spr[X]) PUT(X, spr[X], 4); if (!d2[X]) PUT(X, bd, 5); } }
-        if (!bgBld && !mm && !ab) { memcpy(center + y * 256, row + 32, 256 * 4);
+        if (!bgBld && !mm && !ab && !(t3 && sm)) { memcpy(center + y * 256, row + 32, 256 * 4);
             for (int X = 0; X < 64; X++) { const u32 c = row[X < 32 ? X : X + 256]; strip[y * 64 + X] = ((c & 255) << 24) | (((c >> 8) & 255) << 16) | (((c >> 16) & 255) << 8) | 0xFF; }
             continue; }
         for (int X = 0; X < 320; X++) { u32 c = row[X];
-            if (ab && (fm >> lay[X] & 1) && (sm >> lay2[X] & 1)) { const u32 c2 = row2[X]; /* alpha blend: top * EVA + second * EVB */
+            int bl3 = 0;
+            if (t3 && lay[X] == 0) { if (a3[X] < 31 && (sm >> lay2[X] & 1)) { const u32 c2 = row2[X]; const unsigned ea = a3[X], eb = 32 - a3[X]; bl3 = 1;
+                    c = (((c & 255) * ea + (c2 & 255) * eb + 16) >> 5) | (((((c >> 8) & 255) * ea + ((c2 >> 8) & 255) * eb + 16) >> 5) << 8) | (((((c >> 16) & 255) * ea + ((c2 >> 16) & 255) * eb + 16) >> 5) << 16); } }
+            else if (ab && (fm >> lay[X] & 1) && (sm >> lay2[X] & 1)) { const u32 c2 = row2[X]; /* alpha blend: top * EVA + second * EVB */
                 unsigned r1 = (c & 255) * eva + (c2 & 255) * evb, g1 = ((c >> 8) & 255) * eva + ((c2 >> 8) & 255) * evb, b1 = ((c >> 16) & 255) * eva + ((c2 >> 16) & 255) * evb;
                 r1 >>= 4; g1 >>= 4; b1 >>= 4; if (r1 > 255) r1 = 255; if (g1 > 255) g1 = 255; if (b1 > 255) b1 = 255; c = r1 | (g1 << 8) | (b1 << 16); }
             unsigned r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255; const int side = X < 32 || X >= 288;
             /* BLDY brighten/darken on the first-target layers (bits 0-3 BGs, 4 sprites, 5 backdrop); in the strips a fade
                that targets BG0 comes from gpuscale (wide_fadefix), as for wide_menus */
-            if (bgBld && (bgBld & (1 << lay[X])) && !(side && (bgBld & 1))) {
+            if (!bl3 && bgBld && (bgBld & (1 << lay[X])) && !(side && (bgBld & 1))) {
                 if (eff == 2) { r += (255 - r) * bY / 16; g += (255 - g) * bY / 16; b += (255 - b) * bY / 16; } else { r -= r * bY / 16; g -= g * bY / 16; b -= b * bY / 16; } }
             if (side) strip[y * 64 + (X < 32 ? X : X - 256)] = (r << 24) | (g << 16) | (b << 8) | 0xFF;
             else { if (mm == 1) { r += (255 - r) * mf / 16; g += (255 - g) * mf / 16; b += (255 - b) * mf / 16; } else if (mm == 2) { r -= r * mf / 16; g -= g * mf / 16; b -= b * mf / 16; }

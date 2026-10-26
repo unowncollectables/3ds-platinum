@@ -1448,3 +1448,5 @@ lower menu MAP/POKETCH actions, menu hidden behind settings, play time checked, 
 ## Run 103 = v1.0 (2026-10-25)
 
 MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, line 52) but not fixed. Builds: see HANDOFF / report.
+
+- Run 103: wide_3d_alpha — 3D fade-in (battle send-out) composed on the wide path instead of the slow fallback.
