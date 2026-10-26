@@ -70,13 +70,31 @@ static void load(void) {
     if (!f) return;
     int n = parse(f); fclose(f); PSPNativeMemLog("[HUNT] %s: %d species, target %d", src, n, target);
 }
-static void save(void) {
+/* run 104 hunt_async_save (default 1): the hunt file is formatted in memory (fast) and written by a low-priority
+   thread. The synchronous fopen/write/remove/rename took ~70 ms on the game thread at every wild battle start (and
+   every 2 min), which was the recurring battle-start drop on hardware. Same file contents; 0 = write in place. */
+static char hbuf[48 * P3DS_HUNT_SPECIES + 32];
+static void writeFile(const char *t, int n) {
     FILE *f = fopen(HUNT_DIR "hunt.tmp", "w"); if (!f) { PSPNativeMemLog("[HUNT] cannot write hunt.tmp"); return; }
-    if (target) fprintf(f, "target=%d\n", target);
-    for (int k = 1; k < P3DS_HUNT_SPECIES; k++) { const P3DS_HuntRec *r = &rec[k];
-        if (r->enc || r->resets || r->shinies) fprintf(f, "%d=%d,%d,%d,%d,%d,%d,%d\n", k, r->enc, r->streak, r->resets, r->shinies, r->secs, r->start, r->lastShinyAt); }
-    fclose(f); remove(HUNT_DIR "hunt.txt"); rename(HUNT_DIR "hunt.tmp", HUNT_DIR "hunt.txt");
+    fwrite(t, 1, n, f); fclose(f); remove(HUNT_DIR "hunt.txt"); rename(HUNT_DIR "hunt.tmp", HUNT_DIR "hunt.txt");
+}
+#ifndef P3DS_HUNT_HOST
+static char hpend[sizeof hbuf], hwr[sizeof hbuf]; static volatile int hpendN = -1; static LightLock hpLk; static LightEvent hpEv; static Thread hThr;
+static void writer(void *u) { (void)u; for (;;) { LightEvent_Wait(&hpEv); LightLock_Lock(&hpLk); int n = hpendN; if (n >= 0) memcpy(hwr, hpend, n); hpendN = -1; LightLock_Unlock(&hpLk); if (n >= 0) writeFile(hwr, n); } }
+#endif
+static void save(void) {
+    int n = 0;
+    if (target) n += snprintf(hbuf + n, sizeof hbuf - n, "target=%d\n", target);
+    for (int k = 1; k < P3DS_HUNT_SPECIES && n < (int)sizeof hbuf - 64; k++) { const P3DS_HuntRec *r = &rec[k];
+        if (r->enc || r->resets || r->shinies) n += snprintf(hbuf + n, sizeof hbuf - n, "%d=%d,%d,%d,%d,%d,%d,%d\n", k, r->enc, r->streak, r->resets, r->shinies, r->secs, r->start, r->lastShinyAt); }
     dirty = 0; lastWrite = svcGetSystemTick();
+#ifndef P3DS_HUNT_HOST
+    static int as = -1; if (as < 0) { as = P3DS_CfgInt("hunt_async_save", 1) != 0;
+        if (as) { LightLock_Init(&hpLk); LightEvent_Init(&hpEv, RESET_ONESHOT); hThr = threadCreate(writer, 0, 16 * 1024, 0x3F, 0, true); if (!hThr) as = 0; }
+        PSPNativeMemLog("[HUNT] hunt_async_save=%d", as); }
+    if (as) { LightLock_Lock(&hpLk); memcpy(hpend, hbuf, n); hpendN = n; LightLock_Unlock(&hpLk); LightEvent_Signal(&hpEv); return; }
+#endif
+    writeFile(hbuf, n);
 }
 
 const P3DS_HuntRec *P3DS_HuntGet(int sp) { HUNT_LOCK(); load(); HUNT_UNLOCK(); return sp > 0 && sp < P3DS_HUNT_SPECIES ? &rec[sp] : &rec[0]; }

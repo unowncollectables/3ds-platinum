@@ -308,3 +308,6 @@ Run 88
   shiny_suite=0        (settings app Extra tab "Shiny hunt suite": 1 = shiny hunt counters in hunt.txt (encounters, since last shiny, soft resets, time, shinies), a chime + flash when a wild shiny appears, and a hunt panel on the Ball tab: Left/Right species, X twice reset, A export CSV to hunts/)
 
 wide_3d_alpha (Debug, default ON): wide layouts draw 3D fade-ins such as battle send-outs themselves instead of the slow path. OFF = old behaviour.
+
+hunt_async_save (Debug, default ON): the shiny-hunt file is written in the background, removing the ~70 ms drop at wild battle start.
+field_prof (Debug): OFF / ON / AUTO (default) - AUTO profiles 8 s after each battle start/end.

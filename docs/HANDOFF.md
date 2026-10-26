@@ -2,6 +2,15 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 104: battle frame drops (hardware run103 log)
+- wide_3d_alpha works on hardware: no reason-4 decline in the run103 log (only reason 2/3 lines; reason 3 = battle intro windows).
+- Recurring 70 ms battle-start drop (f=752/1174/1746/2301, tris 6, "capture..tComp" ~70) followed every `[HUNT] species N met` line: the shiny-hunt counter wrote hunt.txt synchronously (fopen/write/remove/rename on SD) on the game thread. The same write ran every 2 min during play. Fix: new Debug toggle `hunt_async_save` (default ON, same file contents): the text is built in memory and written by a low-priority thread.
+- Load spikes (f=192..572, 70–425 ms) are romfs misses (20–156 x16K) during battle/area loads. f=2659 (159 ms, tris 621) is game-side, cause unknown.
+- Steady battle cost: g3soft+game ~20 ms + composite (PERF2) 17–27 ms → 25–29 fps. Not reduced this run (g3soft speed-up, moving composite to core 2/GPU not done).
+- SPIKE stage line now splits capture..tComp into cap / bwait+gc / misc / stereo (serial) / blob.
+- field_prof now has AUTO (new default, 2): the profiler is on for 240 frames after every field<->battle switch, so the next hardware log has [PROF] lines for battle start/end. Overhead while armed not measured on hardware.
+- Emulator: Coronet battle + send-outs OK, no crash. hunt_async_save path not exercised (trainer battle).
+
 ## 2026-10-25 — Run 103 (continued): Tropius send-out dip fix
 - Hardware log (run101): send-out/battle-start spikes 80–84 ms, stage "capture..tComp" 51–53 ms, romfs 0. Cause: `[WIDE] drawing off (reason 4, BLDCNT 0841)` — the send-out fades the 3D Pokémon in with BLDCNT alpha on BG0, widecomp declined, the frame fell back to the full-engine stereo path.
 - Fix: widecomp now blends the 3D layer by its per-pixel alpha onto the 2nd target (DS rule eva=a, evb=32-a, 31 opaque). New Debug toggle `wide_3d_alpha` (default ON; OFF = old decline).
