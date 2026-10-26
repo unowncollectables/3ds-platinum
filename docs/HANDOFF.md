@@ -2,6 +2,18 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 109: slider-on battles, part 2 (Grok Bot, branch `run109`)
+- Run 108 hardware log: slider-on battles avg 40.3-41.0 ms (about 160/320 frames over 40 ms); slider 0 avg 33.2-33.9. Battle frames take the wide-early stereo path (new `path` field in battle_log lines: W = wide early stereo). Composite 17-32 ms (engineA stage 19-31) vs 11 ms in field 3D; g3soft 15-17. The 2-eye compose is the bottleneck: main draws the left eye then waits while core 2 draws engine B + the whole right eye.
+- Why g3_conv_split did not help: it worked (PERF2 3D convert 2.7-3.7 ms, was ~5.4 for 2 eyes) but the 3D convert is not the critical path in battles; the compose is.
+- First-battle 119 ms (f=427): romfs 106 ms, 44 x16K misses (battle -> field load, [PROF] FS_ReadFile 54-80 ms). Same SD read cost as other load spikes; not fixed.
+- Changes:
+  - `wide_split_r` default now SHARED (2): main and core 2 claim 16-line groups of the right eye until done. OFF / HALF still available.
+  - New Debug toggle `wide_windows` (default ON): widecomp draws WIN0 / WIN1 / OBJ-window frames (per-pixel WININ/WINOUT layer + effect enables, strips use WINOUT) instead of declining (reason 3) to the double engine-A render. Host test tools/widecomp_test.c extended (WIN0 cases).
+  - battle_log stage line: `path` (w/m mono wide/plain, W stereo wide, P right eye on core 2, S serial, F flat, G GPU).
+  - Test-only config `stereo_fake_toggle=N` (with stereo_fake): fake slider flips every N s.
+- Emulator (Azahar runs all cores on one host thread, so 2-core gains don't show; noisy): Coronet battle slider-on avg 63.0 ms/frame vs 60.4 for 8e84ea9. Trainer intro/send-outs rendered correctly with no reason-3 declines. Slider flip every 5 s through the battle (12+ flips while composing on 2 cores): no hang, no watchdog.
+- Not done: GPU compositor (needs per-pixel priority + 3D alpha + windows on the PICA), skipping the right eye when unchanged (dirty lines already skip unchanged rows). A wild-battle OBJ-window intro was not reproduced in the emulator.
+
 ## 2026-10-26 — Wireless: host test + fix (Claude)
 - New `tools/wm_uds_test.c`: two processes run the real `wm_uds.c` against a mock UDS (socketpair with loss/dup/reorder) and a fake game shaped like pret's `wireless_manager.c` (parent params, scan + GGID/entry filter, connect with child SSID, MP, port send/recv). It checks every message arrives once, in order, intact. Scenarios: clean, 2.5% loss, 5% loss + dup + reorder, 15% loss, host vanishing mid-trade. All pass.
 - Bug it found (fixed): `netPump` read the clock, then the child's hello stamped a later time, so `t - firstAt` wrapped and the brand-new link was dropped as "no ack" right after connecting. All age checks now use `since()`, which never goes negative. This would very likely have broken the first hardware trade.

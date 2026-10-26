@@ -54,7 +54,15 @@ int main(void) {
     check(pix(43, -6) == cyan && pix(44, -6) == cyan && pix(44, 1) == cyan && pix(48, -6) != cyan && pix(44, 2) != cyan, "sprite (left column) moved -16", at(44, -6), cyan);
     check(pix(100, 216) == white && pix(103, 223) == white, "BG1 over a lower-priority sprite", pix(100, 216), white);
     /* windows: not done -> 0, picture untouched */
-    *(uint32_t *)R = 0x11F00 | 0x2000; ok = WC_Compose(&p, R, &S, center, strip); check(ok == 0, "window -> unsupported", ok, 0);
+    WC_SetWindows(0); *(uint32_t *)R = 0x11F00 | 0x2000; ok = WC_Compose(&p, R, &S, center, strip); check(ok == 0, "window (wide_windows=0) -> unsupported", ok, 0);
+    /* run 109 wide_windows=1: WIN0 = DS x 0..127, all lines, inside OBJ only, outside everything */
+    WC_SetWindows(1); *(uint16_t *)(R + 0x40) = (0 << 8) | 128; *(uint16_t *)(R + 0x44) = (0 << 8) | 192; *(uint16_t *)(R + 0x48) = 0x10; *(uint16_t *)(R + 0x4A) = 0x3F;
+    ok = WC_Compose(&p, R, &S, center, strip); check(ok == 1, "window -> drawn", ok, 1);
+    check(pix(44, 24) != blue, "WIN0: BG1 hidden inside", pix(44, 24), 0);
+    check(pix(44, 176) == white, "WIN0: BG1 shown outside", pix(44, 176), white);
+    check(pix(44, 1) == cyan, "WIN0: sprite shown inside (OBJ on)", pix(44, 1), cyan);
+    check(at(13, -1) == red, "WIN0: strip uses WINOUT", at(13, -1), red);
+    *(uint16_t *)(R + 0x40) = 0; *(uint16_t *)(R + 0x44) = 0; *(uint16_t *)(R + 0x48) = 0; *(uint16_t *)(R + 0x4A) = 0;
     *(uint32_t *)R = 0x11F08; *(uint16_t *)(R + 0x50) = 0x0041 | 0x0100; /* alpha blend with BG0 as the 3D layer: not done here */ ok = WC_Compose(&p, R, &S, center, strip); check(ok == 0, "alpha on 3D -> unsupported", ok, 0);
     *(uint32_t *)R = 0x11F00; *(uint16_t *)(R + 0x50) = 0x0042 | 0x0100; *(uint16_t *)(R + 0x52) = 0x0808; ok = WC_Compose(&p, R, &S, center, strip); check(ok == 1, "alpha BG1 over BG0 -> drawn", ok, 1);
     printf(fails ? "%d checks FAILED\n" : "all widecomp checks passed\n", fails);

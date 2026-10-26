@@ -324,3 +324,6 @@ wide_split_r (Debug "Right eye on 2 cores", default OFF since run 107; it hung a
 g3_conv_split (Debug, default ON): with the slider up the right eye's 3D convert runs on core 2.
 stereo_flat_fallback (Debug, default OFF): slider up, frames the wide view can't draw (battle intro) show no depth instead of rendering twice.
 wide_split_r (Debug): OFF / HALF / SHARED. SHARED lets whichever core is free draw the next right-eye lines. Default OFF.
+
+wide_windows (Debug, default ON): the wide view draws screens that use DS windows (battle intro) itself.
+wide_split_r now defaults to SHARED.
