@@ -34,9 +34,10 @@ void WC_DirtyStats(unsigned *frames, unsigned *rows, unsigned *full, unsigned *b
 int WC_ComposeEye(const WcPlan *p, const uint8_t *regs, const WcSrc *src, uint32_t *center, uint32_t *strip, int eye);
 /* run 105 wide_split (left eye, wide_dirty=1 only): the dirty lines are shared by two threads. Prepare returns the number of
    dirty lines (-1 = not usable: use WC_Compose), Run(part 0 / 1) draws that part's lines, Commit after both Runs. */
-typedef struct { uint8_t mask[2][192]; int n[2], eye; uint32_t rh[192]; } WcSplit;
+typedef struct { uint8_t mask[2][192]; int n[2], eye; uint32_t rh[192]; volatile int next; int dn[2]; } WcSplit;
 int WC_SplitPrepare(const WcPlan *p, const uint8_t *regs, const WcSrc *src, WcSplit *sp, int minRows, int eye); /* eye 0 = left, 1 = right (run 106: the right eye in stereo) */
 void WC_SplitRun(const WcPlan *p, const uint8_t *regs, const WcSrc *src, const WcSplit *sp, int part);
+void WC_SplitRunDyn(const WcPlan *p, const uint8_t *regs, const WcSrc *src, WcSplit *sp, int part); /* run 108: claim 16-line groups */
 void WC_SplitCommit(const WcSplit *sp, uint32_t *center, uint32_t *strip);
 #ifdef __cplusplus
 }

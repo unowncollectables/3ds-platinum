@@ -320,13 +320,23 @@ int WC_SplitPrepare(const WcPlan *p, const u8 *R, const WcSrc *S, WcSplit *sp, i
     const int b0 = band[eye] * 8; band[eye] = (band[eye] + 1) % 24;
     u8 dirty[192]; int n = 0;
     for (int y = 0; y < 192; y++) { dirty[y] = !dValid[eye] || rh[y] != dRH[eye][y] || (y >= b0 && y < b0 + 8); n += dirty[y]; }
-    memset(sp->mask, 0, sizeof sp->mask); sp->n[0] = sp->n[1] = 0;
+    memset(sp->mask, 0, sizeof sp->mask); sp->n[0] = sp->n[1] = 0; sp->next = 0; sp->dn[0] = sp->dn[1] = 0;
     for (int g = 0; g < 192; g += 4) { int part = (n < minRows || sp->n[0] <= sp->n[1]) ? 0 : 1;
         for (int y = g; y < g + 4; y++) if (dirty[y]) { sp->mask[part][y] = 1; sp->n[part]++; } }
     return n;
 }
 void WC_SplitRun(const WcPlan *p, const u8 *R, const WcSrc *S, const WcSplit *sp, int part) {
     if (sp->n[part]) composeNow(p, R, S, cCenterA[sp->eye], cStripA[sp->eye], sp->mask[part]);
+}
+/* run 108 wide_split_r=2: both threads claim 16-line groups of the dirty lines until none are left, so whichever
+   thread is free does the work (the static deal in run 106 made the main thread wait for the busy worker). */
+void WC_SplitRunDyn(const WcPlan *p, const u8 *R, const WcSrc *S, WcSplit *sp, int part) {
+    u8 m[192]; int cnt = 0;
+    for (;;) { const int g = __atomic_fetch_add(&sp->next, 1, __ATOMIC_ACQ_REL); if (g >= 12) break;
+        memset(m, 0, sizeof m); int any = 0;
+        for (int y = g * 16; y < g * 16 + 16; y++) if (sp->mask[0][y] | sp->mask[1][y]) { m[y] = 1; any++; }
+        if (any) { composeNow(p, R, S, cCenterA[sp->eye], cStripA[sp->eye], m); cnt += any; } }
+    sp->dn[part] = cnt;
 }
 void WC_SplitCommit(const WcSplit *sp, u32 *center, u32 *strip) {
     memcpy(dRH[sp->eye], sp->rh, sizeof sp->rh); dValid[sp->eye] = 1;

@@ -2,6 +2,16 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 108: slider-on battles (Grok Bot, branch `run108`)
+- Stall cause: there is no extra stall in the vblank wait. The game's VBlank waits run on a fixed 60 Hz grid (pspoke cadence.c, 2 waits per game frame). The Run 104 hardware log shows steady slider-on battles at 34.2-34.3 ms/frame = g3soft 21.6 (of which G3G_End GPU draw+readback ~10.6 ms for 2 eyes, incl. ~5.4 ms CPU convert) + composite 10.7 + present 1.7. That is ~1 ms over the 33.3 ms budget, so frames miss the next tick and wait for the one after (the "vblank wait 14 ms" in 40-44 ms frames). Fix = cut work below 33 ms, not change the wait.
+- Worst slider-on drops are the battle intro (DISPCNT 00119F18 = OBJ window, wide declines with reason 3): 45-50 ms composite, 14-15 fps on hardware, right eye rendered by engine A a second time.
+- New Debug toggles:
+  - `g3_conv_split` (default ON, same pixels): the right eye's 3D readback convert runs on a core-2 helper while main converts the left. Emulator: 3D convert 6.5 -> 3.6 ms per frame (main thread).
+  - `stereo_flat_fallback` (default OFF, visual change): stereo frames the wide compositor declines show the left eye to both eyes (no depth for those frames) instead of a second engine A render.
+  - `wide_split_r` now OFF / HALF (run 106 static split) / SHARED (=2, new: both threads claim 16-line groups until done). Default stays OFF.
+- Emulator (Coronet double battle, stereo_fake=100, ~25 s of battle, ms/frame avg): 8e84ea9 60.4, run108 (conv split + flat fallback) 57.9; wide_split_r=2 55.0 in one run. Azahar runs all CPU cores on one host thread, so the core-2 gains cannot show there; numbers are noisy. No hangs in slider-on runs or a slider-0 run with wide_split_r=2.
+- Not done: GPU compositor (needs per-pixel priority + 3D alpha), OBJ-window support in widecomp (would keep the battle intro on the fast path), skip-unchanged right eye. Untested on hardware; battle end not reached in the emulator runs.
+
 ## 2026-10-26 — Run 107: hang + slowdown from wide_split_r (branch `run107`, Claude)
 - Hardware log of the run 106 build: watchdog hang at frame 1710 (main thread's last crumb g3e-done, never b-wait; worker finished its jobs) right after the 3D slider went 1.0 -> 0.0. Cause: `bWrSplit` (wide_split_r) was only set in stereo frames and never cleared, so the first mono wide-early frame after a stereo one waited forever on `wrDone` that the worker never signalled. Fixed: cleared every frame before the stereo block.
 - Slowdown: slider-1 battle/menu frames got slower (composite 37-50 ms, engineA stage 45-51, 14-27 fps; run 105 build had 15-31 ms). The right eye used to run entirely on core 2 in parallel with the main thread's left eye; the static line split made main do its left eye plus half of the right and wait for the worker (engine B + its half). `wide_split_r` now defaults to OFF (0 = old behaviour); a version that lets whichever thread is free claim the next lines would be needed to make it a gain.
