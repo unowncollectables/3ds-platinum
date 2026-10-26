@@ -211,7 +211,8 @@ static void gcAnalyze(unsigned e,bool field){
 }
 /* run 60 gpu_compose=2/3: GPU compositor (platform/gpucomp.c) for engine A on simple frames; 3 = verify (melonDS output is
    shown, the GPU result is composed too and compared pixel by pixel, [GPUC] verify log, first mismatch dumped). */
-extern "C" {int P3DS_GcEligible(const u8*,const u16*);int P3DS_GcComposeA(const u8*,const u8*,const u8*,const u16*,const u16*,const u16*,const u32*,u32*);
+#include "widecomp.h"
+extern "C" {int P3DS_GcComposeWide(const WcPlan*,const u8*,const u8*,const u8*,const u16*,const u16*,const u16*,const u32*,u32*,u32*);int P3DS_GcEligible(const u8*,const u16*);int P3DS_GcComposeA(const u8*,const u8*,const u8*,const u16*,const u16*,const u16*,const u32*,u32*);
  extern unsigned P3DS_GcWalkUs,P3DS_GcConvUs,P3DS_GcOutUs,P3DS_GcQuads,P3DS_GcDecoded,P3DS_GcResets,P3DS_GcCpuUs,P3DS_GcGpuUs;}
 static unsigned gcFrames,gcUsed,gcInel,gcFail,gcVer,gcVerOk,gcVerBad;static u64 gcW,gcC,gcO,gcBadPx,gcCpu,gcGpu,gcDec,gcQ;static unsigned gcReason[16];
 static u32*gcScratch;static unsigned gcMenuF,gcMenuOK,gcMenuW64[4],gcMenuOn[4];extern "C" int P3DS_InField;
@@ -865,12 +866,12 @@ static const MItem mItems[]={
  {"INFINITE MONEY","cheat_money",2,{"OFF","ON"}},{"ALWAYS CATCH","cheat_catch",2,{"OFF","ON"}},{"SHINY WILD","cheat_shiny",2,{"OFF","ON"}},
  {"FAST EGGS","cheat_eggs",2,{"OFF","ON"}},{"EXP BOOST","cheat_exp",3,{"OFF","2X","3X"}},{"RARE CANDY 99","cheat_candy",2,{"OFF","ON"}},
  /* run 74: 33.. generic config rows (value = label index; log_max_kb mapped). Most apply after a restart. */
- {"FOLLOWER_AREA_TALK","follower_area_talk",2,{"OFF","ON"}},{"FOLLOWER_CRY","follower_cry",2,{"OFF","ON"}},{"FOLLOWER_ITEMS","follower_items",2,{"OFF","ON"}},{"FOLLOWER_BALLPOP","follower_ballpop",2,{"OFF","ON"}},{"FOLLOWER_EMOTES","follower_emotes",2,{"OFF","ON"}},{"FOLLOWER_FRIEND_TALK","follower_friend_talk",2,{"OFF","ON"}},{"FOLLOWER_IDLE","follower_idle",2,{"OFF","ON"}},{"FOLLOWER_GAP","follower_gap",2,{"OFF","ON"}},{"FOLLOWER_BEHIND","follower_behind",2,{"OFF","ON"}},{"WIDE_WEATHER","wide_weather",2,{"OFF","ON"}},{"WIDE_EDGEFILL","wide_edgefill",2,{"OFF","ON"}},{"WIDE_MENUS","wide_menus",2,{"OFF","ON"}},{"WIDE_FILL","wide_fill",2,{"OFF","ON"}},{"WILD_VIS","wild_vis",2,{"OFF","ON"}},{"WILD_VIS_MAX","wild_vis_max",5,{"0","1","2","3","4"}},{"WILD_VIS_REPLACE","wild_vis_replace",2,{"OFF","ON"}},{"WILD_VIS_TEST","wild_vis_test",2,{"OFF","ON"}},{"HM_FREE","hm_free",2,{"OFF","ON"}},{"SAVE_BACKUP","save_backup",2,{"OFF","ON"}},{"LOG_MAX_KB","log_max_kb",4,{"OFF","512 KB","1 MB","2 MB"}},{"CHEAT_PP","cheat_pp",2,{"OFF","ON"}},{"CHEAT_SPEED","cheat_speed",2,{"OFF","ON"}},{"CHEAT_WALK_WALLS","cheat_walk_walls",2,{"OFF","ON"}},{"CHEAT_TIME","cheat_time",5,{"OFF","MORNING","DAY","EVENING","NIGHT"}},{"CATCH_OVERLAY","catch_overlay",2,{"OFF","ON"}},{"BATTLE_ANIM_SPEED","battle_anim_speed",3,{"OFF","SKIP MOVES","SKIP + FAST HP"}},{"DW_DEPTH","dw_depth",4,{"OFF","SUBTLE","MODERATE","STRONG"}},{"DW_DEBRIS","dw_debris",2,{"OFF","ON"}},{"DW_UNEASE","dw_unease",2,{"OFF","ON"}},{"DW_CRY","dw_cry",2,{"OFF","ON"}},{"HUNT_COUNTER","hunt_counter",2,{"OFF","ON"}},{"TOD_TINT","tod_tint",2,{"OFF","ON"}},{"ITEM_PING","item_ping",2,{"OFF","ON"}},{"TOUCH_MENU","touch_menu",2,{"OFF","ON"}},{"DW_ROLL","dw_roll",2,{"OFF","ON"}},{"BOTTOM_STRIP","bottom_strip",2,{"OFF","ON"}},{"TEXT_HOLD_B","text_hold_b",2,{"OFF","ON"}},{"TEXT_AUTO","text_auto",2,{"OFF","ON"}},{"WIDE_LAYOUTS","wide_layouts",2,{"OFF","ON"}},{"SHINY_SUITE","shiny_suite",2,{"OFF","ON"}},{"WIDE_EARLY","wide_early",2,{"OFF","ON"}},{"WIDE_STEREO","wide_stereo",2,{"OFF","ON"}},{"WIDE_DIRTY","wide_dirty",3,{"OFF","ON","VERIFY"}},{"WIDE_DIRTY_REGS","wide_dirty_regs",2,{"OFF","ON"}},{"LOWER_MENU","lower_menu",2,{"OFF","ON"}},{"FIELD_PROF","field_prof",3,{"OFF","ON","AUTO"}},{"HEAP_FAST","heap_fast",2,{"OFF","ON"}},{"DC_FLUSH_SKIP","dc_flush_skip",2,{"OFF","ON"}},{"WIDE_3D_ALPHA","wide_3d_alpha",2,{"OFF","ON"}},{"HUNT_ASYNC_SAVE","hunt_async_save",2,{"OFF","ON"}},{"WIDE_SPLIT","wide_split",2,{"OFF","ON"}},{"WIRELESS","wireless",2,{"OFF","ON"}},{"BATTLE_LOG","battle_log",2,{"OFF","ON"}},{"WIDE_SPLIT_R","wide_split_r",3,{"OFF","HALF","SHARED"}},{"G3_CONV_SPLIT","g3_conv_split",2,{"OFF","ON"}},{"STEREO_FLAT_FALLBACK","stereo_flat_fallback",2,{"OFF","ON"}},{"WIDE_WINDOWS","wide_windows",2,{"OFF","ON"}},{"STEREO_GPU_BATTLE","stereo_gpu_battle",2,{"OFF","ON"}},{"GPU_BLEND_3D","gpu_blend_3d",2,{"OFF","ON"}},{"GPU_3D_DIRECT","gpu_direct3d",2,{"OFF","ON"}},
+ {"FOLLOWER_AREA_TALK","follower_area_talk",2,{"OFF","ON"}},{"FOLLOWER_CRY","follower_cry",2,{"OFF","ON"}},{"FOLLOWER_ITEMS","follower_items",2,{"OFF","ON"}},{"FOLLOWER_BALLPOP","follower_ballpop",2,{"OFF","ON"}},{"FOLLOWER_EMOTES","follower_emotes",2,{"OFF","ON"}},{"FOLLOWER_FRIEND_TALK","follower_friend_talk",2,{"OFF","ON"}},{"FOLLOWER_IDLE","follower_idle",2,{"OFF","ON"}},{"FOLLOWER_GAP","follower_gap",2,{"OFF","ON"}},{"FOLLOWER_BEHIND","follower_behind",2,{"OFF","ON"}},{"WIDE_WEATHER","wide_weather",2,{"OFF","ON"}},{"WIDE_EDGEFILL","wide_edgefill",2,{"OFF","ON"}},{"WIDE_MENUS","wide_menus",2,{"OFF","ON"}},{"WIDE_FILL","wide_fill",2,{"OFF","ON"}},{"WILD_VIS","wild_vis",2,{"OFF","ON"}},{"WILD_VIS_MAX","wild_vis_max",5,{"0","1","2","3","4"}},{"WILD_VIS_REPLACE","wild_vis_replace",2,{"OFF","ON"}},{"WILD_VIS_TEST","wild_vis_test",2,{"OFF","ON"}},{"HM_FREE","hm_free",2,{"OFF","ON"}},{"SAVE_BACKUP","save_backup",2,{"OFF","ON"}},{"LOG_MAX_KB","log_max_kb",4,{"OFF","512 KB","1 MB","2 MB"}},{"CHEAT_PP","cheat_pp",2,{"OFF","ON"}},{"CHEAT_SPEED","cheat_speed",2,{"OFF","ON"}},{"CHEAT_WALK_WALLS","cheat_walk_walls",2,{"OFF","ON"}},{"CHEAT_TIME","cheat_time",5,{"OFF","MORNING","DAY","EVENING","NIGHT"}},{"CATCH_OVERLAY","catch_overlay",2,{"OFF","ON"}},{"BATTLE_ANIM_SPEED","battle_anim_speed",3,{"OFF","SKIP MOVES","SKIP + FAST HP"}},{"DW_DEPTH","dw_depth",4,{"OFF","SUBTLE","MODERATE","STRONG"}},{"DW_DEBRIS","dw_debris",2,{"OFF","ON"}},{"DW_UNEASE","dw_unease",2,{"OFF","ON"}},{"DW_CRY","dw_cry",2,{"OFF","ON"}},{"HUNT_COUNTER","hunt_counter",2,{"OFF","ON"}},{"TOD_TINT","tod_tint",2,{"OFF","ON"}},{"ITEM_PING","item_ping",2,{"OFF","ON"}},{"TOUCH_MENU","touch_menu",2,{"OFF","ON"}},{"DW_ROLL","dw_roll",2,{"OFF","ON"}},{"BOTTOM_STRIP","bottom_strip",2,{"OFF","ON"}},{"TEXT_HOLD_B","text_hold_b",2,{"OFF","ON"}},{"TEXT_AUTO","text_auto",2,{"OFF","ON"}},{"WIDE_LAYOUTS","wide_layouts",2,{"OFF","ON"}},{"SHINY_SUITE","shiny_suite",2,{"OFF","ON"}},{"WIDE_EARLY","wide_early",2,{"OFF","ON"}},{"WIDE_STEREO","wide_stereo",2,{"OFF","ON"}},{"WIDE_DIRTY","wide_dirty",3,{"OFF","ON","VERIFY"}},{"WIDE_DIRTY_REGS","wide_dirty_regs",2,{"OFF","ON"}},{"LOWER_MENU","lower_menu",2,{"OFF","ON"}},{"FIELD_PROF","field_prof",3,{"OFF","ON","AUTO"}},{"HEAP_FAST","heap_fast",2,{"OFF","ON"}},{"DC_FLUSH_SKIP","dc_flush_skip",2,{"OFF","ON"}},{"WIDE_3D_ALPHA","wide_3d_alpha",2,{"OFF","ON"}},{"HUNT_ASYNC_SAVE","hunt_async_save",2,{"OFF","ON"}},{"WIDE_SPLIT","wide_split",2,{"OFF","ON"}},{"WIRELESS","wireless",2,{"OFF","ON"}},{"BATTLE_LOG","battle_log",2,{"OFF","ON"}},{"WIDE_SPLIT_R","wide_split_r",3,{"OFF","HALF","SHARED"}},{"G3_CONV_SPLIT","g3_conv_split",2,{"OFF","ON"}},{"STEREO_FLAT_FALLBACK","stereo_flat_fallback",2,{"OFF","ON"}},{"WIDE_WINDOWS","wide_windows",2,{"OFF","ON"}},{"STEREO_GPU_BATTLE","stereo_gpu_battle",2,{"OFF","ON"}},{"GPU_BLEND_3D","gpu_blend_3d",2,{"OFF","ON"}},{"GPU_3D_DIRECT","gpu_direct3d",2,{"OFF","ON"}},{"WIDE_GPU","wide_gpu",3,{"OFF","SLIDER UP","ALWAYS"}},{"GPU_MBRIGHT","gpu_mbright",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,2,1,1,1,1,1,0,1,0,1,0,1,1,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,2,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
 static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
@@ -943,7 +944,7 @@ extern "C" volatile int P3DS_CatchInfo[20];static int appStartTab=-1;
    rows that open one of the full pages below the tab bar (Hunt stats = the old Ball tab, Wild Pokemon here = the old
    Map tab, Quick menu = the old Menu tab); B on such a page goes back to the row that opened it. */
 enum{L_HUNT=1000,L_MAP,L_MENU};
-struct ATab{const char*name;int n;int it[30];const char*nm[30];};
+struct ATab{const char*name;int n;int it[32];const char*nm[32];};
 /* run 100 (v1.0): one/two-line help for the selected setting (top screen). */
 static const char*settingHelp(const char*k){static const char*const H[][2]={
  {"fps_counter","Frame rate in the top corner."},{"wideview","Fills the 400px top screen\nwith extra 3D view."},{"wide_layouts","Menus and battles laid out\nfor the wide screen."},
@@ -958,7 +959,7 @@ static const char*settingHelp(const char*k){static const char*const H[][2]={
  {"hunt_counter","Counts encounters for hunts."},{"catch_overlay","Y in wild battles: catch info."},{"wild_vis","Wild Pok\xe9mon show in grass."},
  {"shiny_suite","Shiny hunting helpers."},{"wide_early","Faster wide layout in battle."},{"wide_stereo","3D depth for wide layouts."},
  {"wide_dirty","Redraws only changed lines."},{"summary_ivs","IVs/EVs on the summary screen."},{"menu_audio","Music in the settings app."},
- {"dw_depth","Distortion World 3D depth."},{"dw_roll","Distortion World camera roll."},{"follower_slot","Which party slot follows."},{"cheat_time","Fixed time of day."},{"heap_fast","Skips a slow table scan on every\nfree (same result). Faster loads."},{"dc_flush_skip","Skips the game's DS cache flushes\n(not needed here). Restart."},{"wide_windows","Wide view draws screens that use DS\nwindows (battle intro) itself."},{"stereo_gpu_battle","3D slider up in battles: both eyes\non the GPU (SoulSilver way). 4:3 view."},{"gpu_blend_3d","GPU compose allows 2D blends\nnext to the 3D layer."},{"gpu_direct3d","3D stays on the GPU (no readback)\nwhen GPU compose draws the frame."},{"stereo_flat_fallback","Slider up: frames the wide view can't\ndraw (battle intro) show no depth\ninstead of rendering twice."},{"g3_conv_split","With the slider up, the right eye's\n3D readback converts on core 2."},{"hunt_async_save","Writes the shiny-hunt file in the\nbackground (no battle-start hitch)."},{"wireless","3DS-to-3DS trades and Union Room\n(test, needs 2 consoles).\nBack up your save first."},{"wide_3d_alpha","Wide layouts draw 3D fade-ins\n(send-out) instead of the slow path."},{"field_prof","Logs the slowest game functions\nof frames over 70 ms. AUTO: only for\n8 s after battle start/end."},{"wide_dirty_regs","Ignore timing-only registers\nfor the line check."},{"wide_split","Battles at slider 0: the wide\ncompose uses two cores. Restart."},{"battle_log","Logs every battle/menu frame over\n40 ms with where the time went."},{"wide_split_r","Slider up: right-eye wide compose on\nboth cores. SHARED = whichever is free.\nRestart."}};
+ {"dw_depth","Distortion World 3D depth."},{"dw_roll","Distortion World camera roll."},{"follower_slot","Which party slot follows."},{"cheat_time","Fixed time of day."},{"heap_fast","Skips a slow table scan on every\nfree (same result). Faster loads."},{"dc_flush_skip","Skips the game's DS cache flushes\n(not needed here). Restart."},{"wide_windows","Wide view draws screens that use DS\nwindows (battle intro) itself."},{"stereo_gpu_battle","3D slider up in battles: 4:3 view on\nthe GPU (no wide panels). Default OFF."},{"gpu_blend_3d","GPU compose allows 2D blends\nnext to the 3D layer."},{"gpu_direct3d","3D stays on the GPU (no readback)\nwhen GPU compose draws the frame."},{"wide_gpu","Wide battles/menus drawn on the\nGPU (both eyes). SLIDER UP = 3D on."},{"gpu_mbright","GPU compose does screen fades\n(master brightness)."},{"stereo_flat_fallback","Slider up: frames the wide view can't\ndraw (battle intro) show no depth\ninstead of rendering twice."},{"g3_conv_split","With the slider up, the right eye's\n3D readback converts on core 2."},{"hunt_async_save","Writes the shiny-hunt file in the\nbackground (no battle-start hitch)."},{"wireless","3DS-to-3DS trades and Union Room\n(test, needs 2 consoles).\nBack up your save first."},{"wide_3d_alpha","Wide layouts draw 3D fade-ins\n(send-out) instead of the slow path."},{"field_prof","Logs the slowest game functions\nof frames over 70 ms. AUTO: only for\n8 s after battle start/end."},{"wide_dirty_regs","Ignore timing-only registers\nfor the line check."},{"wide_split","Battles at slider 0: the wide\ncompose uses two cores. Restart."},{"battle_log","Logs every battle/menu frame over\n40 ms with where the time went."},{"wide_split_r","Slider up: right-eye wide compose on\nboth cores. SHARED = whichever is free.\nRestart."}};
  for(auto&h:H)if(!strcmp(h[0],k))return h[1];return nullptr;}
 static const ATab kTabs[]={
  {"Video",14,{0,1,71,2,10,20,9,64,42,59,60,67,61,62},{"FPS counter","Wide view","Wide menu layouts","Scale","3D strength","Battle 3D depth","Camera zoom","Time-of-day tint",
@@ -972,7 +973,7 @@ static const ATab kTabs[]={
  {"Cheats",11,{24,27,28,29,30,31,32,53,54,55,56},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99","Infinite PP",
   "Fast running (B)","Walls: hold R","Time of day"}},
  /* run 67: the old Speed tab, hidden: only shown after SELECT is pressed in the settings app */
- {"Debug",29,{11,12,15,19,8,52,13,7,21,43,44,78,79,80,82,73,81,74,75,76,83,85,86,87,88,89,90,91,92},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail","Log size limit","Split top (mono)","Wide view FX","Wide haze","Edge fill","Side fill in menus","Load-hitch profiler","Fast heap free","Skip game cache flushes","Hunt file bg save","Wide layout early","Wide 3D fade-in","Wide layout 3D depth","Wide redraw changed lines","Ignore timing registers","Wide compose on 2 cores","Battle frame log","Right eye on 2 cores","3D convert on 2 cores","Flat 3D when slow","Wide view windows","3D battles on GPU","GPU blend by 3D","GPU 3D direct"}},
+ {"Debug",31,{11,12,15,19,8,52,13,7,21,43,44,78,79,80,82,73,81,74,75,76,83,85,86,87,88,89,90,91,92,93,94},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail","Log size limit","Split top (mono)","Wide view FX","Wide haze","Edge fill","Side fill in menus","Load-hitch profiler","Fast heap free","Skip game cache flushes","Hunt file bg save","Wide layout early","Wide 3D fade-in","Wide layout 3D depth","Wide redraw changed lines","Ignore timing registers","Wide compose on 2 cores","Battle frame log","Right eye on 2 cores","3D convert on 2 cores","Flat 3D when slow","Wide view windows","3D battles on GPU","GPU blend by 3D","GPU 3D direct","Wide on GPU","GPU fades"}},
  /* pages (not in the tab bar) */
  {"Hunt stats",-3,{},{}},
  {"Wild Pok\xe9mon here",-2,{},{}},
@@ -1197,17 +1198,23 @@ static int Present(bool){
  /* run 110 stereo_gpu_battle (default 1, from the SoulSilver port): with the slider up outside the overworld (battles,
     menus) both eyes are composed on the GPU (gpucomp, with gpu_blend) instead of two CPU wide-layout composes; those
     frames show the DS 4:3 picture (no wide HUD layout) while the slider is up. Frames gpucomp can't do keep the wide path. */
- static int sgb=-1;if(sgb<0){sgb=P3DS_CfgInt("stereo_gpu_battle",1)!=0;PSPNativeMemLog("[GPUC] stereo_gpu_battle=%d",sgb);}
- const bool sgbNow=sgb&&stereo&&rightEye&&!P3DS_InField&&gcMode0==2&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
+ /* run 111 wide_gpu (Debug "Wide on GPU", default 1 = with the 3D slider up; 2 = also slider down; 0 = off): a wide layout frame
+    (battles, menus) is composed on the GPU from widecomp's plan for both eyes (gpucomp.c P3DS_GcComposeWide): BGs and
+    sprites at their wide positions, strips, 3D layer from the gpu_direct3d texture. The CPU wide compose and engine A
+    are skipped. Frames the GPU path can't take (windows, affine/semi sprites, ...) use the CPU wide path as before. */
+ static int wgCfg=-1;if(wgCfg<0){wgCfg=P3DS_CfgInt("wide_gpu",1);if(wgCfg<0||wgCfg>2)wgCfg=1;PSPNativeMemLog("[WIDE] wide_gpu=%d",wgCfg);}
+ const bool wgNow=wgCfg&&wlNow&&(stereo?rightEye!=nullptr:wgCfg==2)&&gcMode0==2&&engineA.Enabled&&!engineA.CaptureLatch&&WC_Check(&wcPlan,PSPNative_GfxRegisters,1)==0&&gcEligible();
+ static int sgb=-1;if(sgb<0){sgb=P3DS_CfgInt("stereo_gpu_battle",0)!=0;PSPNativeMemLog("[GPUC] stereo_gpu_battle=%d",sgb);}
+ const bool sgbNow=!wgNow&&sgb&&stereo&&rightEye&&!P3DS_InField&&gcMode0==2&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
  if(sgbNow)wlNow=false;
- P3DS_GpuBattleUp=sgb&&stereo&&gcMode0==2;  /* run 110: health boxes stay at DS positions while the slider is up (wideapi.c) */
- if(wlNow||engineA.CaptureLatch)G3G_DirectResolve();  /* gpu_direct3d: widecomp / display capture read NativeFrame */
+ P3DS_GpuBattleUp=sgb&&!wgCfg&&stereo&&gcMode0==2;  /* run 110: health boxes stay at DS positions while the slider is up (wideapi.c) */
+ if((wlNow&&!wgNow)||engineA.CaptureLatch)G3G_DirectResolve();  /* gpu_direct3d: widecomp / display capture read NativeFrame */
  const bool gcSt=!wlNow&&gcMode0==2&&stereo&&rightEye&&(P3DS_InField||sgbNow)&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
- if(stereo&&!gcSt)G3G_DirectResolve();  /* gpu_direct3d: the CPU right-eye paths read the 3D layer */
- bool rightPar=async&&par3d&&stereo&&rightEye&&!gcSt;
+ if(stereo&&!gcSt&&!wgNow)G3G_DirectResolve();  /* gpu_direct3d: the CPU right-eye paths read the 3D layer */
+ bool rightPar=async&&par3d&&stereo&&rightEye&&!gcSt&&!wgNow;
  /* run 96 wide_early in stereo: with a wide layout both eyes end up as widecomp's single picture (the right eye is a copy),
     so the right-eye engine A pass on core 2 was thrown away too. wide_early now also covers stereo (per-vertex 3D eyes). */
- const bool wlEarlyPre=wlNow&&async&&!engineA.CaptureLatch&&!(reg32(0x64)&0x80000000u)&&(!stereo||rightEye)&&P3DS_CfgInt("wide_early",1)!=0
+ const bool wlEarlyPre=wlNow&&!wgNow&&async&&!engineA.CaptureLatch&&!(reg32(0x64)&0x80000000u)&&(!stereo||rightEye)&&P3DS_CfgInt("wide_early",1)!=0
   /* run 99 wide_early_check=1: only when widecomp will accept this frame. Before, a declined frame (windows: the Poke Ball
      send-out, ...) in stereo fell to the serial right-eye redraw on the main thread (48-57 ms on hardware). */
   &&(!P3DS_CfgInt("wide_early_check",1)||WC_Check(&wcPlan,PSPNative_GfxRegisters,GPU3D::NativeFrame!=nullptr)==0);
@@ -1215,7 +1222,7 @@ static int Present(bool){
  /* run 108 stereo_flat_fallback (default 0): a stereo frame the wide compositor declines (battle intro OBJ window, ...)
     shows the left eye to both eyes for that frame instead of rendering engine A a second time (45 ms frames on hardware). */
  static int sffCfg=-1;if(sffCfg<0){sffCfg=P3DS_CfgInt("stereo_flat_fallback",0)!=0;PSPNativeMemLog("[WIDE] stereo_flat_fallback=%d",sffCfg);}
- const bool flatEye=sffCfg&&stereo&&!wlEarlyPre&&!gcSt;if(flatEye)rightPar=false;
+ const bool flatEye=sffCfg&&stereo&&!wlEarlyPre&&!gcSt&&!wgNow;if(flatEye)rightPar=false;
  if(rightPar){memcpy((void*)&engineA2,(const void*)&engineA,sizeof engineA);engineA2.CaptureCnt=0;engineA2.CaptureLatch=false;}
  /* run 55 stereo_2d=1 (default): outside the overworld (battles, menus, title) the right eye's 2D background layers
     get depth by BG priority: priority 3 (back) = the far-3D disparity (2 x shift), priority 2 = 1.5 x, priorities 0-1
@@ -1234,7 +1241,7 @@ static int Present(bool){
  if(splitCfg<0){splitCfg=1;/* run 57: default 1 (Azahar: identical images overworld/battle/menus, mono composite -37%) */FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"split_top=%d",&x)==1)splitCfg=x!=0;fclose(f);}PSPNativeMemLog("[2D] split_top=%d",splitCfg);}
  const int gcMode=P3DS_GpuComposeCfg();if(gcMode>=2)gcFrames++;
  const bool gcOK=!wlNow&&gcMode==2&&(!stereo||gcSt)&&!rightPar&&engineA.Enabled&&(gcSt||gcEligible());
- if(!gcOK)G3G_DirectResolve();  /* gpu_direct3d: CPU composite reads NativeFrame */
+ if(!gcOK&&!wgNow)G3G_DirectResolve();  /* gpu_direct3d: CPU composite reads NativeFrame */
  /* run 95 wide_early=1 (default): a wide-layout screen (party, bag, boxes, ...) used to be drawn twice: the full melonDS
     engine A pass, then widecomp over all of it (in the emulator 16 + ~55 ms, the menus' stutter). widecomp reads only
     registers / VRAM / OAM / palettes / the 3D layer, never engine A's picture, so it now runs right after engine B is handed
@@ -1243,7 +1250,7 @@ static int Present(bool){
     Not with stereo, display capture or a synchronous engine B. 0 = old order. */
  const bool wlEarlyWant=wlEarlyPre&&!rightPar&&!onC1&&!stealNow;
  bool wlEarly=false;
- const bool splitNow=!wlEarlyWant&&!gcOK&&splitCfg&&async&&!stereo&&!rightPar&&!onC1&&!stealNow&&engineA.Enabled&&((a>>16)&3)==1&&!(reg32(0x64)&0x80000000u);
+ const bool splitNow=!wlEarlyWant&&!gcOK&&!wgNow&&splitCfg&&async&&!stereo&&!rightPar&&!onC1&&!stealNow&&engineA.Enabled&&((a>>16)&3)==1&&!(reg32(0x64)&0x80000000u);
  if(splitNow){memcpy((void*)&engineAS,(const void*)&engineA,sizeof engineA);line0Done=false;bSplit=true;splitN++;}
  /* run 97 wide_stereo_par=1: with wide_early in stereo, the right eye's wide compose runs on core 2 (after engine B) while
     the main thread composes the left eye: both eyes keep their own 3D layer at about the cost of one. */
@@ -1284,9 +1291,24 @@ static int Present(bool){
      const int pr=reg16(8+i*2)&3,d=cfg==1?(pr==3?2*sd2:pr==2?(3*sd2)/2:0):(pr==3?(sd2+1)/2:pr==2?(sd2+2)/4:0);
      if(d)*(u16*)(regsCopy+0x10+i*4)=(u16)((reg16(0x10+i*4)-d)&0x1FF);}}
    gcStR=P3DS_GcComposeA(regsR,GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,rightEye,rawR)!=0;if(gcStR)gcStN++;}}
+ bool wgDone=false;
+ if(wgNow){if(!async)for(unsigned line=0;line<192;line++){GPU::VCount=line;engineB.CheckWindows(line);renderer.DrawSprites(line,&engineB);renderer.DrawScanline(line,&engineB);}
+  const u8*R0=(const u8*)PSPNative_GfxRegisters;const u8*bgv=GPU::VRAMFlat_ABG,*obv=GPU::VRAMFlat_AOBJ;const u16*bp=(const u16*)GPU::Palette,*op=(const u16*)(GPU::Palette+512),*oa=(const u16*)GPU::OAM;
+  wgDone=P3DS_GcComposeWide(&wcPlan,R0,bgv,obv,bp,op,oa,GPU3D::NativeFrame,display[0],P3DS_WideFillBuf)!=0;
+  if(wgDone&&stereo)wgDone=P3DS_GcComposeWide(&wcPlan,R0,bgv,obv,bp,op,oa,rightEye,rawR,nullptr)!=0;
+  static unsigned wgN,wgF;if(wgDone)wgN++;else wgF++;if((wgN+wgF)%600==0)PSPNativeMemLog("[WIDE] wide_gpu: %u of the last 600 wide frames on the GPU (%u fell back to the CPU)",wgN,wgF),wgN=wgF=0;
+  if(wgDone){gcDone=true;line0Done=true;
+   /* test hook wide_gpu_verify=N: every Nth GPU wide frame is also drawn by the CPU widecomp (left eye) and compared */
+   static int wv=-1;if(wv<0){wv=P3DS_CfgInt("wide_gpu_verify",0);}static unsigned wvn;
+   if(wv>0&&++wvn%wv==0){static u32 vc[256*192],vs[64*192];G3G_DirectResolve();WcSrc ws={GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,GPU::VRAMFlat_ABGExtPal,GPU::VRAMFlat_AOBJExtPal,bp,op,oa,GPU3D::NativeFrame};
+    if(WC_Compose(&wcPlan,R0,&ws,vc,vs)){unsigned bc=0,bs=0,md=0,fx=-1,fy=-1;for(int i=0;i<256*192;i++){const u32 a=vc[i],b=display[0][i];if((a&0xFFFFFF)!=(b&0xFFFFFF)){bc++;for(int k=0;k<24;k+=8){const int d=abs((int)((a>>k)&255)-(int)((b>>k)&255));if((unsigned)d>md)md=d;}if(fx==(unsigned)-1){fx=i%256;fy=i/256;}}}
+     for(int i=0;i<64*192;i++)if((vs[i]|0xFF)!=(P3DS_WideFillBuf[i]|0xFF))bs++;
+     PSPNativeMemLog("[WIDE] wide_gpu verify #%u: centre %u px differ (max channel diff %u, first x %d y %d), strips %u px differ | DISPCNT %08X BLDCNT %04X",wvn,bc,md,(int)fx,(int)fy,bs,(unsigned)reg32(0),(unsigned)reg16(0x50));
+     static int dumped;if(bc>200&&dumped<2){dumped++;dumpBmp(dumped==1?"sdmc:/3ds/platinum3ds/wgv_gpu.bmp":"sdmc:/3ds/platinum3ds/wgv_gpu2.bmp",display[0],false);dumpBmp(dumped==1?"sdmc:/3ds/platinum3ds/wgv_cpu.bmp":"sdmc:/3ds/platinum3ds/wgv_cpu2.bmp",vc,false);}}}}
+  else if(!async){/* engine B already drawn above; the CPU fallback below must not draw it again */}}
  if(!gcDone||(gcSt&&!gcStR))G3G_DirectResolve();  /* gpu_direct3d: GPU compose rejected the frame */
  if(!gcDone&&!wlEarly)for(unsigned line=0;line<192;line++){if(line>=aEnd&&async)break;GPU::VCount=line;engineA.CheckWindows(line);renderer.DrawSprites(line,&engineA);renderer.DrawScanline(line,&engineA);if(!line)line0Done=true;
-  if(!async&&!gcOK){engineB.CheckWindows(line);renderer.DrawSprites(line,&engineB);renderer.DrawScanline(line,&engineB);}} P3DS_St[3]=svcGetSystemTick();
+  if(!async&&!gcOK&&!wgNow){engineB.CheckWindows(line);renderer.DrawSprites(line,&engineB);renderer.DrawScanline(line,&engineB);}} P3DS_St[3]=svcGetSystemTick();
  if(stealNow&&claimB()){stealMain++;drawEngineB();}
  P3DS_Crumb(async?(excl?"b-spin":"b-wait"):"b-none",0);
  if(async){if(excl){while(!LightEvent_TryWait(&bDone)){}}else LightEvent_Wait(&bDone);}
@@ -1323,11 +1345,11 @@ static int Present(bool){
   static int sq0=-2,sqn=0;if(sq0==-2){sq0=-1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int a,b;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"dump_seq=%d,%d",&a,&b)==2){sq0=a;sqn=b;}fclose(f);}if(sq0>=0)mkdir("sdmc:/3ds/platinum3ds/seq",0777);}
   if(sq0>=0&&(int)frames>=sq0&&(int)frames<sq0+sqn){char fn[80];snprintf(fn,sizeof fn,"sdmc:/3ds/platinum3ds/seq/f%05u.raw",frames);FILE*f=fopen(fn,"wb");if(f){fwrite(display[0],4,256*192,f);fwrite(display[1],4,256*192,f);fclose(f);}}}
  P3DS_St[12]=svcGetSystemTick(); const u32*eyeL=nullptr,*eyeR=nullptr;
- P3DS_PathC=!stereo?(wlEarly?'w':'m'):gcStR?'G':rightPar?'P':(flatEye&&!wlEarly)?'F':wlEarly?'W':'S';
+ P3DS_PathC=wgDone?(stereo?'X':'x'):!stereo?(wlEarly?'w':'m'):gcStR?'G':rightPar?'P':(flatEye&&!wlEarly)?'F':wlEarly?'W':'S';
  if(stereo&&gcStR){eyeL=display[0];eyeR=rawR;} /* run 61: both eyes from the GPU compositor */
  else if(stereo&&rightPar){eyeL=display[0];eyeR=rawR;}
  else if(stereo&&flatEye&&!wlEarly){eyeL=eyeR=display[0];static unsigned fn;if(fn++%300==0)PSPNativeMemLog("[WIDE] flat fallback frame (%u)",fn);}
- else if(stereo&&wlEarly){eyeL=display[0];eyeR=rawR;} /* run 96: widecomp drew eyeL; the wide block copies it to eyeR */ /* no copies: present reads both eyes in place */
+ else if(stereo&&(wlEarly||wgDone)){eyeL=display[0];eyeR=rawR;} /* run 96: widecomp drew eyeL; the wide block copies it to eyeR */ /* no copies: present reads both eyes in place */
  else if(stereo){memcpy(stereoL,display[0],sizeof stereoL);if(rightEye)memcpy(GPU3D::NativeFrame,rightEye,256*192*4);else shift3D(2*sd);FrameStart(engineA);
   for(unsigned line=0;line<192;line++){GPU::VCount=line;engineA.CheckWindows(line);renderer.DrawSprites(line,&engineA);renderer.DrawScanline(line,&engineA);}
   if(!rightEye)shift3D(-sd);eyeL=stereoL;eyeR=display[0];P3DS_SerialSt++;}
@@ -1338,7 +1360,7 @@ static int Present(bool){
  /* run 55 stereo blob diag (stereo_blobdiag=1, default): every 60 stereo frames, 16x16 cells where one eye is black
     (rgb < 8) on > 60% of the cell and the other eye is not -> one log line; the first hit dumps both eyes and both 3D
     layers to sdmc:/3ds/platinum3ds/stereo_blob_{L,R,3dL,3dR}.bmp for the next report. */
- if(stereo&&eyeL&&eyeR&&!wlEarly){/* run 97: not with wide_early (eyeR is only filled by the wide block below; the first battle hit dumped 4 BMPs = 2.7 s freeze) */static int cfg=-1;static unsigned n,hits;static bool dumpedB;if(cfg<0){cfg=P3DS_CfgInt("stereo_blobdiag",1)!=0;}
+ if(stereo&&eyeL&&eyeR&&!wlEarly&&!wgDone){/* run 97: not with wide_early (eyeR is only filled by the wide block below; the first battle hit dumped 4 BMPs = 2.7 s freeze) */static int cfg=-1;static unsigned n,hits;static bool dumpedB;if(cfg<0){cfg=P3DS_CfgInt("stereo_blobdiag",1)!=0;}
   if(cfg&&++n%60==0&&hits<40){int bestN=0,bx=0,by=0,beye=0;
    for(int cy=0;cy<12;cy++)for(int cx=1;cx<15;cx++){int l=0,r=0;for(int y=cy*16;y<cy*16+16;y++)for(int x=cx*16;x<cx*16+16;x++){u32 a=eyeL[y*256+x]&0xF8F8F8u,b=eyeR[y*256+x]&0xF8F8F8u;if(!a&&b)l++;else if(a&&!b)r++;}
     if(l>bestN){bestN=l;bx=cx;by=cy;beye=0;}if(r>bestN){bestN=r;bx=cx;by=cy;beye=1;}}
@@ -1354,14 +1376,14 @@ static int Present(bool){
  bool wlDone=false;
  if(wlNow){const u64 tw=svcGetSystemTick();u32*c0=(u32*)(stereo?eyeL:top);
   WcSrc ws={GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,GPU::VRAMFlat_ABGExtPal,GPU::VRAMFlat_AOBJExtPal,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,GPU3D::NativeFrame};
-  if(wlEarly)wlDone=true; /* run 95 wide_early: already composed while engine B rendered */
+  if(wlEarly||wgDone)wlDone=true; /* run 95 wide_early: already composed while engine B rendered */
   else wlDone=WC_Compose(&wcPlan,PSPNative_GfxRegisters,&ws,c0,P3DS_WideFillBuf)!=0;
   /* run 97 wide_stereo=1 (default): the right eye is composed again with the right-eye 3D layer, so battles (3D BG0) keep
      their slider depth (run 96 copied the left picture: no depth). 2D layers are the same in both eyes, as in wide_early's
      source. 0 = copy (faster, flat). */
   if(wlDone&&stereo&&eyeR&&eyeR!=c0){static int wsc=-1;if(wsc<0){wsc=P3DS_CfgInt("wide_stereo",1);PSPNativeMemLog("[WIDE] wide_stereo=%d",wsc);}
    static u32 stripR[64*192];bool okR=false;
-   if(bWideROk)okR=true;else if(wsc&&rightEye&&(PSPNative_GfxRegisters[0]&8)){WcSrc wr=ws;wr.frame3d=rightEye;okR=WC_ComposeEye(&wcPlan,PSPNative_GfxRegisters,&wr,(u32*)eyeR,stripR,1)!=0;}
+   if(bWideROk||wgDone)okR=true;else if(wsc&&rightEye&&(PSPNative_GfxRegisters[0]&8)){WcSrc wr=ws;wr.frame3d=rightEye;okR=WC_ComposeEye(&wcPlan,PSPNative_GfxRegisters,&wr,(u32*)eyeR,stripR,1)!=0;}
    if(!okR)memcpy((u32*)eyeR,c0,256*192*4);}
   {static int lastOk=-1;const int why=WC_Check(&wcPlan,PSPNative_GfxRegisters,GPU3D::NativeFrame!=nullptr);const int key=wlDone?0:why+1;if(key!=lastOk){lastOk=key;PSPNativeMemLog("[WIDE] wide layout drawing %s (reason %d, DISPCNT %08X BLDCNT %04X)",wlDone?"on":"off",why,*(const u32*)PSPNative_GfxRegisters,*(const u16*)(PSPNative_GfxRegisters+0x50));}}
   if(wlDone){wnReady=true;static u64 acc;static unsigned n;acc+=svcGetSystemTick()-tw;if(++n==600){PSPNativeMemLog("[WIDE] wide layout avg %u us/frame",(unsigned)(acc/600/CPU_TICKS_PER_USEC));acc=0;n=0;}}}
