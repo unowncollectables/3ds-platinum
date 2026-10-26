@@ -161,7 +161,7 @@ and it unlocks the Underground, local battles and Platinum-to-SoulSilver trades 
 
 | Step | What | Where | Size |
 |---|---|---|---|
-| M0 | UDS probe: **written**, `tools/uds_probe/` (a standalone .3dsx, no game code). It hosts or joins a UDS network and logs round-trip time, loss and jitter for 192/38-byte packets at 60 or 30 Hz over 60 s to `sdmc:/3ds/uds_probe.txt` (`[UDS]` lines). Needs two consoles. Nathan has a New 3DS XL and a New 3DS | `tools/uds_probe/` | small, done |
+| M0 | UDS probe: **written**, `tools/uds_probe/` in 3ds-platinum (a standalone .3dsx, no game code). It hosts or joins a UDS network and logs round-trip time, loss and jitter for 192/38-byte packets at 60 or 30 Hz over 60 s to `sdmc:/3ds/uds_probe.txt` (`[UDS]` lines). Needs two consoles. Nathan has a New 3DS XL and a New 3DS | `tools/uds_probe/` | small, done |
 | M1a | `wm_uds.c`: the full WM API on UDS (table above), selected at run time by `wireless=1` (System tab, default OFF). Off falls through to the current `wm_absent.c` code (both in one file, or two files behind a dispatch). Log tag `[WIRELESS]`: every state change and connect/disconnect, MP cycle stats every 10 s | pspoke-patch (services/) + Makefile | medium |
 | M1b | Make the beacon game info and scan results byte-exact, so the Union Room lists the other 3DS. Map aids and node IDs | same | small |
 | M1c | Hardware test: Union Room trade, then the Wireless Trade desk, then a local battle, on two copied saves. Then savecheck.py and a cart/DeSmuME load of both saves | Nathan + logs | test |
