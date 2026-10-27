@@ -2,6 +2,12 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-27 — Run 118a: frame_pacing (Claude, branch `run118-frame-pacing`)
+- New `frame_pacing` (Debug "Frame pacing", OFF / FIXED / ADAPTIVE, default OFF). Until now every GPU compose (gpucomp.c) waited for its own draw + readback (~1.1-1.6 ms per compose in the Run 116 hardware log, twice a frame with the slider up).
+- FIXED: a compose queues its draw and shows the same eye's pixels from the frame before (one frame of latency) while the CPU carries on. ADAPTIVE: no latency while frames are on time (the stereo left eye's draw overlaps the right eye's tile walk); after a frame over 35 ms it works as FIXED until 600 frames in a row are on time (doubling, up to 16x, if lag returns within 60 frames).
+- Frame boundary hooks in render3ds.cpp (P3DS_GcFrame / P3DS_GcFinish). Two extra linear-memory buffers; if they can't be allocated it logs "[GPUC] frame_pacing buffers: out of linear memory, pacing off". A 600-frame summary is logged. The menu change applies at once.
+- OFF = Run 117 behaviour. **Untested on hardware and in the emulator** (compile-only: `make` + `make cia`). Hardware check: turn it on, look for one-frame ghosting on transitions/fades, compare battle/menu fps with OFF, read the [GPUC] frame_pacing lines.
+
 ## 2026-10-26 — Run 117: slider-up Pokedex, one compose for both eyes (Grok Bot, branch `run117`)
 - Run 116 hardware [WCPROF]: with the slider up, the Pokedex composed both eyes in full on the CPU (192 lines each, ~33 ms per eye: sprites 12, BGs 14.7, out 6.3 ms), 15 fps. Slider 0 was 29-30 fps (dirty lines + wide_split).
 - An emulator diagnostic showed the global inputs rarely change (blend regs only), so the dirty detection is right. The emulator draws the Pokedex mostly on the GPU wide path and can't reproduce the slowness.
