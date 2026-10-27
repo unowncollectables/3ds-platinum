@@ -42,6 +42,7 @@ static GV *vb; static u32 *rb;
    Half the atlas memory (1 MiB of linear RAM) and half the texture reads. Not bit-identical: the PICA widens 5-bit colour as
    c<<3|c>>2, melonDS as c<<3|c>>3, so a channel can differ by up to 4 of 255 from the RGBA8 atlas (and the CPU path). */
 static int a16;
+static int bootGuard(int k, int v); static void bgStage(int k, const char *st);  /* run 118 boot guard (below) */
 static int gpuBusy;  /* run 118 frame_pacing: a draw of ours is queued and none of our FrameBegins has waited for it since */
 static void gcIdle(void) { if (gpuBusy) { C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); gpuBusy = 0; } }
 static DVLB_s *dvlb; static shaderProgram_s prog; static int uProj; static int ready = -1;
@@ -67,13 +68,18 @@ static int init(void) {
     vb = (GV *)linearAlloc(MAXQ * 6 * sizeof(GV));
     rb = (u32 *)linearAlloc(256 * 256 * 4);
     if (!tab || !vb || !rb) { PSPNativeMemLog("[GPUC] init: out of memory"); return 0; }
-    a16 = P3DS_CfgInt("gc_atlas16", 0) != 0; PSPNativeMemLog("[GPUC] gc_atlas16=%d", a16);
-    if (!C3D_TexInit(&atlas, AW, AH, a16 ? GPU_RGBA5551 : GPU_RGBA8) || !C3D_TexInit(&tex3d, 256, 256, GPU_RGBA8) || !C3D_TexInit(&tex3dB, 256, 256, GPU_RGBA8)) { PSPNativeMemLog("[GPUC] init: tex alloc failed"); return 0; }
+    a16 = bootGuard(1, P3DS_CfgInt("gc_atlas16", 0) != 0); PSPNativeMemLog("[GPUC] gc_atlas16=%d", a16);
+    bgStage(1, "init: C3D_TexInit RGBA5551 atlas");
+    if (a16 && (!C3D_TexInit(&atlas, AW, AH, GPU_RGBA5551) || atlas.fmt != GPU_RGBA5551 || atlas.size != AW * AH * 2 || ((u32)atlas.data & 0x7F))) {
+        PSPNativeMemLog("[GPUC] gc_atlas16: 16-bit atlas not usable (data %p size %lu fmt %d), RGBA8 instead", atlas.data, (unsigned long)atlas.size, (int)atlas.fmt);
+        if (atlas.data) C3D_TexDelete(&atlas); memset(&atlas, 0, sizeof atlas); a16 = 0; }
+    if ((!a16 && !C3D_TexInit(&atlas, AW, AH, GPU_RGBA8)) || !C3D_TexInit(&tex3d, 256, 256, GPU_RGBA8) || !C3D_TexInit(&tex3dB, 256, 256, GPU_RGBA8)) { PSPNativeMemLog("[GPUC] init: tex alloc failed"); return 0; }
     C3D_TexSetFilter(&atlas, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&atlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexSetFilter(&tex3dB, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&tex3dB, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE); memset(tex3dB.data, 0, 256 * 256 * 4); GSPGPU_FlushDataCache(tex3dB.data, 256 * 256 * 4);
     C3D_TexSetFilter(&tex3d, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&tex3d, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     memset(atlas.data, 0, AW * AH * (a16 ? 2 : 4)); memset(tex3d.data, 0, 256 * 256 * 4);
     GSPGPU_FlushDataCache(atlas.data, AW * AH * (a16 ? 2 : 4)); GSPGPU_FlushDataCache(tex3d.data, 256 * 256 * 4);
+    bgStage(1, "init: atlas ready, first GPU compose next");
     if (!C3D_TexInitVRAM(&rtTex, 256, 256, GPU_RGBA8)) { PSPNativeMemLog("[GPUC] init: VRAM target failed"); return 0; }
     rt = C3D_RenderTargetCreateFromTex(&rtTex, GPU_TEXFACE_2D, 0, -1); if (!rt) return 0;
     dvlb = DVLB_ParseFile((u32 *)blit_shbin, blit_shbin_size);
@@ -373,12 +379,16 @@ static char bgArmed[2]; static unsigned bgFrames;
 static int bootGuard(int k, int v) {
     FILE *f = fopen(bgPath[k], "r");
     if (!v) { if (f) { fclose(f); remove(bgPath[k]); } return 0; }
-    if (f) { fclose(f); remove(bgPath[k]); P3DS_CfgWrite(bgKey[k], 0);
-        PSPNativeMemLog("[GPUC] %s=%d forced OFF: the last start with it on never reached 300 frames (%s was still there). Set it again to retry.", bgKey[k], v, bgPath[k]); return 0; }
-    if ((f = fopen(bgPath[k], "w"))) { fputs("boot guard: removed after 300 frames\n", f); fclose(f); bgArmed[k] = 1; }
+    if (f) { char st[96] = ""; if (!fgets(st, sizeof st, f)) st[0] = 0; fclose(f); remove(bgPath[k]); P3DS_CfgWrite(bgKey[k], 0);
+        { char *e = strchr(st, 10); if (e) *e = 0; }
+        PSPNativeMemLog("[GPUC] %s=%d forced OFF: the last start with it on never reached 300 frames (%s was still there, last stage: %s). Set it again to retry.", bgKey[k], v, bgPath[k], st[0] ? st : "?"); return 0; }
+    if ((f = fopen(bgPath[k], "w"))) { fputs("armed\n", f); fclose(f); bgArmed[k] = 1; bgFrames = 0; }
     return v;
 }
+/* the guarded start's progress, read back (and logged) by the next start if this one dies */
+static void bgStage(int k, const char *st) { if (!bgArmed[k]) return; FILE *f = fopen(bgPath[k], "w"); if (f) { fputs(st, f); fputc(10, f); fclose(f); } }
 static void bootGuardTick(void) {
+    if (bgArmed[1] && bgFrames == 30) bgStage(1, "30 frames after GPU compose init");
     if ((bgArmed[0] || bgArmed[1]) && ++bgFrames == 300)
         for (int k = 0; k < 2; k++) if (bgArmed[k]) { remove(bgPath[k]); bgArmed[k] = 0; PSPNativeMemLog("[GPUC] %s: 300 frames, boot guard cleared", bgKey[k]); }
 }
