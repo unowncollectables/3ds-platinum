@@ -1474,3 +1474,19 @@ MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, li
 - Run 114: wide_gpu_precheck (default ON): wide frames with a blend the GPU rejects use the CPU wide path; fixes the slow launch with the slider up.
 - Run 113: clean-up. stereo_blobdiag/field_prof default off, [3DLAYER] scan only at log FULL, wide_split_r and stereo_gpu_battle removed, stale patches/runNN removed; [BATT] counts log lines.
 - Run 112: overworld wide view restored (wide_gpu target freed for the field 320 3D targets), tools/field_wide_test.sh.
+
+## Run 120 (reset_skip_intro + select_reset, ported from claude/next)
+- Brings the Oct 25 claude/next work onto main. That branch labelled it "run 95-98", which clashes with main's own runs 95-98
+  (wide compositor work), so it is renumbered here. Both keys default OFF; settings app Hunt tab rows "Skip intro on reset" (item 107)
+  and "Hold SELECT = reset (battle)" (item 108).
+- reset_skip_intro: P3DS_SoftReset writes sdmc:/3ds/platinum3ds/skipintro.tmp (time); the next boot reads and deletes it and only skips
+  if it is under 30 s old. The relaunched process taps START (2 polls on / 4 off, START only, never the save-delete combo) until
+  MainMenu_Init sets P3DS_BootStage = 2 (work_patches/overlays/main_menu__main_menu.c.patch) or 3000 polls pass. No credits splash on
+  such a boot. Log: `[BOOT] soft reset marker ...`, `[BOOT] skip intro done: stage 2 after N polls, M ms`. Hardware log on the old
+  branch: reached the Continue menu 10858 ms after the first poll (the opening's own loading is the wait).
+- select_reset: SELECT alone held 6 polls in a wild battle (P3DS_CatchInfo[0], not in the field) -> P3DS_SoftReset. Never seen firing
+  on hardware yet; the first 6 SELECT presses log `[BOOT] SELECT pressed: select_reset=N catchInfo=N inField=N` to show which
+  condition fails.
+- Not ported: the branch's "run 99" WC_SpritesPastEdge gate (wide compositor only when a sprite crosses the DS edge). Main's own runs
+  99-117 rebuilt that path (wide_early_check, wide_gpu_precheck, ...), so it no longer applies.
+- Not compiled in the cloud (no devkitARM). On a builder tree, the main_menu overlay patch is new, so main_menu.c is rebuilt.
