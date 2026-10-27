@@ -37,6 +37,11 @@ static GE *tab; static unsigned slotsUsed, frameNo;
 static C3D_Tex atlas, tex3d, tex3dB, rtTex; static C3D_Tex *t3cur = &tex3d;
 extern int P3DS_InField; static C3D_RenderTarget *rt;
 static GV *vb; static u32 *rb;
+/* run 118 gc_atlas16 (Debug "16-bit 2D tiles", default 0, read at start): the 2D tile atlas is RGBA5551 instead of RGBA8.
+   Tiles are opaque or fully transparent (blends use the blend constant, not texel alpha), so one alpha bit is enough.
+   Half the atlas memory (1 MiB of linear RAM) and half the texture reads. Not bit-identical: the PICA widens 5-bit colour as
+   c<<3|c>>2, melonDS as c<<3|c>>3, so a channel can differ by up to 4 of 255 from the RGBA8 atlas (and the CPU path). */
+static int a16;
 static int gpuBusy;  /* run 118 frame_pacing: a draw of ours is queued and none of our FrameBegins has waited for it since */
 static void gcIdle(void) { if (gpuBusy) { C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); gpuBusy = 0; } }
 static DVLB_s *dvlb; static shaderProgram_s prog; static int uProj; static int ready = -1;
@@ -62,12 +67,13 @@ static int init(void) {
     vb = (GV *)linearAlloc(MAXQ * 6 * sizeof(GV));
     rb = (u32 *)linearAlloc(256 * 256 * 4);
     if (!tab || !vb || !rb) { PSPNativeMemLog("[GPUC] init: out of memory"); return 0; }
-    if (!C3D_TexInit(&atlas, AW, AH, GPU_RGBA8) || !C3D_TexInit(&tex3d, 256, 256, GPU_RGBA8) || !C3D_TexInit(&tex3dB, 256, 256, GPU_RGBA8)) { PSPNativeMemLog("[GPUC] init: tex alloc failed"); return 0; }
+    a16 = P3DS_CfgInt("gc_atlas16", 0) != 0; PSPNativeMemLog("[GPUC] gc_atlas16=%d", a16);
+    if (!C3D_TexInit(&atlas, AW, AH, a16 ? GPU_RGBA5551 : GPU_RGBA8) || !C3D_TexInit(&tex3d, 256, 256, GPU_RGBA8) || !C3D_TexInit(&tex3dB, 256, 256, GPU_RGBA8)) { PSPNativeMemLog("[GPUC] init: tex alloc failed"); return 0; }
     C3D_TexSetFilter(&atlas, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&atlas, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     C3D_TexSetFilter(&tex3dB, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&tex3dB, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE); memset(tex3dB.data, 0, 256 * 256 * 4); GSPGPU_FlushDataCache(tex3dB.data, 256 * 256 * 4);
     C3D_TexSetFilter(&tex3d, GPU_NEAREST, GPU_NEAREST); C3D_TexSetWrap(&tex3d, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-    memset(atlas.data, 0, AW * AH * 4); memset(tex3d.data, 0, 256 * 256 * 4);
-    GSPGPU_FlushDataCache(atlas.data, AW * AH * 4); GSPGPU_FlushDataCache(tex3d.data, 256 * 256 * 4);
+    memset(atlas.data, 0, AW * AH * (a16 ? 2 : 4)); memset(tex3d.data, 0, 256 * 256 * 4);
+    GSPGPU_FlushDataCache(atlas.data, AW * AH * (a16 ? 2 : 4)); GSPGPU_FlushDataCache(tex3d.data, 256 * 256 * 4);
     if (!C3D_TexInitVRAM(&rtTex, 256, 256, GPU_RGBA8)) { PSPNativeMemLog("[GPUC] init: VRAM target failed"); return 0; }
     rt = C3D_RenderTargetCreateFromTex(&rtTex, GPU_TEXFACE_2D, 0, -1); if (!rt) return 0;
     dvlb = DVLB_ParseFile((u32 *)blit_shbin, blit_shbin_size);
@@ -115,11 +121,12 @@ static inline u32 col8(u16 c) { /* DS 15-bit -> melonDS final 8-bit, as PICA RGB
     const u32 r = c & 31, g = (c >> 5) & 31, b = (c >> 10) & 31;
     return (((r << 3) | (r >> 3)) << 24) | (((g << 3) | (g >> 3)) << 16) | (((b << 3) | (b >> 3)) << 8) | 0xFF; }
 static u32 palHash[2][17];  /* [bg/obj][bank 0-15, 16 = 256-colour] */
-static u32 lut[2][256];
+static u32 lut[2][256]; static u16 lut16[2][256];
 static void palPrep(const u16 *pal, int k) {
     for (int b = 0; b < 16; b++) { u32 h = 2166136261u; for (int i = 0; i < 16; i++) h = (h ^ pal[b * 16 + i]) * 16777619u; palHash[k][b] = h; }
     { u32 h = 2166136261u; for (int i = 0; i < 256; i++) h = (h ^ pal[i]) * 16777619u; palHash[k][16] = h; }
     for (int i = 0; i < 256; i++) lut[k][i] = col8(pal[i]);
+    if (a16) for (int i = 0; i < 256; i++) { const u16 c = pal[i]; lut16[k][i] = (u16)(((c & 31) << 11) | (((c >> 5) & 31) << 6) | (((c >> 10) & 31) << 1) | 1); }
 }
 /* key: bit 24 obj, bit 23 8bpp, bits 19-22 bank, bits 0-18 address (32-byte aligned) */
 static int fail;
@@ -142,6 +149,13 @@ static int tile(int obj, int bpp8, unsigned bank, const u8 *src, unsigned addr) 
     unsigned any = 0; for (unsigned i = 0; i < n; i++) any |= src[i];
     e->empty = !any; if (!any) return -1;
     const unsigned s = e->slot, tx = s % (AW / 8), ty = s / (AW / 8);
+    if (a16) { u16 *d = (u16 *)atlas.data + (ty * (AW / 8) + tx) * 64; const u16 *L = lut16[obj];
+        for (int j = 0; j < 8; j++) { const u8 *m = mort + (7 - j) * 8;
+            if (bpp8) { const u8 *p = src + j * 8; for (int x = 0; x < 8; x++) { const unsigned c = p[x]; d[m[x]] = c ? L[c] : 0; } }
+            else { const u8 *p = src + j * 4; const unsigned pb = bank * 16;
+                for (int x = 0; x < 8; x++) { const unsigned c = (p[x >> 1] >> ((x & 1) * 4)) & 15; d[m[x]] = c ? L[pb + c] : 0; } } }
+        const unsigned lo = (ty * (AW / 8) + tx) * 128; if (lo < dirtyLo) dirtyLo = lo; if (lo + 128 > dirtyHi) dirtyHi = lo + 128;
+        return s; }
     u32 *d = (u32 *)atlas.data + (ty * (AW / 8) + tx) * 64;
     const u32 *L = lut[obj];
     for (int j = 0; j < 8; j++) { const u8 *m = mort + (7 - j) * 8;  /* texture memory row r <-> t = 1 - r/H (measured): DS row j -> tile row 7-j */
