@@ -40,9 +40,9 @@ uint32_t NitroPort_WideWindowsSerial(void) { return winSerial; }
    (30-42 ms on hardware; the GPU compositor can't take their blends / rotated sprites), so with dex_wide=0 they show the DS
    layout with side bars and use the normal engine A path. P3DS_DexNoWide is set while overlay 21 (Pokedex) is loaded
    (link --wrap of FS_LoadOverlay / FS_StartOverlay / FS_UnloadOverlay). 1 = wide Pokedex as in Run 114. */
-int P3DS_DexNoWide;
-static void dexSet(unsigned id, int on) { if (id != 21) return; static int dw = -1; if (dw < 0) { dw = P3DS_CfgInt("dex_wide", 0) != 0; PSPNativeMemLog("[WIDE] dex_wide=%d", dw); }
-    P3DS_DexNoWide = on && !dw; PSPNativeMemLog("[WIDE] Pokedex overlay %s, DS layout %d", on ? "in" : "out", P3DS_DexNoWide); }
+int P3DS_DexNoWide, P3DS_DexOpen;
+static void dexSet(unsigned id, int on) { if (id != 21) return; static int dw = -1; if (dw < 0) { dw = P3DS_CfgInt("dex_wide", 1) != 0; PSPNativeMemLog("[WIDE] dex_wide=%d", dw); }
+    P3DS_DexOpen = on; P3DS_DexNoWide = on && !dw; PSPNativeMemLog("[WIDE] Pokedex overlay %s, DS layout %d", on ? "in" : "out", P3DS_DexNoWide); }
 typedef struct { struct { unsigned id; } header; } P3dsOvInfo;  /* FSOverlayInfo starts with header.id */
 extern int __real_FS_LoadOverlay(int, unsigned); extern void __real_FS_StartOverlay(void *); extern int __real_FS_UnloadOverlay(int, unsigned);
 int __wrap_FS_LoadOverlay(int t, unsigned id) { const int r = __real_FS_LoadOverlay(t, id); if (r) dexSet(id, 1); return r; }

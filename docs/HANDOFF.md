@@ -2,6 +2,12 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 116: Pokedex diagnostic build (Grok Bot, branch `run116`)
+- The user wants the Pokedex wide and fast. dex_wide defaults to ON again.
+- Diagnostic: widecomp.c composeNow accumulates ticks per stage (sprites / windows / BG layers / backdrop+blend+output), plus lines, sprites and composes (WC_Prof*). render3ds prints a [WCPROF] line every second while overlay 21 is loaded (P3DS_DexOpen) or with Log detail FULL.
+- Both cores add to the same counters (wide_split), so treat the numbers as approximate.
+- Run 114 log: about 84 dirty lines per compose still took about 30 ms on two cores (~0.7 ms/line). The [WCPROF] split should show which stage.
+
 ## 2026-10-26 — Run 115: fast Pokedex (Grok Bot, branch `run115`)
 - Hardware Run 114 log: Pokedex frames (overlay 21) were 58-77 ms. The wide layout made widecomp redraw the whole screen every frame (engineA/wide stage 30-42 ms, at slider 0 and up). The GPU can't take those frames: ineligible 145/300 (blend 116, affine sprites 29).
 - Fix: new toggle `dex_wide` (Debug "Wide Pokedex", default OFF). While overlay 21 is loaded (link --wrap of FS_LoadOverlay / FS_StartOverlay / FS_UnloadOverlay in wideapi.c sets P3DS_DexNoWide), the wide layout is off. The Pokedex shows the DS layout through the normal engine A path. 1 = Run 114.
