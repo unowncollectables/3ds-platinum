@@ -10,12 +10,25 @@
  *     secs        play time while it was the target         start    first encounter, YYYYMMDD
  *     lastShinyAt streak length when the last shiny appeared
  * Written on every encounter, soft reset, lid close, exit and every 2 minutes of hunting; via hunt.tmp so a power cut
- * mid-write keeps the old file. Odds are the game's own Gen 4 rule for random wild Pokemon: 1 in 8192 (Masuda eggs
- * and Poke Radar chains are not detected here, so they are not claimed).
+ * mid-write keeps the old file. Odds are the game's own Gen 4 rule for random wild Pokemon: 1 in 8192 (or shiny_rate);
+ * the hunt panel also shows Poke Radar chain and Masuda odds (run 119, below), but the counters are per species only.
  * Shiny alert (shiny_suite=1): a two-note chime on DSP channel 1 (the game's audio uses channel 0 only), a toast and
  * a short flash/sparkle on the top screen (render3ds.cpp drawShinyFlash). The shiny flag is the game's own
  * Pokemon_IsShiny on the wild foe (battle_controller_player.c, P3DS_CatchInfo[18]).
- * Host test: tools/hunt_test.c (compiles this file with P3DS_HUNT_HOST). */
+ * Host test: tools/hunt_test.c (compiles this file with P3DS_HUNT_HOST).
+ *
+ * run 119 extras (all default 0 = original game):
+ *   shiny_rate 0..3   wild shiny odds 1/8192 (original), 1/4096, 1/2048, 1/1024. CreateWildMon (overlay006) asks
+ *                     P3DS_ShinyRoll(); on 1 it takes the game's own shiny path (the one cheat_shiny / the Poke Radar use).
+ *                     The extra roll comes from a port generator, never the game's LCRNG, and is sized so that it plus
+ *                     the game's own 1/8192 gives exactly the chosen odds. Wild, fishing, Honey tree and scripted wild
+ *                     battles; not gift/egg Pokemon. Nothing is written to the save.
+ *   wild_vis_shiny    a visible wild Pokemon (wild_vis) decides at spawn whether it is shiny (same odds as above),
+ *                     sparkles in the grass, and its battle uses that decision (P3DS_ShinyForce) instead of a new roll.
+ *   P3DS_HuntGame     party shiny count, Poke Radar chain and the Day Care's Masuda state, read in the field by
+ *                     p3ds_follower.h with the game's own functions (read only) for the hunt panel.
+ *   LCRNG_SetSeed is wrapped (full/Makefile) to remember the boot seed for rng_info (Debug tab). The port seeds from
+ *   the 3DS clock and its own V-blank count, so a seed from a real DS will not match this port. */
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -146,9 +159,43 @@ int P3DS_HuntExportCsv(const char *const *names, int nNames, char *path, int pat
     int n = 0; HUNT_LOCK(); load();
     for (int k = 1; k < P3DS_HUNT_SPECIES; k++) { const P3DS_HuntRec *r = &rec[k]; if (!r->enc && !r->resets && !r->shinies) continue;
         fprintf(f, "%d,%s,%d,%d,%d,%d,%d,%d,%d,%.1f,%d\n", k, k < nNames && names ? names[k] : "", r->enc, r->streak, r->resets, r->shinies, r->secs / 60, r->start, r->lastShinyAt,
-                100.0 * P3DS_HuntChanceBy(r->streak, P3DS_HUNT_ODDS), k == target); n++; }
+                100.0 * P3DS_HuntChanceBy(r->streak, P3DS_HuntRateOdds()), k == target); n++; }
     HUNT_UNLOCK(); fclose(f); PSPNativeMemLog("[HUNT] exported %d species to %s", n, path); return n;
 }
+/* ---- run 119 ---- */
+volatile int P3DS_HuntGame[5], P3DS_ShinyForce;
+static int rateV = -1;
+static const int kRateOdds[4] = { 8192, 4096, 2048, 1024 };
+int P3DS_HuntRateOdds(void) {
+    if (rateV < 0) { rateV = P3DS_CfgInt("shiny_rate", 0); if (rateV < 0 || rateV > 3) rateV = 0; PSPNativeMemLog("[HUNT] shiny_rate=%d (1 in %d)", rateV, kRateOdds[rateV]); }
+    return kRateOdds[rateV];
+}
+void P3DS_HuntSetRate(int idx) { rateV = idx < 0 || idx > 3 ? 0 : idx; }
+static unsigned prng;
+static unsigned portRand(void) { if (!prng) prng = (unsigned)svcGetSystemTick() | 1u; prng ^= prng << 13; prng ^= prng >> 17; prng ^= prng << 5; return prng; }
+int P3DS_ShinyRoll(void) {
+    const int f = P3DS_ShinyForce;
+    if (f) { P3DS_ShinyForce = 0; return f == 1; }
+    const int odds = P3DS_HuntRateOdds(); if (odds >= P3DS_HUNT_ODDS) return 0;
+    /* p + (1 - p) / 8192 = 1 / odds: the game's own roll still happens when this one says no */
+    const double p = (1.0 / odds - 1.0 / P3DS_HUNT_ODDS) / (1.0 - 1.0 / P3DS_HUNT_ODDS);
+    return portRand() < (unsigned)(p * 4294967296.0);
+}
+int P3DS_WildShinyRoll(int always) {
+    if (!P3DS_CfgInt("wild_vis_shiny", 0)) return 0;
+    if (always) return 1; /* cheat_shiny: every wild Pokemon is shiny anyway */
+    return portRand() < (unsigned)(4294967296.0 / P3DS_HuntRateOdds());
+}
+int P3DS_RadarPatchOdds(int chain) { if (chain <= 0) return 0; const int r = 8200 - chain * 200; return r < 200 ? 200 : r; }
+int P3DS_MasudaOdds(void) { return (int)(1.0 / (1.0 - pow(1.0 - 1.0 / P3DS_HUNT_ODDS, 5)) + 0.5); }
+int P3DS_HuntEncFor(double chance, int odds) { return odds <= 1 ? 1 : (int)ceil(log1p(-chance) / log1p(-1.0 / odds)); }
+static unsigned rngFirst; static int rngSeeds;
+unsigned P3DS_RngInitial(int *seeds) { if (seeds) *seeds = rngSeeds; return rngFirst; }
+#ifndef P3DS_HUNT_HOST
+extern void __real_LCRNG_SetSeed(u32 seed);
+void __wrap_LCRNG_SetSeed(u32 seed) { if (!rngSeeds++) rngFirst = seed; __real_LCRNG_SetSeed(seed); }
+#endif
+
 #ifdef P3DS_HUNT_HOST
 void P3DS_HuntChime(void) {}
 #else

@@ -16,7 +16,7 @@
      BillboardLists_Draw();
 +#ifdef PLATINUM3DS
 +    P3DS_FollowerFrame(fieldSystem);
-+    P3DS_WildFrame(fieldSystem); /* run 73 wild_vis */
++    P3DS_WildFrame(fieldSystem); /* run 73 wild_vis (run 119: p3ds_follower.h changed, rebuild) */
 +#endif
  
      if (FieldMap_InDistortionWorld(fieldSystem) == TRUE) {
