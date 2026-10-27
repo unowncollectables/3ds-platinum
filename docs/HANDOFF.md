@@ -2,6 +2,11 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 117: slider-up Pokedex, one compose for both eyes (Grok Bot, branch `run117`)
+- Run 116 hardware [WCPROF]: with the slider up, the Pokedex composed both eyes in full on the CPU (192 lines each, ~33 ms per eye: sprites 12, BGs 14.7, out 6.3 ms), 15 fps. Slider 0 was 29-30 fps (dirty lines + wide_split).
+- An emulator diagnostic showed the global inputs rarely change (blend regs only), so the dirty detection is right. The emulator draws the Pokedex mostly on the GPU wide path and can't reproduce the slowness.
+- New `wide_stereo_flat2d` (Debug "Copy eye when 3D empty", default ON): a slider-up wide frame whose 3D layer has no visible pixel in either eye skips the right-eye compose and uses wide_split for the left eye (both cores). The left eye is then copied to the right. Not measured on hardware yet; [WCPROF] still logs while the Pokedex is open.
+
 ## 2026-10-26 — Run 116: Pokedex diagnostic build (Grok Bot, branch `run116`)
 - The user wants the Pokedex wide and fast. dex_wide defaults to ON again.
 - Diagnostic: widecomp.c composeNow accumulates ticks per stage (sprites / windows / BG layers / backdrop+blend+output), plus lines, sprites and composes (WC_Prof*). render3ds prints a [WCPROF] line every second while overlay 21 is loaded (P3DS_DexOpen) or with Log detail FULL.
