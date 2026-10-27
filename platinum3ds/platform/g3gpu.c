@@ -446,3 +446,5 @@ void G3G_End(u32 *outL, u32 *outR) {
     { static unsigned f; if (++f % 120 == 0) { unsigned late = 0, tx = 0; for (unsigned i = 0; i < bn[0]; i++) { if (bt[0][i].late) late += bt[0][i].count / 3; if (bt[0][i].tex) tx += bt[0][i].count / 3; }
         PSPNativeMemLog("[GPU3D] frame: eyes %d | tris %u (textured %u, translucent %u) | batches %u | gpu %u us", eyes, vn[0] / 3, tx, late, bn[0], lastUs); } }
 }
+/* run 112: VRAM was freed (gpucomp wide target): the wide 320 targets may fit again */
+void G3G_WideRetry(void) { if (wideFail) PSPNativeMemLog("[3DRES] retrying the 320 targets"); wideFail = 0; }

@@ -178,7 +178,7 @@ static u32 stateHash(){u32 h=2166136261u;const u32*p=(const u32*)s_HW_OAM;for(in
    for the rest. Register/OAM reads only (no pixel work); logs one [GPUC] line per engine every 300 frames.
    gpu_compose=0 (default): not even called. Nothing is drawn differently in either setting. */
 static int gcCfgV=-1;
-extern "C" {int P3DS_GpuBattleUp;void G3G_DirectResolve(void);int G3G_DirectPending(void);}
+extern "C" {int P3DS_GcWideRelease(void);void G3G_WideRetry(void);int P3DS_GpuBattleUp;void G3G_DirectResolve(void);int G3G_DirectPending(void);}
 extern "C" int P3DS_GpuComposeCfg(void){if(gcCfgV<0){gcCfgV=P3DS_CfgInt("gpu_compose",2);/* run 61: default 2 (hardware-confirmed by the user, run-60 parity 0 px) */if(gcCfgV<0||gcCfgV>3)gcCfgV=2;PSPNativeMemLog("[GPUC] gpu_compose=%d (1 = analyzer, 2 = GPU compositor on simple frames, 3 = verify)",gcCfgV);}return gcCfgV;}
 extern "C" void P3DS_SetGpuComposeCfg(int v){gcCfgV=v;}
 enum{GC_DM,GC_AFFBG,GC_WIN,GC_ALPHA,GC_BRIGHT,GC_MOSAIC,GC_BG8,GC_EXTPAL,GC_OBJAFF,GC_OBJSEMI,GC_OBJWIN,GC_OBJBMP,GC_CAP,GC_MBRIGHT,GC_N};
@@ -1430,6 +1430,7 @@ static int Present(bool){
   if(!P3DS_WideStrip[0]&&fillReady&&gpuOk==1){P3DS_WideStrip[0]=P3DS_WideFillBuf;P3DS_WideStrip[1]=P3DS_WideFillBuf;P3DS_WideFxOn=1;}
   if(!P3DS_WideStrip[0]&&wnReady&&gpuOk==1){P3DS_WideStrip[0]=P3DS_WideFillBuf;P3DS_WideStrip[1]=stereo?P3DS_WideFillBuf:nullptr;} /* run 65 wide_menus (fade applied in strips()) */
   if(P3DS_WideFxOn>=1&&P3DS_WideStrip[0])P3DS_WideStrip[0]=P3DS_WideFxBuf[0];if(P3DS_WideFxOn>=2&&P3DS_WideStrip[1])P3DS_WideStrip[1]=P3DS_WideFxBuf[1];
+  if(act){static bool retried;if(P3DS_GcWideRelease()||!retried){retried=true;G3G_WideRetry();}} /* run 112: the field wide view gets the VRAM back from wide_gpu */
   G3G_Wide=act;
   /* run 45 wide_cull=1 (default; only while wideview is active): the game's box test (map props / buildings) uses a
      1.25x wider view so the side strips are populated. 0 = DS culling (edge pop-in). */
