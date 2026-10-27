@@ -348,3 +348,8 @@ Run 118 (Debug tab):
 frame_pacing "Frame pacing" (default 0 = OFF): 1 = FIXED (GPU compose shows the frame before, never waits for the GPU), 2 = ADAPTIVE (no latency while frames are on time, FIXED for a while after a slow frame). OFF = Run 117. The one-frame lag is never used on wide frames or while the wide view is on (no lag there, only the overlap). Boot guard: a start with it on that never reaches 300 frames leaves sdmc:/3ds/platinum3ds/fp_boot.flag and the next start turns it OFF.
 
 gc_atlas16 "16-bit 2D tiles" (default 0 = OFF, Debug tab, restart): GPU compose stores 2D tiles as 16-bit RGBA5551 instead of 32-bit. Less memory and bandwidth; colours can differ very slightly from the CPU path. Untested on hardware. Boot guard: a start with it on that never reaches 300 frames leaves sdmc:/3ds/platinum3ds/gc16_boot.flag and the next start turns it OFF (the log says how far that start got).
+
+Run 118 (Game tab, all default 0 = OFF, no save format change):
+exp_share_all "Exp. Share: whole party": party Pokemon that didn't fight get the same Exp. as the ones that did (not Eggs or fainted ones).
+auto_run "Auto-run": you run without holding B; hold B to walk. With the ZL run toggle also on, it goes back to normal.
+catch_swap "Swap catch into party": catching with a full party asks whether to add the new Pokemon; YES lets you pick who goes to the PC instead. Not in the Safari Zone or Pal Park. Untested on hardware: back up your save first.

@@ -31,7 +31,7 @@
      StartEncounter(task, dto, EncEffects_CutInEffect(dto), EncEffects_BGM(dto), resultMaskPtr);
  }
 +
-+/* platinum3ds run 118 catch_swap (Play "Swap catch into party", default 0; the reference port pokeplatinum-3ds 0042).
++/* platinum3ds run 118 catch_swap (Game "Swap catch into party", default 0; the reference port pokeplatinum-3ds 0042).
 + * A Pokemon caught with the party full: before the nickname the battle asks "Your party is full. Add X to your party?";
 + * YES opens the battle's party screen (SHIFT reads SEND TO PC) to pick who goes to the PC instead (not one holding Mail or
 + * with a Ball Capsule). The battle stores the caught one in the PC as ever and notes where; once the battle's party is back
