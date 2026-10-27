@@ -14,7 +14,7 @@ extern "C" void PSPNativeMemLog(const char*,...);
 extern "C" int P3DS_CfgInt(const char*,int);
 extern "C" unsigned PSPNativeVramPageGen[];
 extern "C" volatile unsigned long long P3DS_WaitTicks;extern "C" volatile unsigned P3DS_WaitCalls;
-extern "C" int P3DS_LogLevel(void); extern "C" void P3DS_ProfFrame(unsigned); extern "C" int P3DS_ProfOn; extern "C" void P3DS_HeapFastStats(void);
+extern "C" int P3DS_LogLevel(void); extern "C" volatile unsigned P3DS_LogLines,P3DS_LogBytes; /* run 113: logring.c counters for the [BATT] line */ extern "C" void P3DS_ProfFrame(unsigned); extern "C" int P3DS_ProfOn; extern "C" void P3DS_HeapFastStats(void);
 /* run 101: read-only views of the game's own save data (never written here) */
 extern "C" { void*SaveData_Ptr(void);void*SaveData_GetTrainerInfo(void*);unsigned char TrainerInfo_Gender(const void*);void*SaveData_GetPlayTime(void*);unsigned short PlayTime_GetHours(const void*);unsigned char PlayTime_GetMinutes(const void*); }
 static bool p3dsPlayTime(unsigned*h,unsigned*m){void*sd=SaveData_Ptr();if(!sd)return false;void*pt=SaveData_GetPlayTime(sd);if(!pt)return false;*h=PlayTime_GetHours(pt);*m=PlayTime_GetMinutes(pt);return true;}
@@ -178,7 +178,7 @@ static u32 stateHash(){u32 h=2166136261u;const u32*p=(const u32*)s_HW_OAM;for(in
    for the rest. Register/OAM reads only (no pixel work); logs one [GPUC] line per engine every 300 frames.
    gpu_compose=0 (default): not even called. Nothing is drawn differently in either setting. */
 static int gcCfgV=-1;
-extern "C" {int P3DS_GcWideRelease(void);void G3G_WideRetry(void);int P3DS_GpuBattleUp;void G3G_DirectResolve(void);int G3G_DirectPending(void);}
+extern "C" {int P3DS_GcWideRelease(void);void G3G_WideRetry(void);void G3G_DirectResolve(void);int G3G_DirectPending(void);}
 extern "C" int P3DS_GpuComposeCfg(void){if(gcCfgV<0){gcCfgV=P3DS_CfgInt("gpu_compose",2);/* run 61: default 2 (hardware-confirmed by the user, run-60 parity 0 px) */if(gcCfgV<0||gcCfgV>3)gcCfgV=2;PSPNativeMemLog("[GPUC] gpu_compose=%d (1 = analyzer, 2 = GPU compositor on simple frames, 3 = verify)",gcCfgV);}return gcCfgV;}
 extern "C" void P3DS_SetGpuComposeCfg(int v){gcCfgV=v;}
 enum{GC_DM,GC_AFFBG,GC_WIN,GC_ALPHA,GC_BRIGHT,GC_MOSAIC,GC_BG8,GC_EXTPAL,GC_OBJAFF,GC_OBJSEMI,GC_OBJWIN,GC_OBJBMP,GC_CAP,GC_MBRIGHT,GC_N};
@@ -667,10 +667,7 @@ static void wideFill(const u32*C){static u16 acc[3][64*192];
 #include "widecomp.h"
 extern "C" unsigned dStatRace,dStat3dRace;extern "C" int dBadRow,dBadMask;
 static WcPlan wcPlanG;static WcSrc wideRSrc;static u32 wideRStrip[64*192];static const u8*wideRRegs;
-/* run 106 wide_split_r=1 (default): in stereo the right eye's dirty lines are shared by the main thread (after its left eye) and the
-   core-2 worker (after engine B), the same way wide_split shares the mono compose; main waits for wrDone and commits into rawR. */
-static volatile bool bWrSplit;static int wsrMode;static LightEvent wrGo,wrDone;static WcSplit wrSp;
-static void wideRJob(){if(bWrSplit){LightEvent_Wait(&wrGo);if(wsrMode==2)WC_SplitRunDyn(&wcPlanG,wideRRegs,&wideRSrc,&wrSp,1);else WC_SplitRun(&wcPlanG,wideRRegs,&wideRSrc,&wrSp,1);LightEvent_Signal(&wrDone);return;}
+static void wideRJob(){
  bWideROk=WC_ComposeEye(&wcPlanG,wideRRegs,&wideRSrc,rawR,wideRStrip,1)!=0;}
 /* run 105 wide_split=1: the mono wide compose (battles at slider 0) is shared by the main thread and the core-2 worker, after
    engine B. The main thread hashes the lines, deals them to two parts (WC_SplitPrepare), signals wmGo, draws part 0 while the
@@ -871,7 +868,7 @@ static const MItem mItems[]={
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,2,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
 static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
@@ -973,7 +970,7 @@ static const ATab kTabs[]={
  {"Cheats",11,{24,27,28,29,30,31,32,53,54,55,56},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99","Infinite PP",
   "Fast running (B)","Walls: hold R","Time of day"}},
  /* run 67: the old Speed tab, hidden: only shown after SELECT is pressed in the settings app */
- {"Debug",31,{11,12,15,19,8,52,13,7,21,43,44,78,79,80,82,73,81,74,75,76,83,85,86,87,88,89,90,91,92,93,94},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail","Log size limit","Split top (mono)","Wide view FX","Wide haze","Edge fill","Side fill in menus","Load-hitch profiler","Fast heap free","Skip game cache flushes","Hunt file bg save","Wide layout early","Wide 3D fade-in","Wide layout 3D depth","Wide redraw changed lines","Ignore timing registers","Wide compose on 2 cores","Battle frame log","Right eye on 2 cores","3D convert on 2 cores","Flat 3D when slow","Wide view windows","3D battles on GPU","GPU blend by 3D","GPU 3D direct","Wide on GPU","GPU fades"}},
+ {"Debug",29,{11,12,15,19,8,52,13,7,21,43,44,78,79,80,82,73,81,74,75,76,83,85,87,88,89,91,92,93,94},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail","Log size limit","Split top (mono)","Wide view FX","Wide haze","Edge fill","Side fill in menus","Load-hitch profiler","Fast heap free","Skip game cache flushes","Hunt file bg save","Wide layout early","Wide 3D fade-in","Wide layout 3D depth","Wide redraw changed lines","Ignore timing registers","Wide compose on 2 cores","Battle frame log","3D convert on 2 cores","Flat 3D when slow","Wide view windows","GPU blend by 3D","GPU 3D direct","Wide on GPU","GPU fades"}},
  /* pages (not in the tab bar) */
  {"Hunt stats",-3,{},{}},
  {"Wild Pok\xe9mon here",-2,{},{}},
@@ -1186,7 +1183,7 @@ static int Present(bool){
     VRAM, blend A/B. Motion blur at Spear Pillar (Dialga/Palkia) shows VRAM C fed by capture; ignored it was black. */
  {const u32 cc=reg32(0x64);const int cm=P3DS_CfgInt("display_capture",1);engineA.CaptureCnt=cm==1?cc:0;engineA.CaptureLatch=cm==1&&(cc&0x80000000u)&&engineA.Enabled;}
  /* per-vertex stereo (g3soft rendered both eyes) if it was enabled at frame start; else flat-layer fallback */
- {static unsigned diagN;if(++diagN%120==0&&!G3G_DirectPending()){unsigned n=0;for(unsigned i=0;i<256*192;i++)if(GPU3D::NativeFrame[i]>>24)n++;
+ {static unsigned diagN;if(++diagN%120==0&&P3DS_LogLevel()>=2&&!G3G_DirectPending()){/* run 113: the 49k-pixel scan only with log detail FULL */unsigned n=0;for(unsigned i=0;i<256*192;i++)if(GPU3D::NativeFrame[i]>>24)n++;
    printf("[3DLAYER] dispcntA %08x powcnt %04x 3D px alpha>0 %u bg0cnt %04x blend %04x/%04x\n",reg32(0),power,n,reg16(8),reg16(0x50),reg16(0x52));}}
  u32*rightEye=P3DS_G3RightEye();
  int sd=rightEye?0:stereoShift(P3DS_ScaleMode());bool stereo=(rightEye||sd)&&(power&0x8000)&&engineA.Enabled;
@@ -1195,21 +1192,15 @@ static int Present(bool){
  bool async=engineBAsync();
  static int par3d=-1;if(par3d<0){par3d=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");int x;char l[64];if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"stereo2d_par=%d",&x)==1)par3d=x!=0;fclose(f);}PSPNativeMemLog("[2D] stereo right eye on core 2: %d",par3d);}
  const int gcMode0=P3DS_GpuComposeCfg();
- /* run 110 stereo_gpu_battle (default 1, from the SoulSilver port): with the slider up outside the overworld (battles,
-    menus) both eyes are composed on the GPU (gpucomp, with gpu_blend) instead of two CPU wide-layout composes; those
-    frames show the DS 4:3 picture (no wide HUD layout) while the slider is up. Frames gpucomp can't do keep the wide path. */
  /* run 111 wide_gpu (Debug "Wide on GPU", default 1 = with the 3D slider up; 2 = also slider down; 0 = off): a wide layout frame
     (battles, menus) is composed on the GPU from widecomp's plan for both eyes (gpucomp.c P3DS_GcComposeWide): BGs and
     sprites at their wide positions, strips, 3D layer from the gpu_direct3d texture. The CPU wide compose and engine A
     are skipped. Frames the GPU path can't take (windows, affine/semi sprites, ...) use the CPU wide path as before. */
  static int wgCfg=-1;if(wgCfg<0){wgCfg=P3DS_CfgInt("wide_gpu",1);if(wgCfg<0||wgCfg>2)wgCfg=1;PSPNativeMemLog("[WIDE] wide_gpu=%d",wgCfg);}
  const bool wgNow=wgCfg&&wlNow&&(stereo?rightEye!=nullptr:wgCfg==2)&&gcMode0==2&&engineA.Enabled&&!engineA.CaptureLatch&&WC_Check(&wcPlan,PSPNative_GfxRegisters,1)==0&&gcEligible();
- static int sgb=-1;if(sgb<0){sgb=P3DS_CfgInt("stereo_gpu_battle",0)!=0;PSPNativeMemLog("[GPUC] stereo_gpu_battle=%d",sgb);}
- const bool sgbNow=!wgNow&&sgb&&stereo&&rightEye&&!P3DS_InField&&gcMode0==2&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
- if(sgbNow)wlNow=false;
- P3DS_GpuBattleUp=sgb&&!wgCfg&&stereo&&gcMode0==2;  /* run 110: health boxes stay at DS positions while the slider is up (wideapi.c) */
+ /* run 113: the run 110 stereo_gpu_battle 4:3 mode (default off since run 111, superseded by wide_gpu) is removed; the key is ignored. */
  if((wlNow&&!wgNow)||engineA.CaptureLatch)G3G_DirectResolve();  /* gpu_direct3d: widecomp / display capture read NativeFrame */
- const bool gcSt=!wlNow&&gcMode0==2&&stereo&&rightEye&&(P3DS_InField||sgbNow)&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
+ const bool gcSt=!wlNow&&gcMode0==2&&stereo&&rightEye&&P3DS_InField&&engineA.Enabled&&gcStereoCfg()&&gcEligible();
  if(stereo&&!gcSt&&!wgNow)G3G_DirectResolve();  /* gpu_direct3d: the CPU right-eye paths read the 3D layer */
  bool rightPar=async&&par3d&&stereo&&rightEye&&!gcSt&&!wgNow;
  /* run 96 wide_early in stereo: with a wide layout both eyes end up as widecomp's single picture (the right eye is a copy),
@@ -1254,13 +1245,12 @@ static int Present(bool){
  if(splitNow){memcpy((void*)&engineAS,(const void*)&engineA,sizeof engineA);line0Done=false;bSplit=true;splitN++;}
  /* run 97 wide_stereo_par=1: with wide_early in stereo, the right eye's wide compose runs on core 2 (after engine B) while
     the main thread composes the left eye: both eyes keep their own 3D layer at about the cost of one. */
- bWideROk=false;bWrSplit=false; /* run 107: was left true from an earlier stereo frame; a later mono frame then waited forever on wrDone (watchdog hang at slider 1 -> 0) */
+ bWideROk=false;
  {static int wsp=-1;if(wsp<0){wsp=P3DS_CfgInt("wide_stereo_par",1);PSPNativeMemLog("[WIDE] wide_stereo_par=%d",wsp);}
   static int wsc2=-1;if(wsc2<0)wsc2=P3DS_CfgInt("wide_stereo",1);
   if(wsp&&wsc2&&wlEarlyWant&&stereo&&rightEye&&(PSPNative_GfxRegisters[0]&8)){wideRRegs=PSPNative_GfxRegisters;
    wideRSrc={GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,GPU::VRAMFlat_ABGExtPal,GPU::VRAMFlat_AOBJExtPal,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,rightEye};
-   static int wsr=-1;if(wsr<0){wsr=P3DS_CfgInt("wide_split_r",0);if(wsr<0||wsr>2||P3DS_CfgInt("wide_dirty",1)!=1)wsr=0;wsrMode=wsr;if(wsr){LightEvent_Init(&wrGo,RESET_ONESHOT);LightEvent_Init(&wrDone,RESET_ONESHOT);}PSPNativeMemLog("[WIDE] wide_split_r=%d",wsr);}
-   bWrSplit=wsr!=0;wrSp.n[0]=wrSp.n[1]=0;bWideR=true;}}
+   bWideR=true;}}  /* run 113: wide_split_r (run 106/108, default off since run 110: slower on hardware) removed; the key is ignored */
  static int wsplitCfg=-1;if(wsplitCfg<0){wsplitCfg=P3DS_CfgInt("wide_split",1);if(wsplitCfg){LightEvent_Init(&wmGo,RESET_ONESHOT);LightEvent_Init(&wmDone,RESET_ONESHOT);}PSPNativeMemLog("[WIDE] wide_split=%d",wsplitCfg);}
  static int wdCfg=-1;if(wdCfg<0)wdCfg=P3DS_CfgInt("wide_dirty",1);
  const bool wmUse=wsplitCfg&&wdCfg==1&&wlEarlyWant&&!stereo&&async;
@@ -1273,11 +1263,6 @@ static int Present(bool){
     static unsigned sN,sA,sB;sN++;sA+=wmSp.n[0];sB+=wmSp.n[1];if(sN==600){PSPNativeMemLog("[WIDE] wide_split: %u composes, lines main %u / worker %u avg",sN,sA/sN,sB/sN);sN=sA=sB=0;}}}
   else wlEarly=WC_Compose(&wcPlan,PSPNative_GfxRegisters,&ws,display[0],P3DS_WideFillBuf)!=0;
   if(wlEarly)line0Done=true;
-  if(bWrSplit){/* the worker is waiting on wrGo in its right-eye job: always release it (n = 0 when the right eye is composed the old way below) */
-   const int nr=wlEarly?WC_SplitPrepare(&wcPlan,wideRRegs,&wideRSrc,&wrSp,24,1):-1;
-   if(nr<0){wrSp.n[0]=wrSp.n[1]=0;LightEvent_Signal(&wrGo);LightEvent_Wait(&wrDone);}
-   else{LightEvent_Signal(&wrGo);if(wsrMode==2)WC_SplitRunDyn(&wcPlan,wideRRegs,&wideRSrc,&wrSp,0);else WC_SplitRun(&wcPlan,wideRRegs,&wideRSrc,&wrSp,0);LightEvent_Wait(&wrDone);WC_SplitCommit(&wrSp,(u32*)rawR,wideRStrip);bWideROk=true;
-    static unsigned rN,rA,rB;rN++;rA+=wsrMode==2?wrSp.dn[0]:wrSp.n[0];rB+=wsrMode==2?wrSp.dn[1]:wrSp.n[1];if(rN==600){PSPNativeMemLog("[WIDE] wide_split_r: %u composes, right-eye lines main %u / worker %u avg",rN,rA/rN,rB/rN);rN=rA=rB=0;}}}
   {static unsigned ne,nf;if(wlEarly)ne++;else nf++;if((ne+nf)%600==1)PSPNativeMemLog("[WIDE] wide_early: %u composed early (engine A skipped), %u fell back",ne,nf);}}
  const unsigned aEnd=splitNow?96:192;
  bool gcDone=false,gcStR=false;static unsigned gcStN;{static unsigned gsl;if(gcSt&&++gsl%600==0){if(P3DS_LogLevel()>=2)PSPNativeMemLog("[GPUC] stereo: %u of last 600 stereo-eligible frames GPU-composed for both eyes",gcStN);gcStN=0;}}
@@ -1357,10 +1342,10 @@ static int Present(bool){
  {/* run 61 debug: dump_eyes=F dumps both eyes at frame F and every 300 frames after (6 max) -> eyeN_L/R.bmp */
   static int de=-2,dn;if(de==-2)de=P3DS_CfgInt("dump_eyes",-1);
   if(de>=0&&stereo&&eyeL&&eyeR&&dn<6&&(int)frames>=de+dn*300){char fn[64];snprintf(fn,sizeof fn,"sdmc:/3ds/platinum3ds/eye%d_L.bmp",dn);dumpBmp(fn,eyeL,false);snprintf(fn,sizeof fn,"sdmc:/3ds/platinum3ds/eye%d_R.bmp",dn);dumpBmp(fn,eyeR,false);PSPNativeMemLog("[STEREO] dumped eyes %d at frame %u field %d gcStereo %d",dn,frames,P3DS_InField,(int)gcStR);dn++;}}
- /* run 55 stereo blob diag (stereo_blobdiag=1, default): every 60 stereo frames, 16x16 cells where one eye is black
+ /* run 55 stereo blob diag (stereo_blobdiag=1; default 0 since run 113: its first hit froze for SD BMP dumps): every 60 stereo frames, 16x16 cells where one eye is black
     (rgb < 8) on > 60% of the cell and the other eye is not -> one log line; the first hit dumps both eyes and both 3D
     layers to sdmc:/3ds/platinum3ds/stereo_blob_{L,R,3dL,3dR}.bmp for the next report. */
- if(stereo&&eyeL&&eyeR&&!wlEarly&&!wgDone){/* run 97: not with wide_early (eyeR is only filled by the wide block below; the first battle hit dumped 4 BMPs = 2.7 s freeze) */static int cfg=-1;static unsigned n,hits;static bool dumpedB;if(cfg<0){cfg=P3DS_CfgInt("stereo_blobdiag",1)!=0;}
+ if(stereo&&eyeL&&eyeR&&!wlEarly&&!wgDone){/* run 97: not with wide_early (eyeR is only filled by the wide block below; the first battle hit dumped 4 BMPs = 2.7 s freeze) */static int cfg=-1;static unsigned n,hits;static bool dumpedB;if(cfg<0){cfg=P3DS_CfgInt("stereo_blobdiag",0)!=0;}
   if(cfg&&++n%60==0&&hits<40){int bestN=0,bx=0,by=0,beye=0;
    for(int cy=0;cy<12;cy++)for(int cx=1;cx<15;cx++){int l=0,r=0;for(int y=cy*16;y<cy*16+16;y++)for(int x=cx*16;x<cx*16+16;x++){u32 a=eyeL[y*256+x]&0xF8F8F8u,b=eyeR[y*256+x]&0xF8F8F8u;if(!a&&b)l++;else if(a&&!b)r++;}
     if(l>bestN){bestN=l;bx=cx;by=cy;beye=0;}if(r>bestN){bestN=r;bx=cx;by=cy;beye=1;}}
@@ -1449,7 +1434,7 @@ static int Present(bool){
  {static unsigned bl;if(++bl%600==0){if(P3DS_LogLevel()>=2)PSPNativeMemLog("[2D] bottom_skip: reused %u, recomposed %u of last 600 | steal_b: engine B on main %u, worker %u | early_b %u | split_top %u",bSkips,bDraws,stealMain,stealWorker,earlyN,splitN);earlyN=0;splitN=0;bSkips=bDraws=0;stealMain=stealWorker=0;lS=lD=0;}}
  {unsigned total=tPrevEnd?(unsigned)((tEnd-tPrevEnd)/CPU_TICKS_PER_USEC):0,comp=(unsigned)((tComp-t0)/CPU_TICKS_PER_USEC),gpu=(unsigned)((tEnd-tComp)/CPU_TICKS_PER_USEC);
 #ifdef P3DS_PROF
-  {const int fp=P3DS_CfgInt("field_prof",2);static unsigned armed;if(fp==2){if(P3DS_InField!=lastFld)armed=240;lastFld=P3DS_InField;P3DS_ProfOn=armed?(armed--,1):0;}else P3DS_ProfOn=fp;P3DS_HeapFastStats();}
+  {const int fp=P3DS_CfgInt("field_prof",0);/* run 113: AUTO (2) was the default; profiling every load now only on request */static unsigned armed;if(fp==2){if(P3DS_InField!=lastFld)armed=240;lastFld=P3DS_InField;P3DS_ProfOn=armed?(armed--,1):0;}else P3DS_ProfOn=fp;P3DS_HeapFastStats();}
   {static u64 lp;const u64 n=svcGetSystemTick();P3DS_ProfFrame(lp?(unsigned)((n-lp)/CPU_TICKS_PER_MSEC):0);lp=n;}
 #endif
   {/* run 43 [SPIKE] diag: any frame > spike_ms (default 70, 0 = off) logs where the time went (max 60 lines / session).
@@ -1459,9 +1444,9 @@ static int Present(bool){
    /* run 106 battle_log=1 (default): outside the field (battles, menus) every frame over 40 ms logs the same stage lines (40 per episode, see below), so a one-frame-a-second hitch in a battle shows where it went without editing spike_ms (0 = old threshold) */
    static int blCfg=-1;static unsigned battleN;if(blCfg<0){blCfg=P3DS_CfgInt("battle_log",1)!=0;PSPNativeMemLog("[SPIKE] battle_log=%d",blCfg);}
    /* one episode = one stay outside the field (a battle, a menu): 40 stage lines each, then a [BATT] summary line when it ends */
-   static int epField=1;static unsigned epF0,epN,epSum,ep34,ep40,ep50,epMax;static double epSl;
-   if(blCfg&&total){if(P3DS_InField!=epField){if(!epField&&epN>=30)PSPNativeMemLog("[BATT] f=%u..%u slider %.2f: %u frames, avg %u.%u ms, over 34 ms %u, over 40 ms %u, over 50 ms %u, max %u ms",epF0,frames,epSl,epN,epSum/epN/1000,epSum/epN/100%10,ep34,ep40,ep50,epMax/1000);
-     epField=P3DS_InField;epF0=frames;epN=epSum=ep34=ep40=ep50=epMax=0;battleN=0;epSl=p3dsSlider();}
+   static int epField=1;static unsigned epL0,epB0,epF0,epN,epSum,ep34,ep40,ep50,epMax;static double epSl;
+   if(blCfg&&total){if(P3DS_InField!=epField){if(!epField&&epN>=30)PSPNativeMemLog("[BATT] f=%u..%u slider %.2f: %u frames, avg %u.%u ms, over 34 ms %u, over 40 ms %u, over 50 ms %u, max %u ms | log %u lines %u KB (incl. hidden detail)",epF0,frames,epSl,epN,epSum/epN/1000,epSum/epN/100%10,ep34,ep40,ep50,epMax/1000,P3DS_LogLines-epL0,(P3DS_LogBytes-epB0)/1024);
+     epField=P3DS_InField;epF0=frames;epN=epSum=ep34=ep40=ep50=epMax=0;epL0=P3DS_LogLines;epB0=P3DS_LogBytes;battleN=0;epSl=p3dsSlider();}
     if(!epField){epN++;epSum+=total;if(total>34000)ep34++;if(total>40000)ep40++;if(total>50000)ep50++;if(total>epMax)epMax=total;}}
    const bool bsp=blCfg&&!P3DS_InField&&spikeMs>40&&total>40000u&&total<=(unsigned)spikeMs*1000;
    const bool spk=(spikeMs>0&&total>(unsigned)spikeMs*1000)||bsp;if(spk){runLen=(frames==lastSpikeF+1)?runLen+1:0;lastSpikeF=frames;}

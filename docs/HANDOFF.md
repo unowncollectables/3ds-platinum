@@ -2,6 +2,25 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 113: clean-up of loggers, settings and files (Grok Bot, branch `run113`)
+- Logging cost measured (emulator, same battle script, slider up): ~420 log lines / 50 KB per 590-frame battle, hidden detail included (~0.7 lines/frame). The log is written by a background thread every 100 ms, so the main-thread cost is only the string formatting (tens of µs per frame, well under 1% of a 33 ms frame). [BATT] avg 55.4 ms before and 55.4 / 55.3 ms after: logging was not the bottleneck.
+- Real costs removed from default play:
+  - stereo_blobdiag now defaults to 0. Its first hit wrote 4 BMPs to the SD on the main thread (a multi-second freeze) and forced a GPU 3D readback.
+  - field_prof now defaults to OFF (was AUTO, which profiled every wrapped overlay005 call for 240 frames after each battle start/end).
+  - The [3DLAYER] 49k-pixel scan (every 120 frames) only runs with Log detail FULL.
+- Kept: battle_log ([BATT] summary per battle plus up to 40 [SPIKE] stage lines) and the [PERF] lines. [BATT] now also prints the log lines/KB written in that battle (logring.c counters P3DS_LogLines/P3DS_LogBytes).
+- Removed settings and code (both default OFF; old config.txt keys are ignored and still parse):
+  - wide_split_r (Debug "Right eye on 2 cores"): render3ds.cpp split paths and widecomp.c WC_SplitRunDyn.
+  - stereo_gpu_battle (Debug "3D battles on GPU", the 4:3 mode): sgbNow and P3DS_GpuBattleUp (wideapi.c).
+  - The Debug tab has 29 rows. mItems/kGenDef indices are unchanged, so config writes are the same.
+- Test-only keys kept, but hidden (not in the app): wide_gpu_verify, dump_eyes, lid_test, res3d_test, heap_watch, stereo_fake.
+- Repo: removed patches/run67, run68, run71, run73 and run74 (superseded by work_patches/overlays) and forwarder/hello_test.c (the old CIA pipeline test).
+- SD files (nothing deleted):
+  - Still read: config.txt, platinum.nds, platinum.sav (+ .bak1-3), followers.bin, emotes.bin (follower emotes), prefetch.bin (zone_prefetch), hunt.txt and hunts/.
+  - Write-only diagnostics, not read back, safe to delete: log_old.txt, dump_*.bmp, eye*_L/R.bmp, stereo_blob_*.bmp, wgv_*.bmp, gpuc_mm*.bmp, seq/, prefetch.tmp, hunt.tmp, forwarder_log.txt, hello_cia.txt.
+- Emulator checks: tools/field_wide_test.sh PASS (slider 0 and up, with the user's run111 config). The slider-up battle stays wide on the GPU path. The settings app Debug tab is OK.
+- Builds: 3dsx cbc78828e4adfcc2e38d5d6a233cb28fa66d6095, CIA a04d1f94590f1a1853f71b8a30234fa736fb4625.
+
 ## 2026-10-26 — Run 112: overworld wide view back (Grok Bot, branch `run112`)
 - Run 111 hardware: slider-on battles much better ([BATT] avg 45.1 / 36.1 / 34.2 / 34.1 ms over 4 battles; Run 109 was 47.6-50.7, Run 108 40.3-41.0). But the overworld showed 4:3 with bars, whatever wideview was set to.
 - Cause (Run 111, wide_gpu): its 512x256 wide target (512 KiB VRAM) was allocated on the first slider-up wide frame (the title screen) and never freed. The overworld wide view then needs two 320x256 3D eye targets with depth, but `[3DRES] 320x256 targets FAILED (VRAM free before 1284096)`, and g3gpu set wideFail for good. So the field stayed 256 wide (pillarbox) for the rest of the session at any slider position. It shows in the emulator too, when the slider is up before the field.
