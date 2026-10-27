@@ -2,6 +2,13 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 114: no more slow launch with the slider up (Grok Bot, branch `run114`)
+- Hardware Run 113 log: for the first ~6 s after launch (opening cutscene) frames ran 54-62 ms (fps 15-16), `path S`, `stereo 17(serial)`. Run 111's log is the same, frame for frame, so the Run 113 clean-up didn't cause it. Earlier boot logs had the slider at 0.
+- Cause (Run 111 wide_gpu): the opening is a wide-layout frame with an alpha blend (BLDCNT 0842, BG1 over BG3, backdrop not a 2nd target). wide_gpu picked it (wgNow), so wide_early was skipped, then P3DS_GcComposeA rejected the blend. The right eye fell to the serial CPU path.
+- Fix: gpucomp.c P3DS_GcBlendPredictOk predicts that rejection. With new toggle `wide_gpu_precheck` (Debug "Wide GPU blend check", default ON) such frames don't pick wide_gpu and take the CPU wide path (path W), as in Run 109. 0 = Run 113 behaviour.
+- Emulator, slider up, boot to the field: [BATT] boot episode avg 55.4 ms (Run 113) -> 35.9 ms. The slider-up battle is still wide on the GPU. Quick runs only; the user is testing on hardware.
+- Builds: 3dsx 3e5ea67a7c9d1b04c8987f82f8083101085d41ad, CIA e0ebb90a8c935af6c68931ed9185c780c1a22223.
+
 ## 2026-10-26 — Run 113: clean-up of loggers, settings and files (Grok Bot, branch `run113`)
 - Logging cost measured (emulator, same battle script, slider up): ~420 log lines / 50 KB per 590-frame battle, hidden detail included (~0.7 lines/frame). The log is written by a background thread every 100 ms, so the main-thread cost is only the string formatting (tens of µs per frame, well under 1% of a 33 ms frame). [BATT] avg 55.4 ms before and 55.4 / 55.3 ms after: logging was not the bottleneck.
 - Real costs removed from default play:

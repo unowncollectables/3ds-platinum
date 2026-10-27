@@ -447,6 +447,15 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
 }
 /* run 111 wide_gpu: the wide (320-column) battle/menu layout composed on the GPU from widecomp's plan. center = DS columns
    0..255 (melonDS format), strip = 32 + 32 side columns (0xRRGGBBAA, as WC_Compose) or NULL. Returns 0 = not composed. */
+/* run 114: 0 when P3DS_GcComposeA would surely reject this frame's alpha blend: effect 1 with a first-target BG (not the 3D
+   BG0) or sprites enabled while the backdrop is not a second target. Conservative: such frames use the CPU wide path. */
+int P3DS_GcBlendPredictOk(const u8 *regs) {
+    if (!P3DS_GcBlendOn) return 1;
+    const u32 bl = rh(regs, 0x50), dc = rg(regs, 0);
+    if (((bl >> 6) & 3) != 1 || (bl & 0x2000)) return 1;
+    u32 on = (dc >> 8) & 0x1F; if (dc & 8) on &= ~1u;
+    return (bl & 0x1F & on) == 0;
+}
 int P3DS_GcComposeWide(const WcPlan *plan, const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bgpal, const u16 *objpal, const u16 *oam, const u32 *f3d, u32 *center, u32 *strip) {
     if (!init()) return 0;
     /* run 112: the 512 KiB VRAM target is made when a wide frame needs it and freed again when the overworld wide view
