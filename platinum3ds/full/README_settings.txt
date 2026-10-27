@@ -158,8 +158,8 @@ SOUND
   audio_adapt=1     keep sound smooth when the game slows down. 0 = off. Default 1.
 
 LOGGING
-  stereo_blobdiag=1 with the 3D slider up, logs [STEREO] blob lines and saves stereo_blob_*.bmp once if one eye
-                    shows a black patch the other doesn't (for the black-blob report). 0 = off. Default 1.
+  stereo_blobdiag=0 with the 3D slider up, logs [STEREO] blob lines and saves stereo_blob_*.bmp once if one eye
+                    shows a black patch the other doesn't (for the black-blob report). 1 = on. Default 0 since run 113.
   gpu_compose=2     GPU 2D compositor for the TOP screen (engine A). Default 2 since run 61 (was 0; you confirmed on
                     hardware that it runs much better). 0 = off (old CPU path, unchanged).
                     1 = ANALYZE: only writes [GPUC] statistics lines to log.txt.
@@ -310,7 +310,7 @@ Run 88
 wide_3d_alpha (Debug, default ON): wide layouts draw 3D fade-ins such as battle send-outs themselves instead of the slow path. OFF = old behaviour.
 
 hunt_async_save (Debug, default ON): the shiny-hunt file is written in the background, removing the ~70 ms drop at wild battle start.
-field_prof (Debug): OFF / ON / AUTO (default) - AUTO profiles 8 s after each battle start/end.
+field_prof (Debug): OFF (default since run 113) / ON / AUTO - AUTO profiles 8 s after each battle start/end.
 wide_split (Debug "Wide compose on 2 cores", default ON, run 105): in mono (3D slider off) the wide-layout compose (battles, menus) is shared by the main thread and the core-2 worker: the changed lines are dealt out to the two halves. Same picture as one thread (tools/widecomp_split_test.c). Needs wide_early=1 and wide_dirty=1; stereo is unchanged (right eye already on core 2). 0 = one thread.
 
 wireless (Game tab "Local wireless (test)", default OFF): 1 = the game's DS wireless (Union Room, Pokemon Center
@@ -319,21 +319,20 @@ this port; real DS consoles can't join, see docs/WIRELESS.md). Takes effect the 
 (entering the Union Room or the Underground). OFF = exactly as before: a radio with nobody in range. Test with
 copies of your save on both consoles; a trade writes the save through the game's own code. Log tag [WIRELESS].
 battle_log (Debug "Battle frame log", default ON, run 106): in battles and menus every frame over 40 ms logs the [SPIKE] stage breakdown (own 200-line cap). 0 = only frames over spike_ms (70).
-wide_split_r (Debug "Right eye on 2 cores", default OFF since run 107; it hung and slowed slider-up battles in run 106): with the 3D slider up the right eye's wide compose is shared by the main thread and the core-2 worker. Needs wide_dirty=1. 0 = right eye entirely on core 2.
 
 g3_conv_split (Debug, default ON): with the slider up the right eye's 3D convert runs on core 2.
 stereo_flat_fallback (Debug, default OFF): slider up, frames the wide view can't draw (battle intro) show no depth instead of rendering twice.
-wide_split_r (Debug): OFF / HALF / SHARED. SHARED lets whichever core is free draw the next right-eye lines. Default OFF.
 
 wide_windows (Debug, default ON): the wide view draws screens that use DS windows (battle intro) itself.
-wide_split_r now defaults to SHARED.
 Run 110 (Debug tab):
 gpu_direct3d "GPU 3D direct" (default ON): the 3D layer stays on the GPU when GPU compose draws the frame (no readback). From the SoulSilver port.
-stereo_gpu_battle "3D battles on GPU" (default ON): with the 3D slider up, battles and menus are composed on the GPU for both eyes. These show the DS 4:3 layout (no wide side panels).
 gpu_blend_3d "GPU blend by 3D" (default ON): GPU compose also takes blend frames next to the 3D layer (battles); translucent move effects blend like the DS.
-wide_split_r is OFF by default again (SHARED made Run 109 battles slower).
 Run 111 (Debug tab):
 wide_gpu "Wide on GPU" (OFF / SLIDER UP / ALWAYS, default SLIDER UP): with the 3D slider up, the wide battle and menu layout (side panels, HUD at the edges) is drawn on the GPU for both eyes. Rotated sprites and the battle intro still use the CPU.
 gpu_mbright "GPU fades" (default ON): GPU compose does screen fades itself.
-stereo_gpu_battle is now OFF by default (it shows 4:3 battles without the wide panels).
 Run 112: fixed the overworld wide view (it was lost after the first 3D-slider-up wide screen in Run 111). No new settings.
+Run 113: clean-up.
+Removed: wide_split_r ("Right eye on 2 cores") and stereo_gpu_battle ("3D battles on GPU", the 4:3 mode). Both were OFF by default; old config.txt lines with them are ignored.
+Diagnostics: field_prof (Debug "Load-hitch profiler") now defaults to OFF (was AUTO); stereo_blobdiag now defaults to 0; the [3DLAYER] pixel count only runs with Log detail FULL.
+Kept ON: battle_log ([BATT] summary per battle plus up to 40 [SPIKE] lines). The [BATT] line now also counts the log lines written during that battle.
+To turn diagnostics back on: Debug tab (SELECT in the settings app) -> Log detail FULL, Load-hitch profiler ON/AUTO.

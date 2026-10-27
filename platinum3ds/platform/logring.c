@@ -58,8 +58,10 @@ static void flushOnce(int lock) {
     P3DS_LogWriting = 0;
 }
 static void writer(void *p) { (void)p; for (;;) { svcSleepThread(100000000LL); flushOnce(1); } }
+volatile unsigned P3DS_LogLines, P3DS_LogBytes; /* run 113: every line, shown or hidden detail ([BATT] reports them per battle) */
 void P3DS_LogLine(const char *line) {
     ensureInit(); u32 len = (u32)strlen(line);
+    P3DS_LogLines++; P3DS_LogBytes += len + 1;
     const int detail = isDetail(line);
     LightLock_Lock(&lk);
     if (detail) { for (u32 k = 0; k < len; k++) dring[(dhead + k) % DRING] = line[k]; dring[(dhead + len) % DRING] = '\n'; dhead += len + 1; LightLock_Unlock(&lk); return; }
