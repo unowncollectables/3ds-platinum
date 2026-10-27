@@ -340,3 +340,4 @@ Run 114 (Debug tab):
 wide_gpu_precheck "Wide GPU blend check" (default ON): wide-layout frames with an alpha blend the GPU compositor can't draw (the opening cutscene right after launch) now use the CPU wide path again, as they did before Run 111. With the 3D slider up, those frames had been falling back to the slow serial right eye (about 15 fps for the first 6 seconds). OFF = Run 113 behaviour.
 Run 115 (Debug tab):
 dex_wide "Wide Pokedex" (default OFF): the Pokedex now uses the DS layout (side bars), because its wide layout needed a full CPU redraw every frame (30-42 ms on hardware). ON = the wide Pokedex as in Run 114.
+Run 116 (diagnostic build): dex_wide now defaults to ON again (wide Pokedex, still slow). While the Pokedex is open, the log gets one [WCPROF] line per second showing where the wide redraw time goes. Nothing to change in the settings: just open the Pokedex for about 10 seconds, then send log.txt.

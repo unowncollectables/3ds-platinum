@@ -11,6 +11,14 @@
 #include <stdint.h>
 #include <string.h>
 #include "widecomp.h"
+/* run 116 diagnostic: per-stage ticks of composeNow (sprites / windows / BG layers / backdrop+blend+output), lines, sprites */
+#ifdef __3DS__
+#include <3ds.h>
+#define WCT() svcGetSystemTick()
+#else
+#define WCT() 0ull
+#endif
+unsigned long long WC_Prof[4]; unsigned WC_ProfLines, WC_ProfSpr, WC_ProfComposes;
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int16_t s16;
 
@@ -160,7 +168,9 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
     #define WIN_IN(v, a, b) ((a) <= (b) ? ((v) >= (a) && (v) < (b)) : ((v) >= (a) || (v) < (b)))
     #define PUT(X, C, LY) { if (!done[X]) { row[X] = (C); lay[X] = (u8)(LY); done[X] = 1; if (!((t3 && (LY) == 0) ? (sm && a3[X] < 31) : (ab && (fm >> (LY) & 1)))) { d2[X] = 1; left--; } } \
         else if (!d2[X]) { row2[X] = (C); lay2[X] = (u8)(LY); d2[X] = 1; left--; } }
-    for (int y = 0; y < 192; y++) { if (rowMask && !rowMask[y]) continue;
+    unsigned long long wcL = 0; WC_ProfComposes++; { int ns = 0; for (int n = 0; n < no; n++) ns++; WC_ProfSpr += (unsigned)ns; }
+    for (int y = 0; y < 192; y++) { if (wcL) { WC_Prof[3] += WCT() - wcL; wcL = 0; } if (rowMask && !rowMask[y]) continue;
+        wcL = WCT(); WC_ProfLines++;
         u32 row[320], row2[320], spr[320]; u8 lay[320], lay2[320], done[320], d2[320], sprPr[320], a3[320], ow[320], wm[320]; if (wOn) memset(ow, 0, sizeof ow); memset(done, 0, sizeof done); memset(d2, 0, sizeof d2); memset(sprPr, 4, sizeof sprPr); memset(spr, 0, sizeof spr);
         int left = 320; int sx0 = 320, sx1 = 0; /* run 98: span of sprite pixels on this line */
         if (dc & 0x1000) for (int n = no - 1; n >= 0; n--) { /* back to front here: the front sprite is painted last */
@@ -184,10 +194,12 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
                 else { SPRCOL(bw - 1, c); for (int X = xs + bw + 32; X < xs0 + bw + 32; X++) if (c && X >= 0 && X < 320) { spr[X] = c; sprPr[X] = spp[n]; if (X < sx0) sx0 = X; if (X >= sx1) sx1 = X + 1; } } }
             #undef SPRCOL
         }
+        { const unsigned long long n_ = WCT(); WC_Prof[0] += n_ - wcL; wcL = n_; }
         if (wOn) { const int in0y = (dc & 0x2000) && WIN_IN(y, w0y1, w0y2), in1y = (dc & 0x4000) && WIN_IN(y, w1y1, w1y2);
             for (int X = 0; X < 320; X++) { const int x = X - 32; u8 c = wco;
                 if (x >= 0 && x < 256) { if (in0y && WIN_IN(x, w0x1, w0x2)) c = wc0; else if (in1y && WIN_IN(x, w1x1, w1x2)) c = wc1; else if ((dc & 0x8000) && ow[X]) c = wcw; }
                 wm[X] = c; } }
+        { const unsigned long long n_ = WCT(); WC_Prof[1] += n_ - wcL; wcL = n_; }
         for (int li = 0; li < nl && left; li++) { const int L = lorder[li]; const WcLayer *l = &p->L[L];
             /* sprites of this priority go in front of the BGs of the same priority */
             if (li == 0 || p->L[lorder[li - 1]].prio != l->prio) { for (int pr = (li ? p->L[lorder[li - 1]].prio + 1 : 0); pr <= l->prio; pr++) for (int X = sx0; X < sx1; X++) if (!d2[X] && spr[X] && sprPr[X] == pr && (!wOn || (wm[X] & 16))) { PUT(X, spr[X], 4); spr[X] = 0; } }
@@ -207,6 +219,7 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
                 if (l->bpp8) ci = trow[fx]; else { const u8 b = trow[fx >> 1]; ci = (fx & 1) ? b >> 4 : b & 15; }
                 if (!ci) continue;
                 PUT(X, (l->extSlot >= 0 ? toM(*(const u16 *)(S->bgext + l->extSlot * 0x2000 + ((me >> 12) * 256 + ci) * 2)) : lutB[l->bpp8 ? ci : ((me >> 12) * 16 + ci)]), L); } }
+        { const unsigned long long n_ = WCT(); WC_Prof[2] += n_ - wcL; wcL = n_; }
         if (left) { /* sprites behind every BG, then the backdrop */
             for (int X = 0; X < 320; X++) if (!d2[X]) { if (spr[X] && (!wOn || (wm[X] & 16))) PUT(X, spr[X], 4); if (!d2[X]) PUT(X, bd, 5); } }
         if (!bgBld && !mm && !ab && !(t3 && sm) && !wOn) { memcpy(center + y * 256, row + 32, 256 * 4);
@@ -229,6 +242,7 @@ static int composeNow(const WcPlan *p, const u8 *R, const WcSrc *S, u32 *center,
             else { if (mm == 1) { r += (255 - r) * mf / 16; g += (255 - g) * mf / 16; b += (255 - b) * mf / 16; } else if (mm == 2) { r -= r * mf / 16; g -= g * mf / 16; b -= b * mf / 16; }
                 center[y * 256 + X - 32] = r | (g << 8) | (b << 16) | 0xFF000000u; } }
     }
+    if (wcL) WC_Prof[3] += WCT() - wcL;
     return 1;
 }
 

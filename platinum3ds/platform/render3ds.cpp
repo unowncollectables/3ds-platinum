@@ -178,7 +178,7 @@ static u32 stateHash(){u32 h=2166136261u;const u32*p=(const u32*)s_HW_OAM;for(in
    for the rest. Register/OAM reads only (no pixel work); logs one [GPUC] line per engine every 300 frames.
    gpu_compose=0 (default): not even called. Nothing is drawn differently in either setting. */
 static int gcCfgV=-1;
-extern "C" {extern int P3DS_DexNoWide;int P3DS_GcBlendPredictOk(const u8*);int P3DS_GcWideRelease(void);void G3G_WideRetry(void);void G3G_DirectResolve(void);int G3G_DirectPending(void);}
+extern "C" {extern int P3DS_DexNoWide,P3DS_DexOpen;extern unsigned long long WC_Prof[4];extern unsigned WC_ProfLines,WC_ProfSpr,WC_ProfComposes;int P3DS_GcBlendPredictOk(const u8*);int P3DS_GcWideRelease(void);void G3G_WideRetry(void);void G3G_DirectResolve(void);int G3G_DirectPending(void);}
 extern "C" int P3DS_GpuComposeCfg(void){if(gcCfgV<0){gcCfgV=P3DS_CfgInt("gpu_compose",2);/* run 61: default 2 (hardware-confirmed by the user, run-60 parity 0 px) */if(gcCfgV<0||gcCfgV>3)gcCfgV=2;PSPNativeMemLog("[GPUC] gpu_compose=%d (1 = analyzer, 2 = GPU compositor on simple frames, 3 = verify)",gcCfgV);}return gcCfgV;}
 extern "C" void P3DS_SetGpuComposeCfg(int v){gcCfgV=v;}
 enum{GC_DM,GC_AFFBG,GC_WIN,GC_ALPHA,GC_BRIGHT,GC_MOSAIC,GC_BG8,GC_EXTPAL,GC_OBJAFF,GC_OBJSEMI,GC_OBJWIN,GC_OBJBMP,GC_CAP,GC_MBRIGHT,GC_N};
@@ -868,7 +868,7 @@ static const MItem mItems[]={
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
 static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
@@ -1470,6 +1470,10 @@ static int Present(bool){
   if(!secStart)secStart=tEnd;unsigned el=(unsigned)((tEnd-secStart)/CPU_TICKS_PER_USEC);
   if(el>=1000000){unsigned n=secFrames;fpsShown=(unsigned)((u64)n*1000000/el);msShown=(unsigned)((u64)el/n/100);
    struct mallinfo mi=mallinfo();
+   {/* run 116 diagnostic: widecomp stage split, logged every second while the Pokedex is open (or with Log detail FULL) */
+    if((P3DS_DexOpen||P3DS_LogLevel()>=2)&&WC_ProfComposes){const unsigned c=WC_ProfComposes;
+     PSPNativeMemLog("[WCPROF] dex %d: %u composes, %u lines/compose, sprites/compose %u | us/compose: sprites %u windows %u BGs %u backdrop+blend+out %u",P3DS_DexOpen,c,WC_ProfLines/c,WC_ProfSpr/c,(unsigned)(WC_Prof[0]/c/268),(unsigned)(WC_Prof[1]/c/268),(unsigned)(WC_Prof[2]/c/268),(unsigned)(WC_Prof[3]/c/268));}
+    WC_Prof[0]=WC_Prof[1]=WC_Prof[2]=WC_Prof[3]=0;WC_ProfLines=WC_ProfSpr=WC_ProfComposes=0;}
    PSPNativeMemLogC("[PERF] fps %u | ms/frame %u.%u = game %u.%u + g3soft %u.%u + composite %u.%u + present %u.%u | tris/frame %u | malloc used %u KiB | mode %d slider %.2f | res3d %d, 3D GPU draw+readback %u us",
     fpsShown,msShown/10,msShown%10,secGame/n/1000,(secGame/n/100)%10,secG3/n/1000,(secG3/n/100)%10,secComp/n/1000,(secComp/n/100)%10,secGpu/n/1000,(secGpu/n/100)%10,secTris/n,(unsigned)(mi.uordblks/1024),P3DS_ScaleMode(),(double)p3dsSlider(),G3G_Hi()?2:0,secG3G/n);
    PSPNativeMemLogC("[PERF2] upload %u us | 3D convert %u us | composite %u us",secUp/n,secConv/n,secComp/n);secUp=secConv=0;
