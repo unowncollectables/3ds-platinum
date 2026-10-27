@@ -8,7 +8,25 @@
      battleCtx->damage *= -1;
  
      return FALSE;
-@@ -9760,6 +9761,7 @@
+@@ -9716,6 +9717,8 @@
+         if (itemEffect == HOLD_EFFECT_EXP_SHARE || (data->battleCtx->sideGetExpMask[battler] & FlagIndex(slot))) {
+             break;
+         }
++        { extern int P3DS_CfgInt(const char *, int); /* run 118 exp_share_all: the whole party gets Exp. Points */
++          if (P3DS_CfgInt("exp_share_all", 0) && Pokemon_GetValue(mon, MON_DATA_HP, NULL) && !Pokemon_GetValue(mon, MON_DATA_IS_EGG, NULL)) break; }
+     }
+ 
+     if (slot == BattleSystem_GetPartyCount(data->battleSys, expBattler)) {
+@@ -9752,6 +9755,8 @@
+             if (itemEffect == HOLD_EFFECT_EXP_SHARE) {
+                 totalExp += data->battleCtx->sharedExp;
+             }
++            { extern int P3DS_CfgInt(const char *, int); /* run 118 exp_share_all: one that did not fight gets as much as one that did */
++              if (totalExp == 0 && P3DS_CfgInt("exp_share_all", 0)) totalExp = data->battleCtx->gainedExp; }
+ 
+             if (itemEffect == HOLD_EFFECT_EXP_UP) {
+                 totalExp = totalExp * 150 / 100;
+@@ -9760,6 +9765,7 @@
              if (battleType & BATTLE_TYPE_TRAINER) {
                  totalExp = totalExp * 150 / 100;
              }
@@ -16,7 +34,195 @@
  
              if (BattleSystem_PokemonIsOT(data->battleSys, mon) == FALSE) {
                  if (Pokemon_GetValue(mon, MON_DATA_LANGUAGE, NULL) != gGameLanguage) {
-@@ -10913,6 +10915,7 @@
+@@ -10349,6 +10355,13 @@
+     SEQ_CATCH_MON_PRINT_POKEMON_BROKE_FREE,
+     SEQ_CATCH_MON_DONE_POKEMON_BROKE_FREE,
+     SEQ_CATCH_MON_DONE,
++    SEQ_CATCH_MON_P3DS_ASK, /* platinum3ds run 118 catch_swap */
++    SEQ_CATCH_MON_P3DS_ASK_YES_NO,
++    SEQ_CATCH_MON_P3DS_ASK_INPUT,
++    SEQ_CATCH_MON_P3DS_PICK,
++    SEQ_CATCH_MON_P3DS_PICK_INPUT,
++    SEQ_CATCH_MON_P3DS_REFUSED,
++    SEQ_CATCH_MON_P3DS_TOLD,
+ };
+ 
+ enum CatchMonTaskDataIndex {
+@@ -10358,6 +10371,52 @@
+     CATCH_MON_REMAINING_SHAKES
+ };
+ 
++/* platinum3ds run 118 catch_swap: see encounter.c P3DS_CatchSwapApply */
++extern int P3DS_CfgInt(const char *, int);
++extern u8 P3DS_BattlePrintString(BattleSystem *battleSys, const String *string, int renderDelay);
++extern void P3DS_CatchSwapReset(void); extern void P3DS_CatchSwapToPC(int boxID, int pos, u32 personality);
++extern void P3DS_CatchSwapSetPick(int slot); extern int P3DS_CatchSwapPick(void);
++extern void P3DS_CatchSwapSetPicking(int on); extern int P3DS_CatchSwapCanGoToPC(Pokemon *mon);
++static BOOL sP3dsSwapAsked;
++static void P3DS_Letters(String *string, const char *t)
++{
++    for (; *t; t++) {
++        const char c = *t;
++        if (c >= 'A' && c <= 'Z') String_AppendChar(string, 0x12B + (c - 'A'));
++        else if (c >= 'a' && c <= 'z') String_AppendChar(string, 0x145 + (c - 'a'));
++        else if (c >= '0' && c <= '9') String_AppendChar(string, 0x121 + (c - '0'));
++        else if (c == ' ') String_AppendChar(string, 0x1DE);
++        else if (c == '.') String_AppendChar(string, 0x1AE);
++        else if (c == '!') String_AppendChar(string, 0x1AB);
++        else if (c == '?') String_AppendChar(string, 0x1AC);
++        else if (c == ',') String_AppendChar(string, 0x1AD);
++        else if (c == '\'') String_AppendChar(string, 0x1B3);
++        else if (c == '\n') String_AppendChar(string, 0xE000);
++    }
++}
++static u8 P3DS_SwapPrint(BattleSystem *battleSys, Pokemon *caught, Pokemon *picked, int what)
++{
++    String *string = String_Init(160, HEAP_ID_BATTLE), *name = String_Init(32, HEAP_ID_BATTLE);
++    u8 printerID;
++
++    if (what == 0) {
++        P3DS_Letters(string, "Your party is full.\nAdd "); Pokemon_GetValue(caught, MON_DATA_NICKNAME_STRING, name); String_Concat(string, name);
++        P3DS_Letters(string, " to your party?");
++    } else if (what == 1) {
++        Pokemon_GetValue(picked, MON_DATA_NICKNAME_STRING, name); String_Concat(string, name);
++        P3DS_Letters(string, Item_IsMail(Pokemon_GetValue(picked, MON_DATA_HELD_ITEM, NULL)) ? " is holding Mail.\nIt can't be sent to the PC." : " has a Ball Capsule.\nIt can't be sent to the PC.");
++    } else {
++        Pokemon_GetValue(caught, MON_DATA_NICKNAME_STRING, name); String_Concat(string, name);
++        P3DS_Letters(string, " will join the party\nand "); Pokemon_GetValue(picked, MON_DATA_NICKNAME_STRING, name); String_Concat(string, name);
++        P3DS_Letters(string, " goes to the PC.");
++    }
++
++    printerID = P3DS_BattlePrintString(battleSys, string, BattleSystem_GetTextSpeed(battleSys));
++    String_Free(name);
++    String_Free(string);
++    return printerID;
++}
++
+ static void BattleScript_CatchMonTask(SysTask *task, void *inData)
+ {
+     int battler;
+@@ -10377,6 +10436,7 @@
+     switch (data->seqNum) {
+     case SEQ_CATCH_MON_START:
+         if (data->flag == 0) {
++            sP3dsSwapAsked = FALSE; P3DS_CatchSwapSetPick(-1); P3DS_CatchSwapSetPicking(FALSE); /* catch_swap */
+             BallThrow ballThrow;
+ 
+             ballThrow.mode = BALL_THROW_MODE_THROW;
+@@ -10634,6 +10694,13 @@
+         }
+         break;
+     case SEQ_CATCH_MON_PRINT_YES_NO_GIVE_NICKNAME:
++        if (!sP3dsSwapAsked && P3DS_CfgInt("catch_swap", 0)
++            && BattleSystem_GetPartyCount(data->battleSys, 0) >= MAX_PARTY_SIZE
++            && !(BattleSystem_GetBattleType(data->battleSys) & (BATTLE_TYPE_SAFARI | BATTLE_TYPE_PAL_PARK | BATTLE_TYPE_CATCH_TUTORIAL))) {
++            sP3dsSwapAsked = TRUE;
++            data->seqNum = SEQ_CATCH_MON_P3DS_ASK;
++            break;
++        }
+         int v15 = battler | (data->battleCtx->selectedPartySlot[battler]);
+         BattleController_EmitShowYesNoMenu(data->battleSys, data->battleCtx, 0, BattleStrings_Text_GiveANicknameToTheCaughtPokemonYesNo, 5, 0, v15);
+         data->seqNum++;
+@@ -10668,6 +10735,8 @@
+ 
+             if (BattleSystem_GetPartyCount(data->battleSys, 0) < MAX_PARTY_SIZE) {
+                 namingScreenArgs->battleMsgID = 0;
++            } else if (P3DS_CatchSwapPick() >= 0) {
++                namingScreenArgs->battleMsgID = 0; /* catch_swap: it joins the party (told already) */
+             } else {
+                 namingScreenArgs->battleMsgID = BattleStrings_Text_PokemonWasTransferredToBoxInSomeonesPC + BattleSystem_GetMetBebe(data->battleSys);
+             }
+@@ -10752,8 +10821,30 @@
+                     BattleSystem_DexFlagCaught(data->battleSys, battler);
+                 }
+ 
++                if (P3DS_CatchSwapPick() >= 0) { /* catch_swap: note the PC slot it lands in, swapped after the battle */
++                    int pos;
++                    for (pos = 0; pos < MAX_MONS_PER_BOX; pos++) {
++                        if (PCBoxes_GetBoxMonData(pcBoxes, firstEmptyBoxID, pos, MON_DATA_SPECIES, NULL) == SPECIES_NONE) {
++                            P3DS_CatchSwapToPC(firstEmptyBoxID, pos, Pokemon_GetValue(mon, MON_DATA_PERSONALITY, NULL));
++                            break;
++                        }
++                    }
++                    if (pos == MAX_MONS_PER_BOX) P3DS_CatchSwapSetPick(-1);
++                }
++
+                 PCBoxes_TryStoreBoxMonInBox(pcBoxes, firstEmptyBoxID, Pokemon_GetBoxPokemon(mon));
+ 
++                if (P3DS_CatchSwapPick() >= 0) {
++                    PCBoxes_SetCurrentBox(pcBoxes, currentBoxID);
++                    if (data->seqNum == SEQ_CATCH_MON_DIDNT_GIVE_NICKNAME) {
++                        sub_02015738(BattleSystem_GetPaletteAnimator(data->battleSys), 1);
++                        PaletteData_StartFade(paletteData, PLTTBUF_MAIN_BG_F | PLTTBUF_SUB_BG_F | PLTTBUF_MAIN_OBJ_F | PLTTBUF_SUB_OBJ_F, 0xFFFF, 1, 0, 16, 0);
++                        PokemonSpriteManager_StartFadeAll(monSpriteMan, 0, 16, 0, 0);
++                    }
++                    data->seqNum = SEQ_CATCH_MON_DONE;
++                    break;
++                }
++
+                 if (data->seqNum == SEQ_CATCH_MON_DIDNT_GIVE_NICKNAME) {
+                     if (currentBoxID == firstEmptyBoxID) {
+                         msg.id = BattleStrings_Text_PokemonWasTransferredToBoxInSomeonesPC + BattleSystem_GetMetBebe(data->battleSys);
+@@ -10777,6 +10868,58 @@
+             }
+         }
+         break;
++    case SEQ_CATCH_MON_P3DS_ASK:
++        mon = BattleSystem_GetPartyPokemon(data->battleSys, battler, data->battleCtx->selectedPartySlot[battler]);
++        data->tmpData[CATCH_MON_MSG_INDEX] = P3DS_SwapPrint(data->battleSys, mon, NULL, 0);
++        data->seqNum = SEQ_CATCH_MON_P3DS_ASK_YES_NO;
++        break;
++    case SEQ_CATCH_MON_P3DS_ASK_YES_NO:
++        if (Text_IsPrinterActive(data->tmpData[CATCH_MON_MSG_INDEX]) == FALSE) {
++            BattleController_EmitShowYesNoMenu(data->battleSys, data->battleCtx, 0, 0, 5, 0, 0);
++            data->seqNum = SEQ_CATCH_MON_P3DS_ASK_INPUT;
++        }
++        break;
++    case SEQ_CATCH_MON_P3DS_ASK_INPUT:
++        if (BattleContext_IOBufferVal(data->battleCtx, 0)) {
++            data->seqNum = BattleContext_IOBufferVal(data->battleCtx, 0) == PLAYER_INPUT_CANCEL ? SEQ_CATCH_MON_PRINT_YES_NO_GIVE_NICKNAME : SEQ_CATCH_MON_P3DS_PICK;
++        }
++        break;
++    case SEQ_CATCH_MON_P3DS_PICK:
++        P3DS_CatchSwapSetPicking(TRUE);
++        BattleController_EmitShowPartyMenu(data->battleSys, data->battleCtx, 0, 0, 0, 6);
++        data->seqNum = SEQ_CATCH_MON_P3DS_PICK_INPUT;
++        break;
++    case SEQ_CATCH_MON_P3DS_PICK_INPUT: {
++        u8 input = BattleContext_IOBufferVal(data->battleCtx, 0);
++        Pokemon *picked;
++
++        if (input == 0) {
++            break;
++        }
++        P3DS_CatchSwapSetPicking(FALSE);
++        if (input == PLAYER_INPUT_CANCEL || input - 1 >= BattleSystem_GetPartyCount(data->battleSys, 0)) {
++            data->seqNum = SEQ_CATCH_MON_PRINT_YES_NO_GIVE_NICKNAME; /* to the PC, as ever */
++            break;
++        }
++        mon = BattleSystem_GetPartyPokemon(data->battleSys, battler, data->battleCtx->selectedPartySlot[battler]);
++        picked = BattleSystem_GetPartyPokemon(data->battleSys, 0, input - 1);
++        data->tmpData[CATCH_MON_DELAY] = 40;
++        if (!P3DS_CatchSwapCanGoToPC(picked)) {
++            data->tmpData[CATCH_MON_MSG_INDEX] = P3DS_SwapPrint(data->battleSys, mon, picked, 1);
++            data->seqNum = SEQ_CATCH_MON_P3DS_REFUSED;
++            break;
++        }
++        P3DS_CatchSwapSetPick(input - 1);
++        data->tmpData[CATCH_MON_MSG_INDEX] = P3DS_SwapPrint(data->battleSys, mon, picked, 2);
++        data->seqNum = SEQ_CATCH_MON_P3DS_TOLD;
++        break;
++    }
++    case SEQ_CATCH_MON_P3DS_REFUSED:
++    case SEQ_CATCH_MON_P3DS_TOLD:
++        if (Text_IsPrinterActive(data->tmpData[CATCH_MON_MSG_INDEX]) == FALSE && --data->tmpData[CATCH_MON_DELAY] == 0) {
++            data->seqNum = data->seqNum == SEQ_CATCH_MON_P3DS_REFUSED ? SEQ_CATCH_MON_P3DS_PICK : SEQ_CATCH_MON_PRINT_YES_NO_GIVE_NICKNAME;
++        }
++        break;
+     case SEQ_CATCH_MON_WAIT_PRINT_TRANSFERRED_TO_BOX:
+         if (Text_IsPrinterActive(data->tmpData[CATCH_MON_MSG_INDEX]) == FALSE) {
+             if (--data->tmpData[CATCH_MON_DELAY] == 0) {
+@@ -10913,6 +11056,7 @@
      if (BattleSystem_GetBattleType(battleSys) & BATTLE_TYPE_ALWAYS_CATCH) {
          return BALL_3_SHAKES_SUCCESS;
      }

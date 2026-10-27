@@ -2,6 +2,14 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-27 — Run 118c: gameplay extras (Claude, branch `run118-gameplay`)
+- Three game-side extras in `work_patches/overlays/`, each with a row in the settings app's Game tab, all default OFF. With a key at 0 the game's code paths are unchanged. No save format change.
+- `exp_share_all` ("Exp. Share: whole party"): every party Pokemon that has HP and is not an Egg gets Exp. after a win; one that didn't fight gets as much as one that did (battle_script.c). Read live from the RAM config cache, so the menu change applies at the next battle.
+- `auto_run` ("Auto-run"): running is the default and holding B walks (player_move.c PlayerAvatar_IsRunButtonHeld). Combines with the ZL run toggle (both on = back to normal). Applies at once.
+- `catch_swap` ("Swap catch into party"): when you catch a Pokemon with a full party, the battle asks "Your party is full. Add X to your party?" before the nickname. YES opens the battle party screen (SHIFT reads SEND TO PC) to choose who goes to the PC; once the party is written back to the save (UpdateFieldSystemFromDTO in encounter.c) the two swap places. Pokemon holding Mail or with a Ball Capsule can't be picked. Not in the Safari Zone, Pal Park or the catching tutorial. Idea from the reference port pokeplatinum-3ds (0042); the code is ours.
+- Rebuild the overlays after applying the patches: `python3 rebuild_obj.py battle/battle_script.c battle/battle_system.c battle_sub_menus/battle_party.c battle_sub_menus/battle_party_text.c encounter.c player_move.c`.
+- **Untested on hardware and in the emulator** (compile-only: overlay objects rebuilt, `make` + `make cia`). Hardware check, with a save backup: a win with exp_share_all (Exp. messages for the bench, level-ups), walking with auto_run and B, catch_swap with a full party (pick, cancel/NO, nickname, the swapped Pokemon in the right PC box after a save + reload).
+
 ## 2026-10-27 — Run 118b: gc_atlas16, 16-bit 2D tiles (Claude, branch `run118-atlas16`)
 - New `gc_atlas16` (Debug "16-bit 2D tiles", default OFF, read once at start, so restart after changing it). The GPU compose 2D tile atlas (gpucomp.c) is RGBA5551 instead of RGBA8: half the atlas memory (1 MiB less linear RAM) and half the texture reads per quad.
 - Safe because 2D tiles are only opaque or fully transparent; semi-transparency comes from the blend registers, not from texel alpha, so one alpha bit is enough. The 3D layer textures stay RGBA8.
