@@ -1,0 +1,21 @@
+--- a/battle_sub_menus__battle_party_text.c
++++ b/battle_sub_menus__battle_party_text.c
+@@ -1926,7 +1926,17 @@
+ 
+     PrintSelectedPokemonName(battleParty, battleParty->context->selectedPartyIndex);
+ 
+-    PrintButtonText(battleParty, BATTLE_SELECT_POKEMON_SCREEN_WINDOW_SHIFT, BattleParty_Text_ShiftButton);
++    { extern int P3DS_CatchSwapPicking(void); /* platinum3ds run 118 catch_swap: the SHIFT button reads SEND TO PC */
++      if (P3DS_CatchSwapPicking()) {
++        static const u16 sendToPC[] = { 0x13D, 0x12F, 0x138, 0x12E, 0x1DE, 0x13E, 0x139, 0x1DE, 0x13A, 0x12D };
++        Window *window = &battleParty->windows[BATTLE_SELECT_POKEMON_SCREEN_WINDOW_SHIFT];
++        String *string = String_Init(16, battleParty->context->heapID);
++        for (u32 i = 0; i < NELEMS(sendToPC); i++) String_AppendChar(string, sendToPC[i]);
++        u32 stringWidth = Font_CalcStringWidth(FONT_SUBSCREEN, string, 0);
++        Text_AddPrinterWithParamsAndColor(window, FONT_SUBSCREEN, string, (Window_GetWidth(window) * TILE_WIDTH_PIXELS - stringWidth) / 2, 6, TEXT_SPEED_NO_TRANSFER, TEXT_COLOR(7, 8, 9), NULL);
++        String_Free(string);
++        Window_ScheduleCopyToVRAM(window);
++      } else PrintButtonText(battleParty, BATTLE_SELECT_POKEMON_SCREEN_WINDOW_SHIFT, BattleParty_Text_ShiftButton); }
+ 
+     if (battleParty->partyPokemon[battleParty->context->selectedPartyIndex].isEgg == FALSE) {
+         PrintButtonText(battleParty, BATTLE_SELECT_POKEMON_SCREEN_WINDOW_SUMMARY, BattleParty_Text_SummaryButton);

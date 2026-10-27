@@ -1,0 +1,19 @@
+--- a/battle__battle_system.c
++++ b/battle__battle_system.c
+@@ -1662,6 +1662,16 @@
+     return Text_AddPrinterWithParams(textWindow, FONT_MESSAGE, battleSys->msgBuffer, 0, 0, renderDelay, BattleMessage_Callback);
+ }
+ 
++/* platinum3ds run 118 catch_swap: a message the port builds (battle_script.c P3DS_SwapPrint) */
++u8 P3DS_BattlePrintString(BattleSystem *battleSys, const String *string, int renderDelay)
++{
++    Window *textWindow = BattleSystem_GetWindow(battleSys, 0);
++
++    String_Copy(battleSys->msgBuffer, string);
++    Window_FillTilemap(textWindow, 0xFF);
++    return Text_AddPrinterWithParams(textWindow, FONT_MESSAGE, battleSys->msgBuffer, 0, 0, renderDelay, BattleMessage_Callback);
++}
++
+ u8 BattleMessage_PrintToWindow(BattleSystem *battleSys, Window *window, MessageLoader *msgLoader, BattleMessage *battleMsg, int xOffset, int yOffset, int flags, int alignWidth, int renderDelay)
+ {
+     int xAdjust;

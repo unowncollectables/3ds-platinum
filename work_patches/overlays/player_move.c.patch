@@ -28,7 +28,7 @@
      return collisionFlag;
  }
  
-@@ -2477,11 +2484,10 @@
+@@ -2477,11 +2484,11 @@
   */
  BOOL PlayerAvatar_IsRunButtonHeld(PlayerAvatar *playerAvatar, u16 pad)
  {
@@ -40,7 +40,8 @@
 +    /* platinum3ds run 53 zl_run: ZL toggles running; with it on, B held = walk */
 +    extern volatile int P3DS_RunToggle;
 +    BOOL held = (pad & PAD_BUTTON_B) ? TRUE : FALSE;
-+    return P3DS_RunToggle ? !held : held;
++    { const int ar = P3DS_CfgInt("auto_run", 0) != 0; /* run 118 auto_run: running unless B is held */
++      return (P3DS_RunToggle != 0) != ar ? !held : held; }
  }
  
  /**
