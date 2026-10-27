@@ -36,6 +36,8 @@ static GE *tab; static unsigned slotsUsed, frameNo;
 static C3D_Tex atlas, tex3d, tex3dB, rtTex; static C3D_Tex *t3cur = &tex3d;
 extern int P3DS_InField; static C3D_RenderTarget *rt;
 static GV *vb; static u32 *rb;
+static int gpuBusy;  /* run 118 frame_pacing: a draw of ours is queued and none of our FrameBegins has waited for it since */
+static void gcIdle(void) { if (gpuBusy) { C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); gpuBusy = 0; } }
 static DVLB_s *dvlb; static shaderProgram_s prog; static int uProj; static int ready = -1;
 static u8 mort[64];
 static unsigned dirtyLo, dirtyHi;
@@ -134,6 +136,7 @@ static int tile(int obj, int bpp8, unsigned bank, const u8 *src, unsigned addr) 
         if (slotsUsed >= SLOTS || slotsUsed * 2 >= HSIZE) { fail = 1; return -1; }
         e->key = key; e->slot = slotsUsed++; e->stamp = frameNo;
     }
+    gcIdle();  /* frame_pacing: the queued draw may still sample this atlas slot */
     memcpy(e->raw, src, n); e->palv = pv; P3DS_GcDecoded++;
     unsigned any = 0; for (unsigned i = 0; i < n; i++) any |= src[i];
     e->empty = !any; if (!any) return -1;
@@ -303,6 +306,7 @@ static void conv3d(const u32 *f) {
 static void conv3dRaw(const u32 *f, C3D_Tex *tx) {
     /* NativeFrame 6-bit 0xAA_BB_GG_RR (alpha 5-bit) -> PICA RGBA8 (R<<24|G<<16|B<<8|A), 8-bit expand like melonDS,
        alpha 0 -> transparent. Branch-free per pixel, 8 pixels per tile row with constant Morton offsets. */
+    gcIdle();
     u32 *d = (u32 *)tx->data;
     for (unsigned y = 0; y < 192; y++) { const unsigned my = 255 - y; const u8 *m = mort + (my & 7) * 8; u32 *drow = d + (my >> 3) * 32 * 64;
         const u32 *s = f + y * 256;
@@ -331,12 +335,62 @@ static void setFx(int fx) {
     } else C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 }
 
+/* run 118 frame_pacing (Debug "Frame pacing", default 0 = OFF: every compose waits for its own GPU draw, as before).
+ * The wait was the GPU draw + readback (~1.1-1.6 ms a compose in the Run 116 hardware log), twice a frame with the slider up.
+ *   1 FIXED: a compose queues its draw and readback and returns the same eye's pixels from the frame before (one frame of
+ *     latency); the GPU draws while the CPU goes on (right eye's tile walk, engine B wait, ...).
+ *   2 ADAPTIVE: no latency while frames are on time: the stereo left eye's draw runs while the CPU walks the right eye, and
+ *     the left pixels are converted while the GPU draws the right eye. After a late frame (> 35 ms) it works as FIXED until
+ *     600 frames in a row are on time; a lag that comes back within 60 frames doubles that (up to 16x).
+ * An eye that was not GPU-composed the frame before (path change, slider flip, CPU frame, wide target freed) waits as
+ * before. While a draw is queued, anything that writes what it reads (atlas tile decode, 3D texture convert) waits first
+ * (gcIdle); vertices alternate between two buffers and each eye has its own readback buffer. */
+typedef struct { u32 *rbuf, *out, *strip; int wide; unsigned epoch; } GJ;
+static GJ fpJob[2], fpPend; static int fpCfg = -1, fpEye, fpDefer, fpLag; static unsigned fpSub, fpEpoch = 1, fpN[3];
+static GV *vbA, *vbB; static u32 *rbe[2], *rbWe[2];
+static int fpMode(void) { if (fpCfg < 0) { fpCfg = P3DS_CfgInt("frame_pacing", 0); if (fpCfg < 0 || fpCfg > 2) fpCfg = 0; PSPNativeMemLog("[GPUC] frame_pacing=%d (0 off, 1 fixed one-frame lag, 2 adaptive)", fpCfg); } return fpCfg; }
+static int fpBufs(void) {
+    static int ok = -1; if (ok >= 0) return ok;
+    vbA = vb; vbB = (GV *)linearAlloc(MAXQ * 6 * sizeof(GV)); rbe[1] = (u32 *)linearAlloc(256 * 256 * 4); rbWe[1] = (u32 *)linearAlloc(512 * 256 * 4);
+    ok = vbB && rbe[1] && rbWe[1]; PSPNativeMemLog("[GPUC] frame_pacing buffers: %s", ok ? "ready" : "out of linear memory, pacing off"); return ok; }
+static u32 *fpRb(int e) { return gW ? (e ? rbWe[1] : rbW) : (e ? rbe[1] : rb); }
+static int fpLagNow(void) { return fpCfg == 1 || (fpCfg == 2 && fpLag); }
+static int fpPrevOk(int e, const u32 *out, const u32 *strip) { const GJ *j = &fpJob[e]; return j->out == out && !j->strip == !strip && j->wide == gW && j->epoch + 1 == fpEpoch; }
+static void gcOut(const u32 *r, int wide, u32 *out, u32 *strip) {
+    if (wide) { GSPGPU_InvalidateDataCache(r, 512 * 192 * 4);
+        for (unsigned y = 0; y < 192; y++) { const u32 *s = r + y * 512; u32 *o = out + y * 256;
+            for (unsigned x = 0; x < 256; x++) o[x] = __builtin_bswap32(s[x + 32]) | 0xFF000000u;
+            if (strip) { u32 *st = strip + y * 64; for (unsigned x = 0; x < 32; x++) { st[x] = s[x] | 0xFF; st[x + 32] = s[x + 288] | 0xFF; } } }
+        return; }
+    GSPGPU_InvalidateDataCache(r, 256 * 192 * 4);
+    for (unsigned i = 0; i < 256 * 192; i++) out[i] = __builtin_bswap32(r[i]) | 0xFF000000u;
+}
+/* eye 0/1 of the next compose; pair = the right eye is composed after it this frame (the left may then return unconverted) */
+void P3DS_GcEye(int eye, int pair) { fpEye = eye & 1; fpDefer = fpCfg > 0 && !eye && pair; }
+/* converts a left eye still pending (the right eye was not composed); the caller then owns its out buffer again */
+void P3DS_GcFinish(void) { if (fpPend.out) { gcIdle(); gcOut(fpPend.rbuf, fpPend.wide, fpPend.out, fpPend.strip); fpPend.out = 0; } fpDefer = 0; }
+/* once per rendered frame, before its composes: frame boundary for the lag, late-frame detection for ADAPTIVE */
+void P3DS_GcFrame(void) {
+    if (fpMode() <= 0) return;
+    static u64 last; static unsigned okRun, hold = 600, since = 1000, logN; const u64 now = svcGetSystemTick();
+    const u64 dt = last ? now - last : 0; const int late = dt > 35ull * 268111ull, hadGc = fpJob[0].epoch == fpEpoch || fpJob[1].epoch == fpEpoch; last = now;
+    fpEpoch++;
+    if (fpCfg == 2) {
+        if (fpLag) { if (late) okRun = 0; else if (++okRun >= hold) { fpLag = 0; okRun = 0; since = 0; PSPNativeMemLog("[GPUC] frame_pacing: lag off (%u frames on time)", hold); } }
+        else if (++since, late && hadGc) { if (since < 60 && hold < 9600) hold *= 2; fpLag = 1; okRun = 0; PSPNativeMemLog("[GPUC] frame_pacing: lag on after a %u ms frame (next try after %u on time)", (unsigned)(dt / 268111), hold); } }
+    if (++logN % 600 == 0) { PSPNativeMemLog("[GPUC] frame_pacing: last 600 frames: %u composes a frame late, %u left eyes overlapped, %u waited", fpN[0], fpN[1], fpN[2]); fpN[0] = fpN[1] = fpN[2] = 0; }
+}
+/* settings app: switch live (between frames) */
+void P3DS_SetFramePacing(int v) { P3DS_GcFinish(); gcIdle(); fpMode(); fpCfg = v < 0 || v > 2 ? 0 : v; fpLag = 0; fpJob[0].out = fpJob[1].out = 0; if (vbA) vb = vbA; PSPNativeMemLog("[GPUC] frame_pacing=%d (set from settings)", fpCfg); }
+
 /* returns 1 and fills out[256*192] (0xFFBBGGRR) on success; 0 = not composed (out untouched, caller falls back) */
 int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bgpal, const u16 *objpal, const u16 *oam, const u32 *f3d, u32 *out) {
     P3DS_Crumb("gc-begin", 0);
     if (!init()) return 0;
     const u64 t0 = svcGetSystemTick();
     frameNo++; fail = 0; nq = 0; nb = 0; dirtyLo = ~0u; dirtyHi = 0; P3DS_GcDecoded = 0;
+    int pm = fpMode(); if (pm && !fpBufs()) pm = 0;
+    if (pm) vb = (fpSub & 1) ? vbB : vbA;  /* the other half may still be read by the queued draw */
     if (slotsUsed > SLOTS - 3000 || slotsUsed * 2 > HSIZE - 6000) { memset(tab, 0, HSIZE * sizeof(GE)); slotsUsed = 0; P3DS_GcResets++; }
     palPrep(bgpal, 0); palPrep(objpal, 1);
     const u32 dc = rg(regs, 0);
@@ -386,8 +440,11 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
         for (int k = 0; k < 3; k++) c[k] = eff == 2 ? c[k] + (((255 - c[k]) * blendY + 8) >> 4) : c[k] - ((c[k] * blendY + 7) >> 4);
         bd = (c[0] << 24) | (c[1] << 16) | (c[2] << 8) | 0xFF; }
     P3DS_Crumb("gc-draw", 0);
-    C3D_FrameBegin(0);
+    C3D_FrameBegin(0); gpuBusy = 0;
     G3G_DirectSynced();   /* FrameBegin waited for every queued draw, including g3gpu's direct 3D frame */
+    /* frame_pacing lag: this eye's draw from the frame before is done (FrameBegin waited); its pixels are this frame's */
+    const int eye = fpEye, lagged = pm && fpLagNow() && fpPrevOk(eye, out, gStrip);
+    if (lagged) gcOut(fpRb(eye), gW, out, gStrip);
     C3D_RenderTarget *tg = gW ? rtW : rt;
     C3D_RenderTargetClear(tg, C3D_CLEAR_ALL, bd, 0);
     C3D_FrameDrawOn(tg);
@@ -423,6 +480,21 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
         C3D_TexEnvColor(env, (ca << 24) | (cc << 16) | (cc << 8) | cc); C3D_TexEnvSrc(env, C3D_Both, GPU_CONSTANT, 0, 0); C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
         C3D_AlphaTest(false, GPU_ALWAYS, 0); C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ZERO, GPU_ONE);
         C3D_DrawArrays(GPU_TRIANGLES, qm * 6, 6); C3D_AlphaTest(true, GPU_GREATER, 0); }
+    if (pm) {  /* run 118 frame_pacing: queue the draw + readback into this eye's buffer, wait only when nothing else can be shown */
+        u32 *rbuf = fpRb(eye);
+        if (gW) C3D_SyncDisplayTransfer((u32 *)rtWTex.data, GX_BUFFER_DIM(512, 256), rbuf, GX_BUFFER_DIM(512, 256), RB_FLAGS);
+        else C3D_SyncDisplayTransfer((u32 *)rtTex.data, GX_BUFFER_DIM(256, 256), rbuf, GX_BUFFER_DIM(256, 256), RB_FLAGS);
+        C3D_FrameEnd(0); gpuBusy = 1; fpSub++;
+        const u64 t2 = svcGetSystemTick();
+        if (fpPend.out) { gcOut(fpPend.rbuf, fpPend.wide, fpPend.out, fpPend.strip); fpPend.out = 0; }  /* the left eye, done before this draw began */
+        fpJob[eye] = (GJ){ rbuf, out, gStrip, gW, fpEpoch };
+        if (lagged) fpN[0]++;
+        else if (fpDefer) { fpPend = fpJob[eye]; fpN[1]++; }  /* converted after the right eye's draw is queued, or by P3DS_GcFinish */
+        else { P3DS_Crumb("gc-wait", 0); C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); gpuBusy = 0; gcOut(rbuf, gW, out, gStrip); fpN[2]++; }
+        fpDefer = 0;
+        const u64 t3 = svcGetSystemTick(); P3DS_GcOutUs = (unsigned)((t3 - t2) / 268);
+        P3DS_GcCpuUs = (unsigned)((t1 - t0 + t3 - t2) / 268); P3DS_GcGpuUs = 0;
+        return 1; }
     if (gW) C3D_SyncDisplayTransfer((u32 *)rtWTex.data, GX_BUFFER_DIM(512, 256), rbW, GX_BUFFER_DIM(512, 256), RB_FLAGS);
     else C3D_SyncDisplayTransfer((u32 *)rtTex.data, GX_BUFFER_DIM(256, 256), rb, GX_BUFFER_DIM(256, 256), RB_FLAGS);
     C3D_FrameEnd(0);
@@ -474,7 +546,8 @@ int P3DS_GcComposeWide(const WcPlan *plan, const u8 *regs, const u8 *bgv, const 
 /* run 112: free the wide target (overworld wide view needs the VRAM). Returns 1 if something was freed. */
 int P3DS_GcWideRelease(void) {
     if (wReady != 1) { if (wReady == 0) wReady = -1; return 0; }
-    C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH);
+    P3DS_GcFinish(); fpJob[0].out = fpJob[1].out = 0;  /* frame_pacing: no wide frame is carried over the release */
+    C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); gpuBusy = 0;
     C3D_RenderTargetDelete(rtW); rtW = 0; C3D_TexDelete(&rtWTex); memset(&rtWTex, 0, sizeof rtWTex); wReady = -1;
     PSPNativeMemLog("[GPUC] wide_gpu target freed for the overworld wide view");
     return 1;
