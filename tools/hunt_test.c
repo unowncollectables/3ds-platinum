@@ -9,7 +9,8 @@
 static uint64_t hostMs;
 uint64_t HuntHostTicks(void) { return hostMs * 1000; } /* CPU_TICKS_PER_MSEC 1000 below */
 static int cfgShiny = 1;
-int P3DS_CfgInt(const char *k, int d) { return !strcmp(k, "shiny_suite") ? cfgShiny : d; }
+static int cfgRate, cfgVisShiny;
+int P3DS_CfgInt(const char *k, int d) { return !strcmp(k, "shiny_suite") ? cfgShiny : !strcmp(k, "shiny_rate") ? cfgRate : !strcmp(k, "wild_vis_shiny") ? cfgVisShiny : d; }
 void PSPNativeMemLog(const char *f, ...) { va_list a; va_start(a, f); vprintf(f, a); va_end(a); putchar('\n'); }
 #include "../platinum3ds/platform/hunt.c"
 
@@ -63,6 +64,17 @@ int main(void) {
     char path[128]; CHECK(P3DS_HuntExportCsv(nm, 494, path, sizeof path) == 2);
     { FILE *g = fopen(path, "r"); char l[256]; int lines = 0, gir = 0; while (fgets(l, sizeof l, g)) { lines++; if (strstr(l, "487,Giratina,1,1,1,0,")) gir = 1; } fclose(g); CHECK(lines == 3 && gir); }
 
+    /* run 119: odds helpers, shiny_rate extra roll (plus the game's own 1/8192 = the chosen odds), wild_vis force */
+    CHECK(P3DS_HuntEncFor(0.5, 8192) == 5678 && P3DS_HuntEncFor(0.9, 8192) == 18862 && P3DS_MasudaOdds() == 1639);
+    CHECK(P3DS_RadarPatchOdds(0) == 0 && P3DS_RadarPatchOdds(1) == 8000 && P3DS_RadarPatchOdds(40) == 200 && P3DS_RadarPatchOdds(9999) == 200);
+    CHECK(P3DS_HuntRateOdds() == 8192); { int hit = 0; for (int i = 0; i < 100000; i++) hit += P3DS_ShinyRoll(); CHECK(hit == 0); } /* original: never an extra roll */
+    for (int ri = 1; ri < 4; ri++) { P3DS_HuntSetRate(ri); const int odds = P3DS_HuntRateOdds(); long long n = 20000000, sh = 0; unsigned g = 12345;
+        for (long long i = 0; i < n; i++) { g = g * 1103515245u + 12345u; sh += P3DS_ShinyRoll() || (g >> 8) % 8192 == 0; }
+        const double got = (double)n / (double)sh; printf("shiny_rate %d: 1 in %.0f (want %d)\n", ri, got, odds); CHECK(got > odds * 0.97 && got < odds * 1.03); }
+    P3DS_HuntSetRate(3); P3DS_ShinyForce = 2; CHECK(P3DS_ShinyRoll() == 0 && P3DS_ShinyForce == 0); P3DS_ShinyForce = 1; CHECK(P3DS_ShinyRoll() == 1 && P3DS_ShinyForce == 0);
+    CHECK(P3DS_WildShinyRoll(1) == 0); cfgVisShiny = 1; CHECK(P3DS_WildShinyRoll(1) == 1);
+    { int hit = 0; for (int i = 0; i < 1024000; i++) hit += P3DS_WildShinyRoll(0); CHECK(hit > 900 && hit < 1100); }
+    P3DS_HuntSetRate(0);
     printf(fails ? "hunt_test: %d FAILED\n" : "hunt_test: all passed\n", fails);
     return fails != 0;
 }

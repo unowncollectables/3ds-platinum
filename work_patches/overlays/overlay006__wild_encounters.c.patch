@@ -53,7 +53,7 @@
  
  static void CreateWildMon(u16 species, u8 level, const int partyDest, const WildEncounters_FieldParams *encounterFieldParams, Pokemon *firstPartyMon, FieldBattleDTO *battleParams)
  {
-+    { extern int P3DS_Cheat(int); if (P3DS_Cheat(2)) { CreateWildMonShinyWithGenderOrNature(species, level, partyDest, encounterFieldParams->trainerID, encounterFieldParams, firstPartyMon, battleParams); return; } } /* run 67 cheat_shiny: the game's own shiny path (Poke Radar chain) */
++    { extern int P3DS_Cheat(int), P3DS_ShinyRoll(void); if (P3DS_Cheat(2) || P3DS_ShinyRoll()) { CreateWildMonShinyWithGenderOrNature(species, level, partyDest, encounterFieldParams->trainerID, encounterFieldParams, firstPartyMon, battleParams); return; } } /* run 67 cheat_shiny / run 119 shiny_rate + wild_vis_shiny: the game's own shiny path (Poke Radar chain) */
      Pokemon *newEncounter = Pokemon_New(HEAP_ID_FIELD2);
      Pokemon_Init(newEncounter);
      BOOL hasRandomGender = TRUE;

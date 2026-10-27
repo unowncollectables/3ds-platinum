@@ -1467,6 +1467,7 @@ MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, li
 - Run 109: wide_windows (WIN0/WIN1/OBJ window in widecomp), wide_split_r SHARED default, battle_log path field.
 - Run 110: gpu_direct3d (from SoulSilver), stereo_gpu_battle (slider-up battles GPU-composed both eyes), gpu_blend_3d, SoulSilver gpucomp; wide_split_r default OFF again.
 - Run 111: wide_gpu (wide battle layout on the GPU, both eyes, default SLIDER UP), gpu_mbright, stereo_gpu_battle default OFF, gpu_blend_3d rule = widecomp.
+- Run 119: shiny suite extras: shiny_rate, wild_vis_shiny, battery_warn (Hunt tab), rng_info (Debug), hunt panel odds by situation (Radar chain, Masuda), party shiny count. All default OFF. See docs/HANDOFF.md.
 - Run 117: wide_stereo_flat2d (default ON): slider-up wide frames without visible 3D compose once on both cores and copy to the right eye.
 - Run 116: diagnostic [WCPROF] widecomp split in the Pokedex; dex_wide default ON.
 - Run 115: dex_wide (default OFF): Pokedex in DS layout, no full CPU wide redraw.

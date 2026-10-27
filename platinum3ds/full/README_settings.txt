@@ -353,3 +353,10 @@ Run 118 (Game tab, all default 0 = OFF, no save format change):
 exp_share_all "Exp. Share: whole party": party Pokemon that didn't fight get the same Exp. as the ones that did (not Eggs or fainted ones).
 auto_run "Auto-run": you run without holding B; hold B to walk. With the ZL run toggle also on, it goes back to normal.
 catch_swap "Swap catch into party": catching with a full party asks whether to add the new Pokemon; YES lets you pick who goes to the PC instead. Not in the Safari Zone or Pal Park. Untested on hardware: back up your save first.
+
+Run 119 (shiny suite extras, all default 0 = OFF, nothing written to the save):
+shiny_rate "Shiny odds" (Hunt tab): 0 = 1/8192 (original), 1 = 1/4096, 2 = 1/2048, 3 = 1/1024 for wild Pokemon (grass, surf, fishing, Honey trees, scripted wild battles). Uses the game's own shiny code; the extra roll is the port's own, not the game's RNG.
+wild_vis_shiny "Visible shiny sparkle" (Hunt tab): with wild_vis on, a visible wild Pokemon can be shiny (same odds); it sparkles in the grass, the shiny chime plays, and its battle is that shiny.
+battery_warn "Low battery warning" (Hunt tab): battery at 1 bar or less and not charging -> "BATTERY LOW: SAVE NOW" once a minute, hunt counters written to the SD.
+rng_info "RNG info (hunt stats)" (Debug tab): the hunt panel shows the game's first RNG seed, its current state and the advances since. Read only; seeds differ from a real DS.
+With shiny_suite on, the hunt panel also shows the odds for the situation (wild / shiny_rate / Poke Radar chain), shiny Pokemon in the party and the Day Care eggs' odds (Masuda 1 in 1639).

@@ -28,6 +28,7 @@
 #include "trainer_info.h"
 #include "daycare_save.h"
 #include "item.h"
+#include "pokeradar.h"
 #include "map_header.h"
 #include "field_overworld_state.h"
 #include "rtc.h"
@@ -278,9 +279,26 @@ static void p3dsMapSnap(FieldSystem *fieldSystem)
     P3DS_MapTod = tod; P3DS_MapEntN = n; P3DS_MapId = last;
     PSPNativeMemLog("[MAP] snapshot map %d (%s): %d entries, %u us", last, tod ? "night" : "day", n, (unsigned)(OS_TicksToMicroSeconds(OS_GetTick() - t0)));
 }
+/* run 119 shiny_suite: what the hunt panel shows from the game, read with the game's own functions (read only, nothing
+   written), every 30 field frames: shiny Pokemon in the party (Eggs not counted, so an Egg's shininess stays a surprise),
+   the Poke Radar chain, and whether the two Day Care parents have different languages (Masuda method). */
+static void P3DS_HuntGameFrame(FieldSystem *fieldSystem)
+{
+    extern int P3DS_HuntOn(void); extern volatile int P3DS_HuntGame[5]; static unsigned ht;
+    if (!fieldSystem || !fieldSystem->saveData || ++ht % 30 || !P3DS_HuntOn()) return;
+    Party *party = SaveData_GetParty(fieldSystem->saveData); int n = party ? Party_GetCurrentCount(party) : 0, sh = 0;
+    for (int i = 0; i < n; i++) { Pokemon *m = Party_GetPokemonBySlotIndex(party, i);
+        if (!Pokemon_GetValue(m, MON_DATA_IS_EGG, NULL) && Pokemon_IsShiny(m)) sh++; }
+    Daycare *dc = SaveData_GetDaycare(fieldSystem->saveData); int dcs = 0;
+    if (dc && BoxPokemon_GetValue(DaycareMon_GetBoxMon(Daycare_GetDaycareMon(dc, 0)), MON_DATA_SPECIES, NULL)
+        && BoxPokemon_GetValue(DaycareMon_GetBoxMon(Daycare_GetDaycareMon(dc, 1)), MON_DATA_SPECIES, NULL))
+        dcs = Daycare_AreParentLanguagesDifferent(dc) ? 2 : 1;
+    P3DS_HuntGame[1] = sh; P3DS_HuntGame[2] = n; P3DS_HuntGame[3] = fieldSystem->chain ? GetChainCount(fieldSystem) : 0; P3DS_HuntGame[4] = dcs; P3DS_HuntGame[0] = 1;
+}
 static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
 {
     if (fieldSystem) p3dsMapSnap(fieldSystem);
+    P3DS_HuntGameFrame(fieldSystem);
     { extern int P3DS_MapOutdoor; if (fieldSystem && fieldSystem->location) P3DS_MapOutdoor = MapHeader_IsOutdoors(fieldSystem->location->mapHeaderID) != 0; } /* run 73 wide_edgefill */
     /* run 67 cheats (all default off, config.txt cheat_*): only values real Platinum accepts are written
        (money 999999 = the game's own cap, Rare Candy 99 of max 999, egg cycles 0 = an egg about to hatch). Checked
@@ -528,7 +546,20 @@ static void p3dsWildDraw(P3DSWild *w, int slot, fx32 py, unsigned anim)
     G3_Begin(GX_BEGIN_QUADS);
     G3_TexCoord(0, 0); G3_Vtx(-hw, hw, 0); G3_TexCoord(0, sz * FX32_ONE); G3_Vtx(-hw, -hw, 0);
     G3_TexCoord(sz * FX32_ONE, sz * FX32_ONE); G3_Vtx(hw, -hw, 0); G3_TexCoord(sz * FX32_ONE, 0); G3_Vtx(hw, hw, 0);
-    G3_End(); G3_PopMtx(1);
+    G3_End();
+    if (w->shiny && ((anim >> 2) & 3) != 3) { /* run 119 wild_vis_shiny: two twinkling 4-point stars beside a shiny one */
+        G3_TexImageParam(GX_TEXFMT_NONE, GX_TEXGEN_NONE, GX_TEXSIZE_S8, GX_TEXSIZE_T8, GX_TEXREPEAT_NONE, GX_TEXFLIP_NONE, GX_TEXPLTTCOLOR0_USE, 0);
+        G3_Color(GX_RGB(31, 31, 20));
+        for (int k = 0; k < 2; k++) { const int ph = (int)((anim >> 3) + k * 2) % 4; if (ph == 3) continue;
+            const fx16 cx = (fx16)(k ? -hw * 5 / 8 : hw * 5 / 8), cy = (fx16)(k ? hw / 4 : hw * 3 / 4), z = FX16_ONE / 8;
+            const fx16 L = (fx16)(FX16_ONE * (2 + ph * 2) / 16), T = FX16_ONE / 16;
+            G3_Begin(GX_BEGIN_QUADS);
+            G3_Vtx(cx - L, cy + T, z); G3_Vtx(cx - L, cy - T, z); G3_Vtx(cx + L, cy - T, z); G3_Vtx(cx + L, cy + T, z);
+            G3_Vtx(cx - T, cy + L, z); G3_Vtx(cx - T, cy - L, z); G3_Vtx(cx + T, cy - L, z); G3_Vtx(cx + T, cy + L, z);
+            G3_End(); }
+        G3_Color(GX_RGB(31, 31, 31));
+    }
+    G3_PopMtx(1);
 }
 static void P3DS_WildFrame(FieldSystem *fieldSystem)
 {
@@ -563,7 +594,10 @@ static void P3DS_WildFrame(FieldSystem *fieldSystem)
             for (int i = 0; i < 4; i++) if (!p3dsWild[i].on) { P3DSWild *w = &p3dsWild[i]; u64 t0 = svcGetSystemTick();
                 int spr = P3DS_FollowerSprite(sp, 0, 0); w->w = spr >= 0 ? P3DS_WildLoad(i + 1, spr, 0) : 0; if (!w->w) break;
                 w->on = 1; w->sp = sp; w->lv = lv; w->x = w->fx = tx; w->z = w->fz = tz; w->t = 16; w->timer = 40 + (int)(rng % 50); w->dir = 1;
-                PSPNativeMemLog("[WILD] slot %d load species %d lv %d at %d,%d (%u us)", i + 1, sp, lv, tx, tz, (unsigned)((svcGetSystemTick() - t0) / 268)); break; }
+                { extern int P3DS_WildShinyRoll(int), P3DS_Cheat(int); extern void P3DS_HuntChime(void), P3DS_Toast(const char *);
+                  w->shiny = P3DS_WildShinyRoll(P3DS_Cheat(2)); /* run 119 wild_vis_shiny (default 0 -> always 0) */
+                  if (w->shiny && !P3DS_Cheat(2)) { P3DS_HuntChime(); P3DS_Toast("SHINY NEARBY!"); } }
+                PSPNativeMemLog("[WILD] slot %d load species %d lv %d at %d,%d%s (%u us)", i + 1, sp, lv, tx, tz, w->shiny ? " SHINY" : "", (unsigned)((svcGetSystemTick() - t0) / 268)); break; }
             break; } }
     for (int i = 0; i < 4; i++) { P3DSWild *w = &p3dsWild[i]; if (!w->on) continue;
         int ddx = w->x - x, ddz = w->z - z; if (ddx * ddx + ddz * ddz > 144) { p3dsWildKill(i); continue; }
@@ -572,8 +606,11 @@ static void P3DS_WildFrame(FieldSystem *fieldSystem)
             if (P3DS_WildGrassTile(fieldSystem, nx, nz)) { w->fx = w->x; w->fz = w->z; w->x = nx; w->z = nz; w->t = 0; w->dir = d; } else w->dir = d; }
         if (!task && ((w->x == x && w->z == z) || (w->t >= 8 && w->x == x && w->z == z))) {
             PSPNativeMemLog("[WILD] contact slot %d species %d lv %d -> battle", i + 1, w->sp, w->lv);
-            int sp = w->sp, lv = w->lv; p3dsWildKill(i);
+            int sp = w->sp, lv = w->lv, sh = w->shiny; p3dsWildKill(i);
+            /* run 119 wild_vis_shiny: the battle uses the spawn's decision (1 shiny, 2 not: no second roll), then it is cleared */
+            { extern int P3DS_CfgInt(const char *, int); extern volatile int P3DS_ShinyForce; if (P3DS_CfgInt("wild_vis_shiny", 0)) P3DS_ShinyForce = sh ? 1 : 2; }
             if (!P3DS_WildBattle(fieldSystem, sp, lv)) PSPNativeMemLog("[WILD] no battle (repel / cheat_no_encounters)");
+            { extern volatile int P3DS_ShinyForce; P3DS_ShinyForce = 0; }
             return; }
         p3dsWildDraw(w, i + 1, pos.y, anim + i * 7); }
 }
