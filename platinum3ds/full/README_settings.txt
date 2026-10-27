@@ -360,3 +360,7 @@ wild_vis_shiny "Visible shiny sparkle" (Hunt tab): with wild_vis on, a visible w
 battery_warn "Low battery warning" (Hunt tab): battery at 1 bar or less and not charging -> "BATTERY LOW: SAVE NOW" once a minute, hunt counters written to the SD.
 rng_info "RNG info (hunt stats)" (Debug tab): the hunt panel shows the game's first RNG seed, its current state and the advances since. Read only; seeds differ from a real DS.
 With shiny_suite on, the hunt panel also shows the odds for the situation (wild / shiny_rate / Poke Radar chain), shiny Pokemon in the party and the Day Care eggs' odds (Masuda 1 in 1639).
+
+Run 120 (Hunt tab, both default 0 = OFF; from the old claude/next branch):
+reset_skip_intro "Skip intro on reset": 1 = after a soft reset (L+R+START+SELECT) the game skips the logos, title and credits splash and stops at Continue / New Game (you still press A). 0 = the original reset.
+select_reset "Hold SELECT = reset (battle)": 1 = holding SELECT for about 0.2 s in a wild battle does a soft reset, for a worn START button. Not in the overworld, menus or trainer battles. The first 6 SELECT presses are logged ([BOOT] SELECT pressed ...) to check why it may not fire.

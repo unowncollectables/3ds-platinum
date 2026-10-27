@@ -209,6 +209,7 @@ void P3DS_CfgWrite(const char *key, int val) {
 int P3DS_CtlZr = -1, P3DS_CtlZl, P3DS_CtlCp;   /* run 55: file scope so the settings menu can change them live */
 int P3DS_CfgSoftReset(void) { static int v = -1; if (v < 0) v = P3DS_CfgInt("soft_reset", 1) != 0; return v; }
 volatile int P3DS_RunToggle;
+volatile int P3DS_SkipIntro, P3DS_BootStage; /* run 95 reset_skip_intro */
 volatile unsigned P3DS_InjectKeys; volatile int P3DS_InjectFrames; volatile int P3DS_StartReq = -1, P3DS_StartReqFound;
 volatile int P3DS_SumIV[6], P3DS_SumEV[6], P3DS_SumAlive;
 /* run 64 repel_prompt: port Yes/No (0 closed, 1 asking, 2 answered; result 1 yes 0 no). Keys handled here on the game
@@ -264,6 +265,16 @@ int sceCtrlPeekBufferPositive(SceCtrlData *d, int n) {
 #undef zr
 #undef zl
 #undef cp
+    /* run 95 reset_skip_intro: after a soft reset the new process taps START (2 polls on, 4 off: the opening only accepts it once its skip flag is set) until the game enters its
+       Continue / New Game menu (MainMenu_Init sets P3DS_BootStage = 2) or the field, 3000 polls at most. Only START is sent
+       (never B+UP+SELECT, the save-delete combo). */
+    /* run 96 select_reset=0 (default off): hold SELECT for ~0.2 s (6 polls) in a wild battle = the game's own soft reset (for a worn START
+       button; same path as L+R+START+SELECT). Only in wild battles, so a stray press in the overworld or a menu does nothing. */
+    { static int sr; static unsigned sh, sc; extern volatile int P3DS_CatchInfo[20]; extern int P3DS_InField; extern void P3DS_SoftReset(unsigned);
+      if (!(sc++ % 120)) sr = P3DS_CfgInt("select_reset", 0); /* re-read twice a second at most: a settings change applies at once */
+      if (sr && P3DS_CatchInfo[0] && !P3DS_InField && (hidKeysHeld() & KEY_SELECT) && !(hidKeysHeld() & (KEY_L | KEY_R | KEY_START))) { if (++sh == 6) { PSPNativeMemLog("[BOOT] select_reset: SELECT held in a wild battle -> soft reset"); P3DS_SoftReset(0); } } else sh = 0;
+      { static int lg; if ((hidKeysDown() & KEY_SELECT) && lg < 6) { lg++; PSPNativeMemLog("[BOOT] SELECT pressed: select_reset=%d catchInfo=%d inField=%d", sr, (int)P3DS_CatchInfo[0], P3DS_InField); } } }
+    if (P3DS_SkipIntro) { static unsigned sn; static u64 t0; if (!t0) t0 = svcGetSystemTick(); if (P3DS_BootStage >= 2 || ++sn > 3000) { P3DS_SkipIntro = 0; PSPNativeMemLog("[BOOT] skip intro done: stage %d after %u polls, %u ms from the first poll", P3DS_BootStage, sn, (unsigned)((svcGetSystemTick() - t0) / CPU_TICKS_PER_MSEC)); } else if (sn % 6 < 2) k |= KEY_START; }
     if (P3DS_InjectFrames > 0) { k |= P3DS_InjectKeys; P3DS_InjectFrames--; } /* run 64: touch Start menu app (one press) */
     for (unsigned i = 0; i < sizeof map / sizeof map[0]; i++) if (k & map[i][0]) b |= map[i][1];
     circlePosition c; hidCircleRead(&c);

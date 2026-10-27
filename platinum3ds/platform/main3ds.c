@@ -3,6 +3,7 @@
 #include <3ds.h>
 #include <nitro.h>
 #include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -149,6 +150,8 @@ extern int __system_argc; extern char **__system_argv;
 void P3DS_SoftReset(unsigned param) {
     extern int P3DS_CfgSoftReset(void);
     int how = 0;
+    { extern int P3DS_CfgInt(const char *, int); if (P3DS_CfgInt("reset_skip_intro", 0)) { /* run 95: tell the relaunched process this was a soft reset */
+          FILE *f = fopen("sdmc:/3ds/platinum3ds/skipintro.tmp", "w"); if (f) { fprintf(f, "%lld\n", (long long)time(NULL)); fclose(f); } } }
     { extern void P3DS_HuntSoftReset(void), P3DS_HuntFlush(void); P3DS_HuntSoftReset(); P3DS_HuntFlush(); } /* run 88 shiny_suite: count it before the relaunch */
     if (!envIsHomebrew()) { aptSetChainloaderToSelf(); how = 1; }
     else if (__system_argc > 0 && __system_argv && __system_argv[0] && !strncmp(__system_argv[0], "sdmc:/", 6)) {
@@ -256,6 +259,10 @@ int main(void) {
     bool n3ds = false; APT_CheckNew3DS(&n3ds); if (n3ds) osSetSpeedupEnable(true);
     mkdir("sdmc:/3ds", 0777); mkdir("sdmc:/3ds/platinum3ds", 0777);
     PSPNativeMemLog("[3DS] booted");
+    { extern volatile int P3DS_SkipIntro; extern int P3DS_CfgInt(const char *, int); /* run 95 reset_skip_intro: only right after a soft reset (file < 30 s old) */
+      FILE *f = fopen("sdmc:/3ds/platinum3ds/skipintro.tmp", "r"); if (f) { long long t = 0; if (fscanf(f, "%lld", &t) != 1) t = 0; fclose(f); remove("sdmc:/3ds/platinum3ds/skipintro.tmp");
+          const long long age = (long long)time(NULL) - t; P3DS_SkipIntro = P3DS_CfgInt("reset_skip_intro", 0) && t > 0 && age >= 0 && age < 30;
+          PSPNativeMemLog("[BOOT] soft reset marker, age %lld s, reset_skip_intro=%d -> skip %d", age, P3DS_CfgInt("reset_skip_intro", 0), (int)P3DS_SkipIntro); } }
     PSPNativeMemLog("platinum3ds full build (%s %s) New3DS=%d linear free=%lu app free=%lu", __DATE__, __TIME__, n3ds,
                     (unsigned long)linearSpaceFree(), (unsigned long)osGetMemRegionFree(MEMREGION_APPLICATION));
     { struct mallinfo mi = mallinfo(); extern char *fake_heap_start, *fake_heap_end; PSPNativeMemLog("[3DS] malloc heap %lu KiB (used %lu)", (unsigned long)((fake_heap_end - fake_heap_start) >> 10), (unsigned long)mi.uordblks); }
