@@ -336,3 +336,5 @@ Removed: wide_split_r ("Right eye on 2 cores") and stereo_gpu_battle ("3D battle
 Diagnostics: field_prof (Debug "Load-hitch profiler") now defaults to OFF (was AUTO); stereo_blobdiag now defaults to 0; the [3DLAYER] pixel count only runs with Log detail FULL.
 Kept ON: battle_log ([BATT] summary per battle plus up to 40 [SPIKE] lines). The [BATT] line now also counts the log lines written during that battle.
 To turn diagnostics back on: Debug tab (SELECT in the settings app) -> Log detail FULL, Load-hitch profiler ON/AUTO.
+Run 114 (Debug tab):
+wide_gpu_precheck "Wide GPU blend check" (default ON): wide-layout frames with an alpha blend the GPU compositor can't draw (the opening cutscene right after launch) now use the CPU wide path again, as they did before Run 111. With the 3D slider up, those frames had been falling back to the slow serial right eye (about 15 fps for the first 6 seconds). OFF = Run 113 behaviour.
