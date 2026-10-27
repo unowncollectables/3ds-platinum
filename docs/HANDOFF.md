@@ -2,6 +2,11 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 115: fast Pokedex (Grok Bot, branch `run115`)
+- Hardware Run 114 log: Pokedex frames (overlay 21) were 58-77 ms. The wide layout made widecomp redraw the whole screen every frame (engineA/wide stage 30-42 ms, at slider 0 and up). The GPU can't take those frames: ineligible 145/300 (blend 116, affine sprites 29).
+- Fix: new toggle `dex_wide` (Debug "Wide Pokedex", default OFF). While overlay 21 is loaded (link --wrap of FS_LoadOverlay / FS_StartOverlay / FS_UnloadOverlay in wideapi.c sets P3DS_DexNoWide), the wide layout is off. The Pokedex shows the DS layout through the normal engine A path. 1 = Run 114.
+- One emulator boot-to-field check only (overlay loads OK). The Pokedex itself is untested in the emulator; check the [WIDE] Pokedex overlay lines in the hardware log.
+
 ## 2026-10-26 — Run 114: no more slow launch with the slider up (Grok Bot, branch `run114`)
 - Hardware Run 113 log: for the first ~6 s after launch (opening cutscene) frames ran 54-62 ms (fps 15-16), `path S`, `stereo 17(serial)`. Run 111's log is the same, frame for frame, so the Run 113 clean-up didn't cause it. Earlier boot logs had the slider at 0.
 - Cause (Run 111 wide_gpu): the opening is a wide-layout frame with an alpha blend (BLDCNT 0842, BG1 over BG3, backdrop not a 2nd target). wide_gpu picked it (wgNow), so wide_early was skipped, then P3DS_GcComposeA rejected the blend. The right eye fell to the serial CPU path.
