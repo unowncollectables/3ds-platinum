@@ -345,4 +345,4 @@ Run 117 (Debug tab):
 wide_stereo_flat2d "Copy eye when 3D empty" (default ON): with the 3D slider up, wide screens with no visible 3D (the Pokedex) are drawn once, split across both cores, and copied to the right eye, instead of being drawn in full twice. OFF = Run 116. The [WCPROF] lines are still logged while the Pokedex is open.
 
 Run 118 (Debug tab):
-frame_pacing "Frame pacing" (default 0 = OFF): 1 = FIXED (GPU compose shows the frame before, never waits for the GPU), 2 = ADAPTIVE (no latency while frames are on time, FIXED for a while after a slow frame). OFF = Run 117. Untested on hardware.
+frame_pacing "Frame pacing" (default 0 = OFF): 1 = FIXED (GPU compose shows the frame before, never waits for the GPU), 2 = ADAPTIVE (no latency while frames are on time, FIXED for a while after a slow frame). OFF = Run 117. The one-frame lag is never used on wide frames or while the wide view is on (no lag there, only the overlap). Boot guard: a start with it on that never reaches 300 frames leaves sdmc:/3ds/platinum3ds/fp_boot.flag and the next start turns it OFF.

@@ -212,7 +212,7 @@ static void gcAnalyze(unsigned e,bool field){
 /* run 60 gpu_compose=2/3: GPU compositor (platform/gpucomp.c) for engine A on simple frames; 3 = verify (melonDS output is
    shown, the GPU result is composed too and compared pixel by pixel, [GPUC] verify log, first mismatch dumped). */
 #include "widecomp.h"
-extern "C" {int P3DS_GcComposeWide(const WcPlan*,const u8*,const u8*,const u8*,const u16*,const u16*,const u16*,const u32*,u32*,u32*);int P3DS_GcEligible(const u8*,const u16*);void P3DS_GcEye(int,int);void P3DS_GcFinish(void);void P3DS_GcFrame(void);void P3DS_SetFramePacing(int);int P3DS_GcComposeA(const u8*,const u8*,const u8*,const u16*,const u16*,const u16*,const u32*,u32*);
+extern "C" {int P3DS_GcComposeWide(const WcPlan*,const u8*,const u8*,const u8*,const u16*,const u16*,const u16*,const u32*,u32*,u32*);int P3DS_GcEligible(const u8*,const u16*);void P3DS_GcEye(int,int);void P3DS_GcFinish(void);void P3DS_GcFrame(void);extern int P3DS_GcNoLag;void P3DS_SetFramePacing(int);int P3DS_GcComposeA(const u8*,const u8*,const u8*,const u16*,const u16*,const u16*,const u32*,u32*);
  extern unsigned P3DS_GcWalkUs,P3DS_GcConvUs,P3DS_GcOutUs,P3DS_GcQuads,P3DS_GcDecoded,P3DS_GcResets,P3DS_GcCpuUs,P3DS_GcGpuUs;}
 static unsigned gcFrames,gcUsed,gcInel,gcFail,gcVer,gcVerOk,gcVerBad;static u64 gcW,gcC,gcO,gcBadPx,gcCpu,gcGpu,gcDec,gcQ;static unsigned gcReason[16];
 static u32*gcScratch;static unsigned gcMenuF,gcMenuOK,gcMenuW64[4],gcMenuOn[4];extern "C" int P3DS_InField;
@@ -1235,7 +1235,7 @@ static int Present(bool){
  if(stealCfg<0){stealCfg=0;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"steal_b=%d",&x)==1)stealCfg=x!=0;fclose(f);}PSPNativeMemLog("[2D] steal_b=%d",stealCfg);}
  bClaim=0;const bool stealNow=async&&stealCfg==1&&rightPar&&!onC1&&!earlyB;
  if(splitCfg<0){splitCfg=1;/* run 57: default 1 (Azahar: identical images overworld/battle/menus, mono composite -37%) */FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"split_top=%d",&x)==1)splitCfg=x!=0;fclose(f);}PSPNativeMemLog("[2D] split_top=%d",splitCfg);}
- P3DS_GcFrame();  /* run 118 frame_pacing: frame boundary (no-op when off) */
+ P3DS_GcNoLag=wideCfg>0;P3DS_GcFrame();  /* run 118 frame_pacing: frame boundary (no-op when off); no lag while the wide view is on */
  const int gcMode=P3DS_GpuComposeCfg();if(gcMode>=2)gcFrames++;
  const bool gcOK=!wlNow&&gcMode==2&&(!stereo||gcSt)&&!rightPar&&engineA.Enabled&&(gcSt||gcEligible());
  if(!gcOK&&!wgNow)G3G_DirectResolve();  /* gpu_direct3d: CPU composite reads NativeFrame */

@@ -23,6 +23,7 @@
 #include "widecomp.h"
 extern void PSPNativeMemLog(const char *, ...);
 extern int P3DS_CfgInt(const char *, int);
+extern void P3DS_CfgWrite(const char *, int);
 extern void P3DS_Crumb(const char *tag, void *caller);  /* watchdog crumbs (only on gpu_compose>=2 frames) */
 
 #define AW 512
@@ -348,7 +349,26 @@ static void setFx(int fx) {
 typedef struct { u32 *rbuf, *out, *strip; int wide; unsigned epoch; } GJ;
 static GJ fpJob[2], fpPend; static int fpCfg = -1, fpEye, fpDefer, fpLag; static unsigned fpSub, fpEpoch = 1, fpN[3];
 static GV *vbA, *vbB; static u32 *rbe[2], *rbWe[2];
-static int fpMode(void) { if (fpCfg < 0) { fpCfg = P3DS_CfgInt("frame_pacing", 0); if (fpCfg < 0 || fpCfg > 2) fpCfg = 0; PSPNativeMemLog("[GPUC] frame_pacing=%d (0 off, 1 fixed one-frame lag, 2 adaptive)", fpCfg); } return fpCfg; }
+int P3DS_GcNoLag;  /* set by render3ds each frame: the wide view is on (no frame_pacing lag) */
+/* run 118 boot guard: an experimental option that is on at start writes sdmc:/3ds/platinum3ds/<flag> and removes it after
+   300 frames; a flag still there at the next start means that start hung or crashed (no exception screen, log cut), so
+   the option is forced OFF (config.txt too) and the reason logged. k: 0 frame_pacing, 1 gc_atlas16. */
+static const char *const bgPath[2] = { "sdmc:/3ds/platinum3ds/fp_boot.flag", "sdmc:/3ds/platinum3ds/gc16_boot.flag" };
+static const char *const bgKey[2] = { "frame_pacing", "gc_atlas16" };
+static char bgArmed[2]; static unsigned bgFrames;
+static int bootGuard(int k, int v) {
+    FILE *f = fopen(bgPath[k], "r");
+    if (!v) { if (f) { fclose(f); remove(bgPath[k]); } return 0; }
+    if (f) { fclose(f); remove(bgPath[k]); P3DS_CfgWrite(bgKey[k], 0);
+        PSPNativeMemLog("[GPUC] %s=%d forced OFF: the last start with it on never reached 300 frames (%s was still there). Set it again to retry.", bgKey[k], v, bgPath[k]); return 0; }
+    if ((f = fopen(bgPath[k], "w"))) { fputs("boot guard: removed after 300 frames\n", f); fclose(f); bgArmed[k] = 1; }
+    return v;
+}
+static void bootGuardTick(void) {
+    if ((bgArmed[0] || bgArmed[1]) && ++bgFrames == 300)
+        for (int k = 0; k < 2; k++) if (bgArmed[k]) { remove(bgPath[k]); bgArmed[k] = 0; PSPNativeMemLog("[GPUC] %s: 300 frames, boot guard cleared", bgKey[k]); }
+}
+static int fpMode(void) { if (fpCfg < 0) { fpCfg = P3DS_CfgInt("frame_pacing", 0); if (fpCfg < 0 || fpCfg > 2) fpCfg = 0; fpCfg = bootGuard(0, fpCfg); PSPNativeMemLog("[GPUC] frame_pacing=%d (0 off, 1 fixed one-frame lag, 2 adaptive)", fpCfg); } return fpCfg; }
 static int fpBufs(void) {
     static int ok = -1; if (ok >= 0) return ok;
     vbA = vb; vbB = (GV *)linearAlloc(MAXQ * 6 * sizeof(GV)); rbe[1] = (u32 *)linearAlloc(256 * 256 * 4); rbWe[1] = (u32 *)linearAlloc(512 * 256 * 4);
@@ -371,7 +391,7 @@ void P3DS_GcEye(int eye, int pair) { fpEye = eye & 1; fpDefer = fpCfg > 0 && !ey
 void P3DS_GcFinish(void) { if (fpPend.out) { gcIdle(); gcOut(fpPend.rbuf, fpPend.wide, fpPend.out, fpPend.strip); fpPend.out = 0; } fpDefer = 0; }
 /* once per rendered frame, before its composes: frame boundary for the lag, late-frame detection for ADAPTIVE */
 void P3DS_GcFrame(void) {
-    if (fpMode() <= 0) return;
+    const int m = fpMode(); bootGuardTick(); if (m <= 0) return;
     static u64 last; static unsigned okRun, hold = 600, since = 1000, logN; const u64 now = svcGetSystemTick();
     const u64 dt = last ? now - last : 0; const int late = dt > 35ull * 268111ull, hadGc = fpJob[0].epoch == fpEpoch || fpJob[1].epoch == fpEpoch; last = now;
     fpEpoch++;
@@ -443,7 +463,9 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     C3D_FrameBegin(0); gpuBusy = 0;
     G3G_DirectSynced();   /* FrameBegin waited for every queued draw, including g3gpu's direct 3D frame */
     /* frame_pacing lag: this eye's draw from the frame before is done (FrameBegin waited); its pixels are this frame's */
-    const int eye = fpEye, lagged = pm && fpLagNow() && fpPrevOk(eye, out, gStrip);
+    /* the lag only when everything shown for this eye comes from this compose: never on wide frames (gW) or while the
+       wide view is on (its 3D side extension / fills are this frame's, a lagged centre showed a seam), then only the overlap */
+    const int eye = fpEye, lagged = pm && !gW && !P3DS_GcNoLag && fpLagNow() && fpPrevOk(eye, out, gStrip);
     if (lagged) gcOut(fpRb(eye), gW, out, gStrip);
     C3D_RenderTarget *tg = gW ? rtW : rt;
     C3D_RenderTargetClear(tg, C3D_CLEAR_ALL, bd, 0);
