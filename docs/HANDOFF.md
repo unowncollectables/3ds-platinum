@@ -2,6 +2,12 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-27 — Run 118b: gc_atlas16, 16-bit 2D tiles (Claude, branch `run118-atlas16`)
+- New `gc_atlas16` (Debug "16-bit 2D tiles", default OFF, read once at start, so restart after changing it). The GPU compose 2D tile atlas (gpucomp.c) is RGBA5551 instead of RGBA8: half the atlas memory (1 MiB less linear RAM) and half the texture reads per quad.
+- Safe because 2D tiles are only opaque or fully transparent; semi-transparency comes from the blend registers, not from texel alpha, so one alpha bit is enough. The 3D layer textures stay RGBA8.
+- Not bit-identical: the PICA widens 5-bit colour as c<<3|c>>2, melonDS as c<<3|c>>3, so a channel can differ by up to 4/255 from the RGBA8 atlas and the CPU path (GPU compose verify mode will report those pixels).
+- OFF = Run 118a. **Untested on hardware and in the emulator** (compile-only: `make` + `make cia`). Hardware check: turn it on, restart, compare menus/battles for colour or transparency glitches and fps, look for "[GPUC] gc_atlas16=1" in the log.
+
 ## 2026-10-27 — Run 118a: frame_pacing (Claude, branch `run118-frame-pacing`)
 - New `frame_pacing` (Debug "Frame pacing", OFF / FIXED / ADAPTIVE, default OFF). Until now every GPU compose (gpucomp.c) waited for its own draw + readback (~1.1-1.6 ms per compose in the Run 116 hardware log, twice a frame with the slider up).
 - FIXED: a compose queues its draw and shows the same eye's pixels from the frame before (one frame of latency) while the CPU carries on. ADAPTIVE: no latency while frames are on time (the stereo left eye's draw overlaps the right eye's tile walk); after a frame over 35 ms it works as FIXED until 600 frames in a row are on time (doubling, up to 16x, if lag returns within 60 frames).

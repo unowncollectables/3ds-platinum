@@ -346,3 +346,5 @@ wide_stereo_flat2d "Copy eye when 3D empty" (default ON): with the 3D slider up,
 
 Run 118 (Debug tab):
 frame_pacing "Frame pacing" (default 0 = OFF): 1 = FIXED (GPU compose shows the frame before, never waits for the GPU), 2 = ADAPTIVE (no latency while frames are on time, FIXED for a while after a slow frame). OFF = Run 117. The one-frame lag is never used on wide frames or while the wide view is on (no lag there, only the overlap). Boot guard: a start with it on that never reaches 300 frames leaves sdmc:/3ds/platinum3ds/fp_boot.flag and the next start turns it OFF.
+
+gc_atlas16 "16-bit 2D tiles" (default 0 = OFF, Debug tab, restart): GPU compose stores 2D tiles as 16-bit RGBA5551 instead of 32-bit. Less memory and bandwidth; colours can differ very slightly from the CPU path. Untested on hardware.
