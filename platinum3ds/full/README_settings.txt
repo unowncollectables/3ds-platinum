@@ -341,3 +341,5 @@ wide_gpu_precheck "Wide GPU blend check" (default ON): wide-layout frames with a
 Run 115 (Debug tab):
 dex_wide "Wide Pokedex" (default OFF): the Pokedex now uses the DS layout (side bars), because its wide layout needed a full CPU redraw every frame (30-42 ms on hardware). ON = the wide Pokedex as in Run 114.
 Run 116 (diagnostic build): dex_wide now defaults to ON again (wide Pokedex, still slow). While the Pokedex is open, the log gets one [WCPROF] line per second showing where the wide redraw time goes. Nothing to change in the settings: just open the Pokedex for about 10 seconds, then send log.txt.
+Run 117 (Debug tab):
+wide_stereo_flat2d "Copy eye when 3D empty" (default ON): with the 3D slider up, wide screens with no visible 3D (the Pokedex) are drawn once, split across both cores, and copied to the right eye, instead of being drawn in full twice. OFF = Run 116. The [WCPROF] lines are still logged while the Pokedex is open.
