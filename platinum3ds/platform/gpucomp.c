@@ -449,12 +449,24 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
    0..255 (melonDS format), strip = 32 + 32 side columns (0xRRGGBBAA, as WC_Compose) or NULL. Returns 0 = not composed. */
 int P3DS_GcComposeWide(const WcPlan *plan, const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bgpal, const u16 *objpal, const u16 *oam, const u32 *f3d, u32 *center, u32 *strip) {
     if (!init()) return 0;
-    if (wReady < 0) { wReady = 0; rbW = (u32 *)linearAlloc(512 * 256 * 4);
-        if (rbW && C3D_TexInitVRAM(&rtWTex, 512, 256, GPU_RGBA8) && (rtW = C3D_RenderTargetCreateFromTex(&rtWTex, GPU_TEXFACE_2D, 0, -1))) wReady = 1;
-        PSPNativeMemLog("[GPUC] wide_gpu target 512x256: %s", wReady ? "ready" : "FAILED (VRAM/linear)"); }
-    if (!wReady || !plan || !plan->valid) return 0;
+    /* run 112: the 512 KiB VRAM target is made when a wide frame needs it and freed again when the overworld wide view
+       wants its 320x256 3D eye targets (P3DS_GcWideRelease): with it held, those failed for good on hardware (VRAM free
+       1.28 MiB) and the field fell back to 4:3. A failed allocation is retried 30 frames later, not given up. */
+    static unsigned wRetry;
+    if (wReady < 0 || (wReady == 0 && ++wRetry >= 30)) { wRetry = 0; wReady = 0; if (!rbW) rbW = (u32 *)linearAlloc(512 * 256 * 4);
+        if (rbW && C3D_TexInitVRAM(&rtWTex, 512, 256, GPU_RGBA8)) { if ((rtW = C3D_RenderTargetCreateFromTex(&rtWTex, GPU_TEXFACE_2D, 0, -1))) wReady = 1; else C3D_TexDelete(&rtWTex); }
+        static unsigned nl; if (nl++ < 20) PSPNativeMemLog("[GPUC] wide_gpu target 512x256: %s", wReady ? "ready" : "not available now (VRAM), retry later"); }
+    if (wReady != 1 || !plan || !plan->valid) return 0;
     gW = 1; gP = plan; gStrip = strip; cx0 = 0; cx1 = 320; cy0 = 0; cy1 = 192;
     const int r = P3DS_GcComposeA(regs, bgv, objv, bgpal, objpal, oam, f3d, center);
     gW = 0; gP = 0; gStrip = 0; cx0 = 0; cx1 = 256; cy0 = 0; cy1 = 192;
     return r;
+}
+/* run 112: free the wide target (overworld wide view needs the VRAM). Returns 1 if something was freed. */
+int P3DS_GcWideRelease(void) {
+    if (wReady != 1) { if (wReady == 0) wReady = -1; return 0; }
+    C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH);
+    C3D_RenderTargetDelete(rtW); rtW = 0; C3D_TexDelete(&rtWTex); memset(&rtWTex, 0, sizeof rtWTex); wReady = -1;
+    PSPNativeMemLog("[GPUC] wide_gpu target freed for the overworld wide view");
+    return 1;
 }

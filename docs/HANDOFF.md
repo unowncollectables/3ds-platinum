@@ -2,6 +2,16 @@
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.
 
+## 2026-10-26 — Run 112: overworld wide view back (Grok Bot, branch `run112`)
+- Run 111 hardware: slider-on battles much better ([BATT] avg 45.1 / 36.1 / 34.2 / 34.1 ms over 4 battles; Run 109 was 47.6-50.7, Run 108 40.3-41.0). But the overworld showed 4:3 with bars, whatever wideview was set to.
+- Cause (Run 111, wide_gpu): its 512x256 wide target (512 KiB VRAM) was allocated on the first slider-up wide frame (the title screen) and never freed. The overworld wide view then needs two 320x256 3D eye targets with depth, but `[3DRES] 320x256 targets FAILED (VRAM free before 1284096)`, and g3gpu set wideFail for good. So the field stayed 256 wide (pillarbox) for the rest of the session at any slider position. It shows in the emulator too, when the slider is up before the field.
+- Fix: gpucomp frees the wide target when the field wide view turns active (P3DS_GcWideRelease) and g3gpu retries the 320 targets (G3G_WideRetry). The target is made again the next time a battle/menu wide frame needs it (after the field's 320 targets went back to 256). A failed allocation is retried after 30 frames instead of never.
+- New test tools/field_wide_test.sh: boots a save into the overworld with the slider at 0 and up and checks:
+  - the side strips (non-black, not the pillarbox colour);
+  - that the log shows the 320x256 targets with no failure.
+  - Run 111 binary: slider 0 PASS (no slider-up frame allocates the target), slider up FAIL. Run 112: both PASS. A battle afterwards still runs on the GPU wide path (emulator 41.5 ms/frame, path X).
+- Builds: 3dsx bcb8dfd43088d9df2cf4a22491d946c5bf55d212, CIA 18d0f9e76b6f2175f91e6b6d40732b5bb492d5e9.
+
 ## 2026-10-26 — Run 111: the wide battle layout on the GPU (Grok Bot, branch `run111`)
 - The user wants the wide side panels with the slider up. Run 110's `stereo_gpu_battle` (4:3) now defaults to OFF.
 - New `wide_gpu` (Debug "Wide on GPU": OFF / SLIDER UP / ALWAYS, default SLIDER UP): a wide-layout frame is composed on the GPU for both eyes by gpucomp.c `P3DS_GcComposeWide`, from widecomp's plan.
