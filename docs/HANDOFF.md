@@ -1,3 +1,11 @@
+# Run 122 — SoulSilver Batch 2 (stereo depth, save backups/export, crash log, quit-save)
+
+- stereo_depth settings row (FLAT/DEPTH, default DEPTH)
+- save_backup: 8 validated rotating copies; after-save via CARD_UnlockBackup wrap; exit backup
+- save_export action -> export/platinum_*.sav (verified)
+- log_crash.txt / log_prev.txt on next boot
+- hardExit: CloseBackup + backup before ShutdownThreads
+
 # Run 121 — SoulSilver Batch 1 (speed tweaks, FAST 3D, audio style, skip-intro stall)
 
 - fps_tweaks levels 2-7 + safe-boot (par.c for level 7); lean flush NOT in menu
