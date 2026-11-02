@@ -24,6 +24,37 @@ static int srcSet, srcDbl = -1;
 static C3D_Tex up[3]; static C3D_RenderTarget *upTgt[3];
 #define DISP_FLAGS (GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
     GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
+
+/* run 121 (from SoulSilver): fps_tweaks Debug "Speed tweaks", default 0=OFF. Cumulative:
+   2 = reserved (SS Bottom-menu skip; Platinum has no Bottom menu, treated as no-op),
+   3 = force GPU master-brightness fades (gpu_mbright),
+   4 = force GPU 3D translucency blend (gpu_blend_3d),
+   5 = CPU trims in the 3D strip convert,
+   6 = reserved (stereo compose overlap; Platinum already has wide_stereo_par),
+   7 = pixel passes on two cores (par.c P3DS_ParFor).
+   Level 1 lean flush HUNG on SS hardware: only behind fps_leanflush=1 (not in the menu).
+   Safe-boot: a non-zero level writes fps_tweaks.pending; after 600 good frames it is removed. A boot that
+   finds the file forces fps_tweaks=0 so a bad level cannot lock the game out. */
+#define FPS_PENDING "sdmc:/3ds/platinum3ds/fps_tweaks.pending"
+static int fpsTwV = -1, fpsLean = -1, fpsOkFrames; static unsigned fpsGuardMsg;
+extern int P3DS_CfgInt(const char *, int); extern void P3DS_CfgWrite(const char *, int);
+static void fpsArm(void) { FILE *f = fopen(FPS_PENDING, "w"); if (f) { fputs("fps_tweaks was switched on; removed after 600 good frames\n", f); fclose(f); } fpsOkFrames = 0; }
+int P3DS_FpsTweaks(void) {
+    if (fpsTwV < 0) {
+        fpsTwV = P3DS_CfgInt("fps_tweaks", 0); if (fpsTwV < 2 || fpsTwV > 7) fpsTwV = 0;
+        FILE *g = fopen(FPS_PENDING, "r");
+        if (g) { fclose(g); remove(FPS_PENDING);
+            if (fpsTwV) { fpsTwV = 0; P3DS_CfgWrite("fps_tweaks", 0); fpsGuardMsg = 1; PSPNativeMemLog("[PERF4] SAFE BOOT: the last boot with Speed tweaks on never reached 600 frames, fps_tweaks forced to 0 (config.txt rewritten)"); } }
+        else if (fpsTwV) fpsArm();
+        fpsLean = P3DS_CfgInt("fps_leanflush", 0) != 0;
+        PSPNativeMemLog("[PERF4] fps_tweaks=%d (0 off, 2..7 as in SoulSilver; leanflush=%d)", fpsTwV, fpsLean); }
+    return fpsTwV; }
+void P3DS_SetFpsTweaks(int v) { P3DS_FpsTweaks(); fpsTwV = (v < 2 || v > 7) ? 0 : v; if (fpsTwV) fpsArm(); else remove(FPS_PENDING); PSPNativeMemLog("[PERF4] fps_tweaks=%d from settings", fpsTwV); }
+int P3DS_FpsTweakRow(void) { int l = P3DS_FpsTweaks(); return l >= 2 ? l - 1 : 0; }
+unsigned long long P3DS_FeTicks; unsigned P3DS_FeN;
+void P3DS_FrameEnd(void) { P3DS_FpsTweaks(); const u64 t0 = svcGetSystemTick(); C3D_FrameEnd(fpsLean > 0 ? GX_CMDLIST_FLUSH : 0); P3DS_FeTicks += svcGetSystemTick() - t0; P3DS_FeN++; }
+void P3DS_FpsGuardFrame(void) { if (fpsTwV > 0 && fpsOkFrames >= 0 && ++fpsOkFrames >= 600) { fpsOkFrames = -1; remove(FPS_PENDING); } }
+
 #define TEX_FLAGS (GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) | \
     GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 int P3DS_GpuInit(void) {

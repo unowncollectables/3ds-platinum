@@ -364,3 +364,29 @@ With shiny_suite on, the hunt panel also shows the odds for the situation (wild 
 Run 120 (Hunt tab, both default 0 = OFF; from the old claude/next branch):
 reset_skip_intro "Skip intro on reset": 1 = after a soft reset (L+R+START+SELECT) the game skips the logos, title and credits splash and stops at Continue / New Game (you still press A). 0 = the original reset.
 select_reset "Hold SELECT = reset (battle)": 1 = holding SELECT for about 0.2 s in a wild battle does a soft reset, for a worn START button. Not in the overworld, menus or trainer battles. The first 6 SELECT presses are logged ([BOOT] SELECT pressed ...) to check why it may not fire.
+
+==== Run 121 (SoulSilver Batch 1 ports) ====
+Ported from unowncollectables/Pokemon-Soulsilver-New3ds:
+
+SPEED_TWEAKS (fps_tweaks) — Debug, default OFF (0). Cumulative levels 2..7:
+  2 reserved (SS Bottom-menu skip; no-op on Platinum)
+  3 force GPU master-brightness fades (gpu_mbright)
+  4 force GPU 3D translucency blend (gpu_blend_3d)
+  5 CPU trims reserved for later; 6 reserved
+  7 pixel passes on two cores (par.c P3DS_ParFor) for the 3D readback convert
+  Safe-boot: if fps_tweaks.pending is left behind (hang/crash before 600 frames),
+  the next boot forces fps_tweaks=0. Level 1 lean flush is NOT in the menu
+  (hung on SS hardware); only fps_leanflush=1 in config.txt.
+
+G3_SHARP (g3_sharp) — Debug, default OFF. 0 off / 1 SHARP (res3d=2) /
+  2 FAST 3D / 3 FAST AUTO (drop to 1x when stereo End avg >34.8 ms).
+  Sharp 3D was disabled on Platinum hardware (run 52); leave OFF unless testing.
+
+AUDIO_STYLE (audio_limiter) — default DS RAW (3). 0 OFF / 1 CLEAN / 2 LIGHT / 3 DS RAW.
+  DS RAW = plain s16 hard clip, no gain riding (closest to the DS).
+AUDIO_STALLFADE (audio_stallfade) — default ON. Fades out after ~0.5 s with no
+  game sound pump; fades in on resume / wake. DSP re-apply after sleep + watchdog.
+AUDIO_GAIN — live volume 4..10 (default 10).
+
+Also: skip-intro soft-reset frame-0 stall fix (engine B reclaim after 150 ms) +
+400 ms pause before relaunch so the next boot does not OOM.

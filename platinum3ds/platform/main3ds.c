@@ -106,7 +106,7 @@ int __wrap_printf(const char *fmt, ...) { if (!strncmp(fmt, "[AUDIO-SAS] grain",
     size_t l = strlen(b); while (l && b[l - 1] == '\n') b[--l] = 0; if (l) { PSPNativeMemLog("%s", b); snprintf(lastMsg, sizeof lastMsg, "%s", b); } return n; }
 int __wrap_puts(const char *s) { PSPNativeMemLog("%s", s); snprintf(lastMsg, sizeof lastMsg, "%s", s); return 1; }
 static volatile int lidEvt; /* run 64 lid_sound: 1 = closed (sleep), 2 = opened (wake); consumed on the game thread */
-static void aptHookCb(APT_HookType t, void *p) { if (t == APTHOOK_ONEXIT) { quitting = 1; } else if (t == APTHOOK_ONSLEEP) lidEvt = 1; else if (t == APTHOOK_ONWAKEUP) lidEvt = 2; }
+static void aptHookCb(APT_HookType t, void *p) { { extern volatile int P3DS_AudioAptPaused; if (t == APTHOOK_ONSUSPEND || t == APTHOOK_ONSLEEP) P3DS_AudioAptPaused = 1; else if (t == APTHOOK_ONRESTORE || t == APTHOOK_ONWAKEUP) P3DS_AudioAptPaused = 0; if (t == APTHOOK_ONRESTORE || t == APTHOOK_ONWAKEUP) { extern volatile int P3DS_AudioWoke, P3DS_AudioWokeDsp; P3DS_AudioWoke = P3DS_AudioWokeDsp = 1; } } if (t == APTHOOK_ONEXIT) { quitting = 1; } else if (t == APTHOOK_ONSLEEP) lidEvt = 1; else if (t == APTHOOK_ONWAKEUP) lidEvt = 2; }
 
 /* Bottom screen: checklist until the first game frame, then the DS touch screen.
    Hold SELECT+START ~1 s to toggle the checklist view (debug). */
@@ -166,6 +166,9 @@ void P3DS_SoftReset(unsigned param) {
                 svcSendSyncRequest(h); aptSetChainloaderToSelf(); how = 2; }
             svcCloseHandle(h); } }
     PSPNativeMemLog("[3DS] soft reset (param %u): %s", param, how == 1 ? "relaunch title" : how == 2 ? "relaunch 3dsx via hb:ldr" : "no relauncher, clean exit");
+    /* run 121 (SoulSilver c17ae22): give the kernel a moment to reclaim before the relaunch (next boot could OOM otherwise) */
+    PSPNativeMemLog("[3DS] soft reset: linear free %u KiB, app mem free %u KiB; pausing 400 ms before exit", (unsigned)(linearSpaceFree() >> 10), (unsigned)(osGetMemRegionFree(MEMREGION_APPLICATION) >> 10));
+    svcSleepThread(400000000LL);
     hardExit(0);
 }
 void P3DS_FrameHook(void) {

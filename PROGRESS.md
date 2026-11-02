@@ -1,4 +1,5 @@
 # platinum3ds progress
+- Run 121: SoulSilver Batch 1 — speed tweaks (fps_tweaks 2-7 + par.c), FAST 3D/AUTO (g3_sharp), audio style CLEAN/LIGHT/DS RAW + wake/DSP/watchdog, skip-intro soft-reset stall fix
 ## Done
 - Step 1: platinum3ds/platinum3ds.3dsx (heap.c + narc.c + ROM FS). Hardware-confirmed on New 3DS.
   Build: `cd platinum3ds && DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM make`

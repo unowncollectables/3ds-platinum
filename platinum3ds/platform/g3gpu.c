@@ -9,6 +9,8 @@
 #include "g3_shbin.h"
 extern int P3DS_GpuInit(void);
 extern void PSPNativeMemLog(const char *, ...);
+extern int P3DS_FpsTweaks(void);
+extern void P3DS_ParFor(void (*fn)(void *, unsigned), void *ctx, unsigned n);
 typedef struct { float x, y, z, w, s, t, r, g, b, a; } V;
 typedef struct { C3D_Tex *tex; int wrapS, wrapT, blend, dwrite, dfunc, late, fog; unsigned first, count; } B;
 #define MAXV (3 * 8192)
@@ -162,14 +164,22 @@ static void fogLutSetup(void) { const unsigned char *R = PSPNative_GfxRegisters;
 static int fastCfg = -1;
 static int fastConv(void) { if (fastCfg < 0) { fastCfg = 1; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); char l[64]; int x; if (f) { while (fgets(l, sizeof l, f)) if (sscanf(l, "fast_conv=%d", &x) == 1) fastCfg = x != 0; fclose(f); } PSPNativeMemLog("[GPU3D] fast_conv=%d", fastCfg); } return fastCfg; }
 void G3G_SetFastConv(int v) { fastCfg = v != 0; } int G3G_FastConv(void) { return fastConv(); }
-static void rbConvert(int e, u32 *out) {
-    if (fogFrame == 2 && drb[e]) applyFog(e);
-    if (!out) return; const u32 *s = rb[e]; const unsigned st = rtStride(), ox = st == 320 ? 32 : 0;
-    GSPGPU_InvalidateDataCache(rb[e], st * 256 * 4);
-    for (unsigned y = 0; y < 192; y++) { const u32 *row = s + y * st + ox; u32 *o = out + y * 256;
-        if (fastConv()) for (unsigned x = 0; x < 256; x++) { const u32 t = (__builtin_bswap32(row[x]) >> 2) & 0x3F3F3F3Fu; o[x] = (t & 0x003F3F3Fu) | ((t >> 1) & 0x1F000000u); }
+/* run 121 fps_tweaks 7: 192 rows are independent; P3DS_ParFor splits them over two cores (serial below level 7). */
+typedef struct { const u32 *s; u32 *out; unsigned st, ox; int fast; } RbJob;
+static void rbConvRows(void *ctx, unsigned k) {
+    const RbJob *j = (const RbJob *)ctx;
+    for (unsigned y = k * 24; y < k * 24 + 24; y++) { const u32 *row = j->s + y * j->st + j->ox; u32 *o = j->out + y * 256;
+        if (j->fast) for (unsigned x = 0; x < 256; x += 8) { __builtin_prefetch(row + x + 24); __builtin_prefetch(o + x + 24, 1);
+            for (unsigned i = 0; i < 8; i++) { const u32 t = (__builtin_bswap32(row[x + i]) >> 2) & 0x3F3F3F3Fu; o[x + i] = (t & 0x003F3F3Fu) | ((t >> 1) & 0x1F000000u); } }
         else for (unsigned x = 0; x < 256; x++) { u32 c = row[x]; unsigned a = (c & 255) >> 3;
             o[x] = ((c >> 26) & 63) | (((c >> 18) & 63) << 8) | (((c >> 10) & 63) << 16) | (a << 24); } }
+}
+static void rbConvert(int e, u32 *out) {
+    if (fogFrame == 2 && drb[e]) applyFog(e);
+    if (!out) return; const unsigned st = rtStride(), ox = st == 320 ? 32 : 0;
+    GSPGPU_InvalidateDataCache(rb[e], st * 256 * 4);
+    RbJob job = { rb[e], out, st, ox, fastConv() };
+    P3DS_ParFor(rbConvRows, &job, 8);
     if (st == 320) stripConvert(e);
 }
 /* run 46 res3d=2 (config, default 0): 3D layer rendered at 2x (512x384, or 640x384 with wideview) into plain
@@ -178,6 +188,11 @@ static void rbConvert(int e, u32 *out) {
    no texture shimmer, cleaner thin lines. VRAM: 1.5 MiB per eye (1.9 MiB wide) with 24-bit depth; if that does not
    fit (stereo needs both eyes), 16-bit depth is tried, then 1x (logged, res3dFail). */
 static int res3dCfg = -1, res3dFail;
+/* run 121 g3_sharp (from SoulSilver FAST 3D): 0=off (default), 1=SHARP (res3d=2), 2=FAST 3D (right eye 1x when stereo), 3=FAST AUTO (drop left to 1x when frames >34.8 ms). Risky; default OFF. */
+static int sharpCfg = -1;
+static unsigned gvAcc, gvN, gvDown; static int gvSh = -1;
+int G3G_Sharp(void) { if (sharpCfg < 0) { extern int P3DS_CfgInt(const char *, int); sharpCfg = P3DS_CfgInt("g3_sharp", 0); if (sharpCfg < 0 || sharpCfg > 3) sharpCfg = 0; PSPNativeMemLog("[3DRES] g3_sharp=%d (0 off, 1 SHARP, 2 FAST 3D, 3 FAST AUTO)", sharpCfg); } return sharpCfg; }
+void G3G_SetSharp(int v) { sharpCfg = v < 0 ? 0 : v > 3 ? 3 : v; if (sharpCfg) { res3dCfg = 2; res3dFail = 0; } else { res3dCfg = 0; } PSPNativeMemLog("[3DRES] g3_sharp=%d from settings", sharpCfg); }
 static int sharedTgt;
 /* run 49: res3d depth. Run 48 ended up with a 16-bit depth buffer (log: "depth 16"): the far (top) part of the field
    z-fought into stripes and long diagonal seams showed through. The 24-bit depth did not fit (after the 1x targets are
@@ -281,8 +296,12 @@ void G3G_Begin(u32 nativeClear, unsigned clearDepth16, int stereo) {
     clearRGBA = ((r << 2 | r >> 4) << 24) | ((g << 2 | g >> 4) << 16) | ((b << 2 | b >> 4) << 8) | (a * 255 / 31);
     clearD = clearDepth16 / 65535.0f; eyes = stereo ? 2 : 1; vn[0] = vn[1] = bn[0] = bn[1] = 0;
     { const int want = G3G_Wide && !wideFail && !G3G_Async && rbSyncOn() ? 320 : 256;
-      if (res3dCfg < 0) { extern int P3DS_CfgInt(const char *, int); res3dCfg = P3DS_CfgInt("res3d_test", 0) == 2 ? 2 : 0; PSPNativeMemLog(res3dCfg ? "[3DRES] res3d_test=2: sharp 3D ON for testing (run 83; run 52 had it disabled)" : "[3DRES] res3d disabled (run 52: broken on hardware; res3d_test=2 in config.txt tries it)"); }
-      const int wantHi = res3dCfg == 2 && !res3dFail && !G3G_Async && rbSyncOn() ? 1 : 0;
+      if (res3dCfg < 0) { extern int P3DS_CfgInt(const char *, int); const int sh = G3G_Sharp();
+        res3dCfg = (sh >= 1 || P3DS_CfgInt("res3d_test", 0) == 2) ? 2 : 0;
+        PSPNativeMemLog(res3dCfg ? "[3DRES] sharp 3D ON (g3_sharp=%d)" : "[3DRES] res3d disabled (g3_sharp or res3d_test=2 enables)", sh); }
+      { const int sh = G3G_Sharp(); if (sh != gvSh) { gvSh = sh; gvDown = 0; gvN = 0; gvAcc = 0; } }
+      int wantHi = res3dCfg == 2 && !res3dFail && !G3G_Async && rbSyncOn() ? 1 : 0;
+      if (wantHi && G3G_Sharp() == 3 && gvDown) wantHi = 0;
       if ((want != curW || wantHi != curHi) && ok == 1) setTargets(want, wantHi);
       wideFrame = curW == 320; hiFrame = curHi == 1; }
 }
@@ -442,6 +461,10 @@ void G3G_End(u32 *outL, u32 *outR) {
         pendN = 0;
     }
     lastUs = (unsigned)((svcGetSystemTick() - t0) / 268);
+    /* run 121 FAST AUTO: average stereo End cost; over 34800 us -> drop to 1x until g3_sharp changes */
+    if (G3G_Sharp() == 3 && eyes == 2) { gvAcc += lastUs; if (++gvN >= 30) { unsigned avg = gvAcc / gvN; gvAcc = gvN = 0;
+        if (!gvDown && avg > 34800) { gvDown = 1; PSPNativeMemLog("[3DRES] FAST AUTO: stereo frames average %u us at 2x (over 34800), dropping to 1x until g3_sharp changes", avg); }
+        else if (gvDown && avg < 28000) { gvDown = 0; PSPNativeMemLog("[3DRES] FAST AUTO: stereo frames average %u us at 1x, trying 2x again", avg); } } }
     if (G3G_DirectCfg()) { if (direct) dirUs += lastUs; else { dirPlain++; dirPlainUs += lastUs; } dirLog(); }
     { static unsigned f; if (++f % 120 == 0) { unsigned late = 0, tx = 0; for (unsigned i = 0; i < bn[0]; i++) { if (bt[0][i].late) late += bt[0][i].count / 3; if (bt[0][i].tex) tx += bt[0][i].count / 3; }
         PSPNativeMemLog("[GPU3D] frame: eyes %d | tris %u (textured %u, translucent %u) | batches %u | gpu %u us", eyes, vn[0] / 3, tx, late, bn[0], lastUs); } }

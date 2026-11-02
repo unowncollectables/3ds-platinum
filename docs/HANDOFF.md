@@ -1,3 +1,12 @@
+# Run 121 — SoulSilver Batch 1 (speed tweaks, FAST 3D, audio style, skip-intro stall)
+
+- fps_tweaks levels 2-7 + safe-boot (par.c for level 7); lean flush NOT in menu
+- g3_sharp OFF/SHARP/FAST 3D/FAST AUTO (default OFF)
+- audio_limiter CLEAN/LIGHT/DS RAW (default DS RAW) + stall fade, wake DSP, watchdog
+- Soft-reset: reclaim engine B jobs the worker never took; 400 ms pause before relaunch
+- Builds: 3dsx + CIA (3D banner 486844)
+- Defaults leave behaviour unchanged except audio_limiter default DS RAW and stallfade ON
+
 # Handoff log
 
 Dated entries, newest first. See AGENTS.md for the rules and PROGRESS.md for the full run log.

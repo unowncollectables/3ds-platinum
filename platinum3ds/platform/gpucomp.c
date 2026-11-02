@@ -49,7 +49,7 @@ static DVLB_s *dvlb; static shaderProgram_s prog; static int uProj; static int r
 static u8 mort[64];
 static unsigned dirtyLo, dirtyHi;
 static int mbOn(void);
-static int relax3d(void) { static int v = -1; if (v < 0) { v = P3DS_CfgInt("gpu_blend_3d", 1) != 0; PSPNativeMemLog("[GPUC] gpu_blend_3d=%d", v); } return v; }
+static int relax3d(void) { static int v = -1; if (v < 0) { v = P3DS_CfgInt("gpu_blend_3d", 1) != 0; PSPNativeMemLog("[GPUC] gpu_blend_3d=%d", v); } extern int P3DS_FpsTweaks(void); return v || P3DS_FpsTweaks() >= 4; }
 unsigned P3DS_GcBlendOn, P3DS_GcFxFrames, P3DS_GcBlendFrames, P3DS_GcBlendRej;  /* gpu_blend stats, logged by render3ds.cpp */
 static int blendSet = -1;  /* ss3ds: set from the settings app (System > GPU blend) before or after init */
 int P3DS_GpuBlendCfg(void) { if (blendSet < 0) blendSet = P3DS_CfgInt("gpu_blend", 1) != 0; return blendSet; }
@@ -201,7 +201,7 @@ static void quadCol(int slot, float x0, float x1, float y, int tc, int vf) {
     quadUV(x0, y, x1, y + 8, u, u, vt, vb_);
 }
 static int gW; static const WcPlan *gP; static u32 *gStrip; static C3D_Tex rtWTex; static C3D_RenderTarget *rtW; static u32 *rbW; static int wReady = -1;
-static int mbOn(void) { static int v = -1; if (v < 0) { v = P3DS_CfgInt("gpu_mbright", 1) != 0; PSPNativeMemLog("[GPUC] gpu_mbright=%d", v); } return v; }  /* wide mode: the widecomp plan (part maps per layer and line) */
+static int mbOn(void) { static int v = -1; if (v < 0) { v = P3DS_CfgInt("gpu_mbright", 1) != 0; PSPNativeMemLog("[GPUC] gpu_mbright=%d", v); } extern int P3DS_FpsTweaks(void); return v || P3DS_FpsTweaks() >= 3; }  /* wide mode: the widecomp plan (part maps per layer and line) */
 typedef struct { unsigned first, count; int is3d; int fx; } GB;  /* fx: 0 none, 1 alpha blend, 2 brighten, 3 darken (BLDCNT effect of this layer) */
 static GB bat[32]; static unsigned nb;
 static void batchBegin(int is3d, int fx) { if (nb && bat[nb - 1].is3d == is3d && !is3d && bat[nb - 1].fx == fx) return; bat[nb].first = nq; bat[nb].is3d = is3d; bat[nb].fx = fx; bat[nb].count = 0; nb++; }

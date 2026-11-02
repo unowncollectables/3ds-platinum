@@ -10,7 +10,7 @@
 #include <simulator/g3_draw.h>
 #include <cstdio>
 #include <malloc.h>
-extern "C" void PSPNativeMemLog(const char*,...);
+extern "C" void PSPNativeMemLog(const char*,...); extern "C" void P3DS_FpsGuardFrame(void); extern "C" int P3DS_FpsTweaks(void); extern "C" void P3DS_SetFpsTweaks(int); extern "C" int P3DS_FpsTweakRow(void); extern "C" void P3DS_SetAudioGain(int); extern "C" void P3DS_SetAudioLimiter(int); extern "C" void P3DS_SetAudioStallFade(int); extern "C" void G3G_SetSharp(int);
 extern "C" int P3DS_CfgInt(const char*,int);
 extern "C" unsigned PSPNativeVramPageGen[];
 extern "C" volatile unsigned long long P3DS_WaitTicks;extern "C" volatile unsigned P3DS_WaitCalls;
@@ -110,23 +110,42 @@ static volatile int bPend;
 static void bPost(){__atomic_add_fetch(&bPend,1,__ATOMIC_SEQ_CST);LightEvent_Signal(&bStart);}
 static volatile bool bWideR,bWideROk;static void wideRJob(); /* run 97: right-eye wide compose on core 2 */
 static volatile bool bWideM;static void wideMJob(); /* run 105 wide_split: half of the mono wide compose on core 2 */
-static void engineBWorker(void*){for(;;){while(!__atomic_load_n(&bPend,__ATOMIC_SEQ_CST)&&!bQuit)LightEvent_Wait(&bStart);if(bQuit)break;__atomic_sub_fetch(&bPend,1,__ATOMIC_SEQ_CST);P3DS_Crumb(bEarly?"w-early":"w-job",0);
-  if(bEarly){drawEngineB();bEarly=false;P3DS_Crumb("w-early-sig",0);LightEvent_Signal(&bEarlyDone);continue;}
+/* run 121 (SoulSilver c17ae22): frame-0 stall on skip-intro soft reset — worker never took the job, main waited forever.
+   Job body is shared so main can run it inline when reclaiming. */
+static void engineBFrameJob(){
   const bool steal=stealCfg==1&&bRightSrc;
   if(!bSkipB&&!steal)drawEngineB();
   if(bWideR){wideRJob();bWideR=false;}
   if(bWideM){wideMJob();bWideM=false;}
-  if(bRightSrc){/* stereo: right-eye top screen = engine A again (snapshot copy) with the right-eye 3D layer */
-   P3DS_3DSrc=bRightSrc;rendererR.SetFramebuffer(rawR,rawR);
+  if(bRightSrc){P3DS_3DSrc=bRightSrc;rendererR.SetFramebuffer(rawR,rawR);
    for(unsigned line=0;line<192;line++){engineA2.CheckWindows(line);rendererR.DrawSprites(line,&engineA2);rendererR.DrawScanline(line,&engineA2);}
    P3DS_3DSrc=nullptr;}
   if(!bSkipB&&steal&&claimB()){stealWorker++;drawEngineB();}
   if(bSplit){for(unsigned line=0;line<96;line++)dryLine(engineAS,line);
-   while(!line0Done)svcSleepThread(20000); /* main's line 0 made the shared flat VRAM views coherent */
+   while(!line0Done)svcSleepThread(20000);
    rendererS.SetFramebuffer(raw[0],raw[1]);
    for(unsigned line=96;line<192;line++){engineAS.CheckWindows(line);rendererS.DrawSprites(line,&engineAS);rendererS.DrawScanline(line,&engineAS);}
-   bSplit=false;}
+   bSplit=false;}}
+static void engineBWorker(void*){for(;;){
+  bool got=false;while(!bQuit){int v=__atomic_load_n(&bPend,__ATOMIC_SEQ_CST);if(v>0){if(__atomic_compare_exchange_n(&bPend,&v,v-1,false,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST)){got=true;break;}}else LightEvent_Wait(&bStart);}
+  if(!got||bQuit)break;P3DS_Crumb(bEarly?"w-early":"w-job",0);
+  if(bEarly){drawEngineB();bEarly=false;P3DS_Crumb("w-early-sig",0);LightEvent_Signal(&bEarlyDone);continue;}
+  engineBFrameJob();
   P3DS_Crumb("w-done-sig",0);LightEvent_Signal(&bDone);}}
+/* Wait for the frame job. If nothing is signalled for 150 ms AND the worker took none of this frame's posted jobs,
+   reclaim them and run inline (then keep engine B inline for the rest of this boot). */
+static bool bWaitDone(bool excl,int posted,bool&earlyB){
+  u64 t=svcGetSystemTick();
+  for(;;){
+   if(excl){if(LightEvent_TryWait(&bDone))return false;}
+   else if(!LightEvent_WaitTimeout(&bDone,10000000LL))return false;
+   if(svcGetSystemTick()-t<150000ULL*268ULL)continue;
+   int n=__atomic_exchange_n(&bPend,0,__ATOMIC_SEQ_CST);
+   if(n==posted){PSPNativeMemLog("[2D] engine B worker took no job in 150 ms: reclaimed %d, engine B inline from now on",n);P3DS_Crumb("b-reclaim",0);
+    if(earlyB){drawEngineB();bEarly=false;earlyB=false;}
+    engineBFrameJob();bMode=0;return true;}
+   if(n>0){__atomic_add_fetch(&bPend,n,__ATOMIC_SEQ_CST);LightEvent_Signal(&bStart);}
+   t=svcGetSystemTick();}}
 static bool engineBAsync(){if(bMode<0){{FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");int x;char l[64];if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"async2d=%d",&x)==1&&!x)bMode=0;fclose(f);}if(!bMode){PSPNativeMemLog("[2D] async2d=0: engine B inline");return false;}}LightEvent_Init(&bStart,RESET_ONESHOT);LightEvent_Init(&bDone,RESET_ONESHOT);
   LightEvent_Init(&bEarlyDone,RESET_ONESHOT);bThread=threadCreate(engineBWorker,nullptr,0x10000,0x2F,2,false);bMode=bThread?1:0;PSPNativeMemLog("[2D] engine B worker on core 2: %s",bMode?"yes":"no (inline)");}
  return bMode==1;}
@@ -868,17 +887,28 @@ static const MItem mItems[]={
  {"SHINY_RATE","shiny_rate",4,{"1/8192","1/4096","1/2048","1/1024"}},{"RNG_INFO","rng_info",2,{"OFF","ON"}},{"WILD_VIS_SHINY","wild_vis_shiny",2,{"OFF","ON"}},{"BATTERY_WARN","battery_warn",2,{"OFF","ON"}},
  /* run 120 skip intro / select reset 107..108, default OFF */
  {"RESET_SKIP_INTRO","reset_skip_intro",2,{"OFF","ON"}},{"SELECT_RESET","select_reset",2,{"OFF","ON"}},
+ /* run 121 SoulSilver ports 109..113: speed tweaks, FAST 3D, audio style/stall fade (risky ones default OFF) */
+ {"SPEED_TWEAKS","fps_tweaks",7,{"OFF","L2","L3","L4","L5","L6","L7"}},{"G3_SHARP","g3_sharp",4,{"OFF","SHARP","FAST 3D","FAST AUTO"}},
+ {"AUDIO_STYLE","audio_limiter",4,{"OFF","CLEAN","LIGHT","DS RAW"}},{"AUDIO_STALLFADE","audio_stallfade",2,{"OFF","ON"}},{"AUDIO_GAIN","audio_gain",7,{"4","5","6","7","8","9","10"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
-static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(!strcmp(mItems[33+k].key,"fps_tweaks"))v=v<=0?0:v>=2&&v<=7?v-1:0;
+   if(!strcmp(mItems[33+k].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};int b=6;for(int t=0;t<7;t++)if(abs(kG[t]-v)<abs(kG[b]-v))b=t;v=b;}
+   if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
 static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
  case 9:return P3DS_CamZoom()+2;case 10:return stereoStr<0?0:stereoStr;case 11:return P3DS_GpuSwizzle()?1:0;case 12:return G3G_FastConv()?1:0;case 13:return splitCfg>0?1:0;case 14:return P3DS_FollowerCfg()?1:0;case 15:return P3DS_GpuComposeCfg();
  case 16:return P3DS_FollowerSlotCfg();case 17:return P3DS_FollowerTalkCfg();case 18:return menuAudioCfg();case 19:return gcStereoCfg();case 20:return stereo2dCfg();case 21:return P3DS_WideHazeCfg();case 22:{int v=P3DS_FastTextCfg();return v<=1?0:v-1;}case 23:return P3DS_ReusableTMsCfg();case 24:return P3DS_CheatNoEncCfg();case 25:return P3DS_RepelPromptCfg();case 26:return sumIvCfg();}return 0;}
-static void menuSet(int i,int v){if(i>=33){genGet(0);genV[i-33]=v;static const int kLog[4]={0,512,1024,2048};P3DS_CfgWrite(mItems[i].key,!strcmp(mItems[i].key,"log_max_kb")?kLog[v&3]:v);if(!strcmp(mItems[i].key,"wide_layouts"))P3DS_SetWideLayouts(v);if(!strcmp(mItems[i].key,"shiny_suite"))P3DS_HuntSetOn(v);if(!strcmp(mItems[i].key,"shiny_rate"))P3DS_HuntSetRate(v);if(!strcmp(mItems[i].key,"frame_pacing"))P3DS_SetFramePacing(v);return;}if(i>=27&&i<33)cheatV[i-27]=v;switch(i){case 0:fpsOn=v!=0;break;case 1:wideCfg=v;break;case 2:P3DS_SetScaleMode(v);break;case 3:P3DS_SetCstickMode(v);break;
+static void menuSet(int i,int v){if(i>=33){genGet(0);genV[i-33]=v;static const int kLog[4]={0,512,1024,2048};P3DS_CfgWrite(mItems[i].key,!strcmp(mItems[i].key,"log_max_kb")?kLog[v&3]:v);if(!strcmp(mItems[i].key,"wide_layouts"))P3DS_SetWideLayouts(v);if(!strcmp(mItems[i].key,"shiny_suite"))P3DS_HuntSetOn(v);if(!strcmp(mItems[i].key,"shiny_rate"))P3DS_HuntSetRate(v);if(!strcmp(mItems[i].key,"frame_pacing"))P3DS_SetFramePacing(v);
+  if(!strcmp(mItems[i].key,"fps_tweaks")){P3DS_SetFpsTweaks(v==0?0:v+1);P3DS_CfgWrite("fps_tweaks",v==0?0:v+1);return;}
+  if(!strcmp(mItems[i].key,"g3_sharp")){G3G_SetSharp(v);P3DS_CfgWrite("g3_sharp",v);return;}
+  if(!strcmp(mItems[i].key,"audio_limiter")){P3DS_SetAudioLimiter(v);P3DS_CfgWrite("audio_limiter",v);return;}
+  if(!strcmp(mItems[i].key,"audio_stallfade")){P3DS_SetAudioStallFade(v);P3DS_CfgWrite("audio_stallfade",v);return;}
+  if(!strcmp(mItems[i].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};P3DS_SetAudioGain(kG[v]);P3DS_CfgWrite("audio_gain",kG[v]);return;}
+  return;}if(i>=27&&i<33)cheatV[i-27]=v;switch(i){case 0:fpsOn=v!=0;break;case 1:wideCfg=v;break;case 2:P3DS_SetScaleMode(v);break;case 3:P3DS_SetCstickMode(v);break;
   case 4:P3DS_CtlZl=v;if(!v){extern volatile int P3DS_RunToggle;P3DS_RunToggle=0;}break;case 5:P3DS_CtlZr=v;break;case 6:P3DS_CtlCp=v;break;case 7:wideFxV=v;break;case 8:P3DS_SetLogLevel(v?2:1);break;
   case 9:P3DS_SetCamZoom(v-2);break;case 10:stereoStr=v;break;case 11:P3DS_SetGpuSwizzle(v);break;case 12:G3G_SetFastConv(v);break;case 13:splitCfg=v;break;case 14:P3DS_SetFollowerCfg(v);break;case 15:P3DS_SetGpuComposeCfg(v);break;
   case 16:folSlotV=v;break;case 17:folTalkV=v;break;case 18:menuAudioV=v;break;case 19:gcStereoV=v;break;case 20:stereo2dV=v;break;case 21:P3DS_SetWideHazeCfg(v);break;case 22:fastTextV=v?v+1:0;break;case 23:reuseTmV=v;break;case 24:noEncV=v;break;case 25:repPV=v;break;case 26:sumIvV=v;break;}
@@ -1337,7 +1367,7 @@ static int Present(bool){
   if(!async&&!gcOK&&!wgNow){engineB.CheckWindows(line);renderer.DrawSprites(line,&engineB);renderer.DrawScanline(line,&engineB);}} P3DS_St[3]=svcGetSystemTick();
  if(stealNow&&claimB()){stealMain++;drawEngineB();}
  P3DS_Crumb(async?(excl?"b-spin":"b-wait"):"b-none",0);
- if(async){if(excl){while(!LightEvent_TryWait(&bDone)){}}else LightEvent_Wait(&bDone);}
+ if(async)bWaitDone(excl,earlyB?2:1,earlyB);
  if(onC1)LightEvent_Wait(&c1Done); P3DS_St[4]=svcGetSystemTick();
  huntTick();batteryTick();
  {/* run 76 display capture (DISPCAPCNT 0x4000064): the Spear Pillar / Giratina transition captures the screen into a VRAM
@@ -1471,7 +1501,7 @@ static int Present(bool){
  if(mode&&gpuOk==1){extern int P3DS_GpuBotSame;P3DS_GpuBotSame=(power&0x8000)&&P3DS_BottomReused;/* run 41: !fpsOn removed (FPS text is drawn on the top screen; it blocked every skip) */P3DS_GpuPresent(stereo?eyeL:top,bot,mode,!P3DS_ConsoleOnBottom(),stereo?eyeR:nullptr);}
  else{present(GFX_TOP,400,top,0);if(!P3DS_ConsoleOnBottom())present(GFX_BOTTOM,320,bot,0);gfxFlushBuffers();gfxSwapBuffers();}
  P3DS_GameFramePresented();
- u64 tEnd=svcGetSystemTick();last2DUs=(unsigned)((tEnd-t0)/CPU_TICKS_PER_USEC);frames++;
+ u64 tEnd=svcGetSystemTick();last2DUs=(unsigned)((tEnd-t0)/CPU_TICKS_PER_USEC);frames++;P3DS_FpsGuardFrame();
  {static unsigned bl;if(++bl%600==0){if(P3DS_LogLevel()>=2)PSPNativeMemLog("[2D] bottom_skip: reused %u, recomposed %u of last 600 | steal_b: engine B on main %u, worker %u | early_b %u | split_top %u",bSkips,bDraws,stealMain,stealWorker,earlyN,splitN);earlyN=0;splitN=0;bSkips=bDraws=0;stealMain=stealWorker=0;lS=lD=0;}}
  {unsigned total=tPrevEnd?(unsigned)((tEnd-tPrevEnd)/CPU_TICKS_PER_USEC):0,comp=(unsigned)((tComp-t0)/CPU_TICKS_PER_USEC),gpu=(unsigned)((tEnd-tComp)/CPU_TICKS_PER_USEC);
 #ifdef P3DS_PROF
