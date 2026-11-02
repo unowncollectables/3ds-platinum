@@ -61,12 +61,14 @@ static volatile int quitting;
 static aptHookCookie hookCookie;
 extern void P3DS_ShutdownThreads(void); extern void P3DS_ShutdownSDL(void);
 /* Clean exit: stop workers, join them, close files, gfxExit, then exit() normally (returns to HBL / HOME). */
+static void p3SaveBackup(const char *why); /* run 122 */
 static void hardExit(int code) {
     static int once; if (once++) exit(code);
     quitting = 1; PSPNativeMemLog("[3DS] exit: stopping threads");
     { extern void P3DS_HuntFlush(void); P3DS_HuntFlush(); } /* run 88: hunt time since the last write */
+    /* run 122 (SS 09f7427): save first — ShutdownThreads frees partition blocks the backup close may still touch */
+    extern BOOL PSPNative_CloseBackup(void); PSPNative_CloseBackup(); p3SaveBackup("exit");
     P3DS_ShutdownThreads(); P3DS_ShutdownSDL();
-    extern BOOL PSPNative_CloseBackup(void); PSPNative_CloseBackup();
     PSPNativeMemLog("[3DS] exit: clean");
     P3DS_LogFlushSync(); aptUnhook(&hookCookie); gfxExit(); exit(code);
 }
@@ -76,6 +78,86 @@ typedef struct { const char *tag; void *caller; unsigned n; int th; unsigned fra
 /* ring 0 = main game thread, ring 1 = every other thread (VBlank/alarm/audio work must not hide the main thread). */
 static Crumb crumbs[2][64]; static volatile unsigned crumbPos[2];
 extern unsigned PSPNativeRenderFrameCount(void);
+
+/* run 122 (from SoulSilver 2f995e5): rotating validated backups (8 kept) at launch, 2 s after each in-game save,
+   and at clean exit. save_backup=0 disables. Export: Settings > Export save -> export/platinum_*.sav (read-back verified).
+   The live platinum.sav is never modified by backups/export (byte copy only). */
+#define P3_BAK_KEEP 8
+#define P3_SAVE_DIR "sdmc:/3ds/platinum3ds/"
+#define P3_SAVE_BYTES 524288u
+static u16 p3Crc16(const u8 *p, u32 n) { u32 c = 0xFFFF; while (n--) { c ^= (u32)*p++ << 8; for (int i = 0; i < 8; i++) c = (c & 0x8000) ? ((c << 1) ^ 0x1021) & 0xFFFF : (c << 1) & 0xFFFF; } return (u16)c; }
+static u32 p3SaveValid(const u8 *d) {
+    u32 best = 0;
+    for (u32 base = 0; base < P3_SAVE_BYTES; base += 0x40000) {
+        u32 cnt = 0, n = 0; int bad = 0;
+        for (u32 off = base; off + 16 <= base + 0x40000; off += 4) {
+            u32 f[3]; u16 h[2]; memcpy(f, d + off, 12); memcpy(h, d + off + 12, 4);
+            if (f[2] != 0x20060623u) continue;
+            u32 start = off + 16 - f[1];
+            if (f[1] < 16 || f[1] > off + 16 - base || p3Crc16(d + start, off - start) != h[1]) { bad = 1; break; }
+            if (n && f[0] != cnt) { bad = 1; break; }
+            cnt = f[0]; n++;
+        }
+        if (!bad && n >= 2 && cnt > best) best = cnt;
+    }
+    return best;
+}
+static u8 *p3Buf(int i) { static u8 b[2][P3_SAVE_BYTES]; return b[i]; }
+static size_t p3ReadAll(const char *path, u8 *buf) { FILE *f = fopen(path, "rb"); if (!f) return 0; size_t n = fread(buf, 1, P3_SAVE_BYTES, f); int extra = fgetc(f) != EOF; fclose(f); return extra ? 0 : n; }
+static int p3WriteAtomic(const char *path, const u8 *buf) {
+    char tmp[160]; snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    FILE *o = fopen(tmp, "wb"); if (!o) return 0;
+    size_t w = fwrite(buf, 1, P3_SAVE_BYTES, o); int cl = fclose(o);
+    if (w != P3_SAVE_BYTES || cl) { remove(tmp); return 0; }
+    remove(path); return rename(tmp, path) == 0;
+}
+static LightLock p3SaveLock; static int p3SaveLockInit;
+static u32 p3Crc32(const u8 *p, u32 n) { u32 c = 0xFFFFFFFFu; while (n--) { c ^= *p++; for (int i = 0; i < 8; i++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1))); } return ~c; }
+static void p3SaveBackupLocked(const char *why) {
+    extern int P3DS_CfgInt(const char *, int);
+    if (!P3DS_CfgInt("save_backup", 1)) return;
+    u8 *live = p3Buf(0), *old = p3Buf(1);
+    if (p3ReadAll(P3_SAVE_DIR "platinum.sav", live) != P3_SAVE_BYTES) { PSPNativeMemLog("[SAVE] backup (%s): platinum.sav missing or not 512 KiB", why); return; }
+    u32 cnt = p3SaveValid(live);
+    if (!cnt) { PSPNativeMemLog("[SAVE] backup (%s): live save has no valid slot (blank or damaged), backups left untouched", why); return; }
+    if (p3ReadAll(P3_SAVE_DIR "platinum.sav.bak1", old) == P3_SAVE_BYTES && !memcmp(live, old, P3_SAVE_BYTES)) { PSPNativeMemLog("[SAVE] backup (%s): save count %u already in bak1", why, cnt); return; }
+    char a[160], b[160];
+    snprintf(a, sizeof a, P3_SAVE_DIR "platinum.sav.bak%d", P3_BAK_KEEP); remove(a);
+    for (int i = P3_BAK_KEEP - 1; i >= 1; i--) { snprintf(a, sizeof a, P3_SAVE_DIR "platinum.sav.bak%d", i); snprintf(b, sizeof b, P3_SAVE_DIR "platinum.sav.bak%d", i + 1); rename(a, b); }
+    int ok = p3WriteAtomic(P3_SAVE_DIR "platinum.sav.bak1", live);
+    PSPNativeMemLog("[SAVE] backup (%s): save count %u crc %08x -> bak1 (%s, %d kept)", why, cnt, p3Crc32(live, P3_SAVE_BYTES), ok ? "ok" : "FAILED", P3_BAK_KEEP);
+}
+static void p3Lock(void) { if (!p3SaveLockInit) { LightLock_Init(&p3SaveLock); p3SaveLockInit = 1; } LightLock_Lock(&p3SaveLock); }
+static void p3SaveBackup(const char *why) { p3Lock(); p3SaveBackupLocked(why); LightLock_Unlock(&p3SaveLock); }
+static volatile u64 p3DoneAt;
+void P3DS_SaveDone(void) { p3DoneAt = svcGetSystemTick() | 1; }
+static void p3SaveTick(void) {
+    u64 t = p3DoneAt; if (!t || svcGetSystemTick() - t < 2000ull * CPU_TICKS_PER_MSEC) return;
+    p3DoneAt = 0; p3SaveBackup("after save");
+}
+int P3DS_SaveExport(void) {
+    extern void P3DS_Toast(const char *);
+    p3Lock();
+    u8 *live = p3Buf(0), *chk = p3Buf(1); int ok = 0; char path[160], path2[160];
+    if (p3ReadAll(P3_SAVE_DIR "platinum.sav", live) != P3_SAVE_BYTES) { PSPNativeMemLog("[SAVE] export: platinum.sav missing or not 512 KiB"); goto done; }
+    u32 cnt = p3SaveValid(live);
+    if (!cnt) { PSPNativeMemLog("[SAVE] export: live save has no valid slot, nothing exported"); goto done; }
+    mkdir(P3_SAVE_DIR "export", 0777);
+    time_t now = time(NULL); struct tm *tm = localtime(&now); char st[24] = "undated";
+    if (tm && tm->tm_year >= 120) strftime(st, sizeof st, "%Y%m%d_%H%M%S", tm);
+    snprintf(path, sizeof path, P3_SAVE_DIR "export/platinum_%s.sav", st); snprintf(path2, sizeof path2, P3_SAVE_DIR "export/platinum.sav");
+    ok = p3WriteAtomic(path, live) && p3ReadAll(path, chk) == P3_SAVE_BYTES && !memcmp(live, chk, P3_SAVE_BYTES)
+      && p3WriteAtomic(path2, live) && p3ReadAll(path2, chk) == P3_SAVE_BYTES && !memcmp(live, chk, P3_SAVE_BYTES);
+    PSPNativeMemLog("[SAVE] export: save count %u crc %08x -> export/platinum_%s.sav + export/platinum.sav (%s)", cnt, p3Crc32(live, P3_SAVE_BYTES), st, ok ? "ok" : "FAILED");
+done:
+    LightLock_Unlock(&p3SaveLock);
+    P3DS_Toast(ok ? "SAVE EXPORTED" : "SAVE EXPORT FAILED");
+    return ok;
+}
+/* --wrap=CARD_UnlockBackup: game finished a save transaction */
+extern void __real_CARD_UnlockBackup(u16 lock_id);
+void __wrap_CARD_UnlockBackup(u16 lock_id) { __real_CARD_UnlockBackup(lock_id); P3DS_SaveDone(); }
+
 void P3DS_Crumb(const char *tag, void *caller) {
     int th = (int)(uintptr_t)threadGetCurrent(); int r = th ? 1 : 0;
     unsigned p = crumbPos[r]; Crumb *c = &crumbs[r][(p - 1) & 63];
@@ -172,6 +254,7 @@ void P3DS_SoftReset(unsigned param) {
     hardExit(0);
 }
 void P3DS_FrameHook(void) {
+    p3SaveTick();
     static int held;
     u32 k = hidKeysHeld();
     /* run 53: L+R+START+SELECT = soft reset. Remember that the combo was seen until L and R are released, so the
@@ -277,14 +360,7 @@ int main(void) {
     { /* create a blank save only if none exists; never touch an existing one */
       FILE *f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "rb");
       if (f) fclose(f); else if ((f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "wb"))) { static u8 blk[4096]; memset(blk, 0xFF, sizeof blk); for (int i = 0; i < 128; i++) fwrite(blk, 1, sizeof blk, f); fclose(f); PSPNativeMemLog("[3DS] created blank platinum.sav"); } }
-    { /* run 74 save_backup=1 (default ON, safety): at every launch, before the game opens it, platinum.sav is COPIED to
-         platinum.sav.bak1 (older copies rotate to .bak2 / .bak3). Byte copy only; the save itself is never touched. */
-      extern int P3DS_CfgInt(const char *, int); int nb = P3DS_CfgInt("save_backup", 1);
-      if (nb) { static u8 sb[524288]; FILE *f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "rb"); size_t n = f ? fread(sb, 1, sizeof sb, f) : 0; if (f) fclose(f);
-        if (n == sizeof sb) { remove("sdmc:/3ds/platinum3ds/platinum.sav.bak3"); rename("sdmc:/3ds/platinum3ds/platinum.sav.bak2", "sdmc:/3ds/platinum3ds/platinum.sav.bak3");
-          rename("sdmc:/3ds/platinum3ds/platinum.sav.bak1", "sdmc:/3ds/platinum3ds/platinum.sav.bak2");
-          FILE *o = fopen("sdmc:/3ds/platinum3ds/platinum.sav.bak1", "wb"); size_t w = o ? fwrite(sb, 1, n, o) : 0; if (o) fclose(o);
-          PSPNativeMemLog("[SAVE] backup platinum.sav -> .bak1 (%s, 3 kept)", w == n ? "ok" : "FAILED"); } } }
+    p3SaveBackup("launch"); /* run 122: validated rotate, 8 kept */
     { extern void P3DS_SpeedCheck(void); P3DS_SpeedCheck(); } /* run 81: log whether 804 MHz/L2 is really on + per-core speed (speedcheck=0 skips); adapted from GabeSud0/pokeplatinum-3ds */
     STEP("Save (platinum.sav)", PSPNative_OpenBackup("sdmc:/3ds/platinum3ds/platinum.sav"), "platinum.sav invalid: must be exactly 512 KiB");
     { extern int P3DS_GameFontLoad(void); P3DS_GameFontLoad(); } /* run 64: game font from the ROM for port UI */

@@ -192,7 +192,10 @@ static u32 frameR[256*192] __attribute__((aligned(64)));static u16 depthR[256*19
 static int stereoClamp=-1;static unsigned stereoClamped;
 static inline bool zDegenerate(float w,float zf){if(stereoClamp<0){stereoClamp=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"stereo_clamp=%d",&x)==1)stereoClamp=x!=0;fclose(f);}PSPNativeMemLog("[G3] stereo_clamp=%d",stereoClamp);}
  return stereoClamp&&(w<1e-3f||zf<-0.001f||zf>1.001f);}
-static int stereoDepth=-1;static inline float parOf(float zf){if(stereoDepth<0){stereoDepth=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"stereo_depth=%d",&x)==1)stereoDepth=x!=0;fclose(f);}PSPNativeMemLog("[G3] stereo_depth=%d",stereoDepth);}
+static int stereoDepth=-1;
+extern "C" int P3DS_StereoDepth(void){if(stereoDepth<0){stereoDepth=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"stereo_depth=%d",&x)==1)stereoDepth=x!=0;fclose(f);}PSPNativeMemLog("[G3] stereo_depth=%d",stereoDepth);}return stereoDepth;}
+extern "C" void P3DS_SetStereoDepth(int v){stereoDepth=v!=0;PSPNativeMemLog("[G3] stereo_depth=%d from settings",stereoDepth);}
+static inline float parOf(float zf){if(stereoDepth<0)P3DS_StereoDepth();
  if(!stereoDepth)return 0.65f;if(zf<0)zf=0;if(zf>1)zf=1;float z2=zf*zf,z4=z2*z2,z8=z4*z4;return 0.3f+0.7f*z8;}
 static void*G3SIM_GpuTex(Tex*t){return G3G_TexCreate(t->px,t->w,t->h);}
 extern "C" u32 *P3DS_G3RightEye(void){return stereoSd?frameR:nullptr;}

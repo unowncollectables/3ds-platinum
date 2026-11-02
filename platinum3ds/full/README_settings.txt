@@ -390,3 +390,10 @@ AUDIO_GAIN — live volume 4..10 (default 10).
 
 Also: skip-intro soft-reset frame-0 stall fix (engine B reclaim after 150 ms) +
 400 ms pause before relaunch so the next boot does not OOM.
+
+==== Run 122 (SoulSilver Batch 2) ====
+STEREO_DEPTH (stereo_depth) — default DEPTH (1). FLAT = uniform parallax; DEPTH = per-vertex.
+SAVE_BACKUP — now 8 rotating validated backups (was 3), also 2 s after each in-game save and at exit.
+EXPORT_SAVE (save_export) — action: A copies verified platinum.sav to export/ on the SD (read-back check).
+Crash log: unclean previous run kept as log_crash.txt; clean exit rotates to log_prev.txt.
+Quit: write/close save BEFORE tearing down threads (SS run 102).

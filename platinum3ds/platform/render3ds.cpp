@@ -10,7 +10,7 @@
 #include <simulator/g3_draw.h>
 #include <cstdio>
 #include <malloc.h>
-extern "C" void PSPNativeMemLog(const char*,...); extern "C" void P3DS_FpsGuardFrame(void); extern "C" int P3DS_FpsTweaks(void); extern "C" void P3DS_SetFpsTweaks(int); extern "C" int P3DS_FpsTweakRow(void); extern "C" void P3DS_SetAudioGain(int); extern "C" void P3DS_SetAudioLimiter(int); extern "C" void P3DS_SetAudioStallFade(int); extern "C" void G3G_SetSharp(int);
+extern "C" void PSPNativeMemLog(const char*,...); extern "C" void P3DS_FpsGuardFrame(void); extern "C" int P3DS_FpsTweaks(void); extern "C" void P3DS_SetFpsTweaks(int); extern "C" int P3DS_FpsTweakRow(void); extern "C" void P3DS_SetAudioGain(int); extern "C" void P3DS_SetAudioLimiter(int); extern "C" void P3DS_SetAudioStallFade(int); extern "C" void G3G_SetSharp(int); extern "C" void P3DS_SetStereoDepth(int); extern "C" int P3DS_SaveExport(void);
 extern "C" int P3DS_CfgInt(const char*,int);
 extern "C" unsigned PSPNativeVramPageGen[];
 extern "C" volatile unsigned long long P3DS_WaitTicks;extern "C" volatile unsigned P3DS_WaitCalls;
@@ -890,11 +890,13 @@ static const MItem mItems[]={
  /* run 121 SoulSilver ports 109..113: speed tweaks, FAST 3D, audio style/stall fade (risky ones default OFF) */
  {"SPEED_TWEAKS","fps_tweaks",7,{"OFF","L2","L3","L4","L5","L6","L7"}},{"G3_SHARP","g3_sharp",4,{"OFF","SHARP","FAST 3D","FAST AUTO"}},
  {"AUDIO_STYLE","audio_limiter",4,{"OFF","CLEAN","LIGHT","DS RAW"}},{"AUDIO_STALLFADE","audio_stallfade",2,{"OFF","ON"}},{"AUDIO_GAIN","audio_gain",7,{"4","5","6","7","8","9","10"}},
+ /* run 122 Batch 2: stereo depth lock, export save action */
+ {"STEREO_DEPTH","stereo_depth",2,{"FLAT","DEPTH"}},{"EXPORT_SAVE","save_export",2,{"A: EXPORT","EXPORT ON CLOSE"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(!strcmp(mItems[33+k].key,"fps_tweaks"))v=v<=0?0:v>=2&&v<=7?v-1:0;
    if(!strcmp(mItems[33+k].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};int b=6;for(int t=0;t<7;t++)if(abs(kG[t]-v)<abs(kG[b]-v))b=t;v=b;}
    if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
@@ -908,6 +910,8 @@ static void menuSet(int i,int v){if(i>=33){genGet(0);genV[i-33]=v;static const i
   if(!strcmp(mItems[i].key,"audio_limiter")){P3DS_SetAudioLimiter(v);P3DS_CfgWrite("audio_limiter",v);return;}
   if(!strcmp(mItems[i].key,"audio_stallfade")){P3DS_SetAudioStallFade(v);P3DS_CfgWrite("audio_stallfade",v);return;}
   if(!strcmp(mItems[i].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};P3DS_SetAudioGain(kG[v]);P3DS_CfgWrite("audio_gain",kG[v]);return;}
+  if(!strcmp(mItems[i].key,"stereo_depth")){extern void P3DS_SetStereoDepth(int);P3DS_SetStereoDepth(v);P3DS_CfgWrite("stereo_depth",v);return;}
+  if(!strcmp(mItems[i].key,"save_export")){if(v){extern int P3DS_SaveExport(void);P3DS_SaveExport();}genV[i-33]=0;return;}
   return;}if(i>=27&&i<33)cheatV[i-27]=v;switch(i){case 0:fpsOn=v!=0;break;case 1:wideCfg=v;break;case 2:P3DS_SetScaleMode(v);break;case 3:P3DS_SetCstickMode(v);break;
   case 4:P3DS_CtlZl=v;if(!v){extern volatile int P3DS_RunToggle;P3DS_RunToggle=0;}break;case 5:P3DS_CtlZr=v;break;case 6:P3DS_CtlCp=v;break;case 7:wideFxV=v;break;case 8:P3DS_SetLogLevel(v?2:1);break;
   case 9:P3DS_SetCamZoom(v-2);break;case 10:stereoStr=v;break;case 11:P3DS_SetGpuSwizzle(v);break;case 12:G3G_SetFastConv(v);break;case 13:splitCfg=v;break;case 14:P3DS_SetFollowerCfg(v);break;case 15:P3DS_SetGpuComposeCfg(v);break;
@@ -983,7 +987,7 @@ static const char*settingHelp(const char*k){static const char*const H[][2]={
  {"cam_zoom","Overworld camera distance."},{"tod_tint","Evening/night tint outdoors."},{"wide_weather","Rain/snow also in the side strips."},
  {"fast_text","Text prints at full speed."},{"text_hold_b","Hold B to rush text."},{"text_auto","Text advances by itself."},
  {"battle_anim_speed","Speeds up battle animations."},{"repel_prompt","Asks to use another Repel."},{"reusable_tms","TMs are not used up."},
- {"hm_free","Field moves without teaching HMs."},{"item_ping","Ping near hidden items."},{"save_backup","Keeps 3 rotating copies of\nplatinum.sav on the SD."},
+ {"hm_free","Field moves without teaching HMs."},{"item_ping","Ping near hidden items."},{"save_backup","Keeps 8 rotating validated copies of\nplatinum.sav on the SD (after each save)."},{"stereo_depth","3D slider: per-vertex depth (DEPTH)\nor flat 3D layer (FLAT)."},{"save_export","A: copy a verified platinum.sav\nto export/ on the SD."},
  {"cstick_mode","What the C-stick does."},{"zl_run","ZL toggles running."},{"zr_item","ZR uses your registered item."},{"cpad_dpad","Circle pad acts as D-pad."},
  {"touch_menu","Tap the bottom screen corner\nfor the quick menu."},{"bottom_strip","Button strip on the bottom\nscreen in the field."},
  {"lower_menu","Icon menu around the bottom\nscreen in the field (GabeSud0)."},{"follower","A Pok\xe9mon follows you."},

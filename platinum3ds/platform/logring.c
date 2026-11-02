@@ -35,6 +35,17 @@ static int isDetail(const char *line) {
     return 0;
 }
 volatile int P3DS_LogWriting; /* run 51: zone_prefetch pauses while the log is written to SD */
+static void keepCrashedLog(void) {
+    FILE *f = fopen("sdmc:/3ds/platinum3ds/log.txt", "rb"); if (!f) return;
+    char tail[4096]; size_t n = 0;
+    if (!fseek(f, 0, SEEK_END)) { long sz = ftell(f); long from = sz > (long)sizeof tail - 1 ? sz - (long)sizeof tail + 1 : 0; if (sz > 0 && !fseek(f, from, SEEK_SET)) n = fread(tail, 1, sizeof tail - 1, f); }
+    fclose(f); tail[n] = 0;
+    if (n && strstr(tail, "[3DS] exit: clean")) { remove("sdmc:/3ds/platinum3ds/log_prev.txt"); rename("sdmc:/3ds/platinum3ds/log.txt", "sdmc:/3ds/platinum3ds/log_prev.txt"); return; }
+    if (!n) return;
+    remove("sdmc:/3ds/platinum3ds/log_crash.txt"); remove("sdmc:/3ds/platinum3ds/log_crash_old.txt");
+    rename("sdmc:/3ds/platinum3ds/log.txt", "sdmc:/3ds/platinum3ds/log_crash.txt");
+    rename("sdmc:/3ds/platinum3ds/log_old.txt", "sdmc:/3ds/platinum3ds/log_crash_old.txt");
+}
 static void flushOnce(int lock) {
     P3DS_LogWriting = 1;
     for (;;) {
@@ -44,7 +55,7 @@ static void flushOnce(int lock) {
         for (u32 k = 0; k < n; k++) out[k] = ring[(tail + k) % RING];
         tail += n; unsigned d = dropped; dropped = 0;
         if (lock) LightLock_Unlock(&lk);
-        if (!lf) lf = fopen("sdmc:/3ds/platinum3ds/log.txt", "w");
+        if (!lf) { keepCrashedLog(); lf = fopen("sdmc:/3ds/platinum3ds/log.txt", "w"); }
         if (!lf) return;
         if (d) fprintf(lf, "[LOG] %u lines dropped (ring full)\n", d);
         if (!n) break;
