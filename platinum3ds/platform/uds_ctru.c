@@ -7,9 +7,19 @@
 #include <3ds.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "uds_ctru.h"
 
 extern void PSPNativeMemLog(const char *, ...);
+extern void P3DS_ThreadGuard(const char *name);
+__attribute__((weak)) void P3DS_ThreadGuard(const char *name) { (void)name; } /* Platinum main3ds has no per-thread fault guard yet */
+extern void P3DS_LogFlushSync(void);
+/* Union Room crash hunt (2026-10-27): a hard crash on the 3DS loses the async log tail, so every [WIRELESS] line is flushed to the SD card at once. */
+#define WLOG(...) do { PSPNativeMemLog(__VA_ARGS__); P3DS_LogFlushSync(); } while (0)
+/* Crash guard: wireless.pending exists from udsInit until a clean exit. If it is still there at the next udsInit the previous run died with UDS
+   active, so this run refuses UDS (WM falls back to the radio with nobody in range) and removes the marker; the run after that tries again. */
+#define PENDING_PATH "sdmc:/3ds/platinum3ds/wireless.pending"
+void P3U_ClearPending(void) { remove(PENDING_PATH); }
 
 #define WLANCOMMID 0x50334453u /* 'P3DS', same as tools/uds_probe; shared by the Platinum and SoulSilver ports */
 #define DATA_CHANNEL 1
@@ -34,6 +44,18 @@ static P3UNet sNets[P3U_NETS_MAX];
 static int sNetCount;
 static udsNetworkStruct sNetStruct[P3U_NETS_MAX];
 static u8 sScanBuf[0x4000] __attribute__((aligned(4)));
+/* Last-seen cache for connecting (run 56: the Union Room parent flips start/end every second or so, so the network is missing from a given
+   scan snapshot now and then, and "connect target not in the scan list" made the game say the other player was busy). Entries live 20 s. */
+#define CACHE_MS 20000
+static struct { u8 mac[6]; udsNetworkStruct net; u64 seenUs; int used; } sCache[P3U_NETS_MAX];
+static int findTarget(udsNetworkStruct *out) /* caller holds sLock */
+{
+	for (int i = 0; i < sNetCount; i++) if (!memcmp(sNets[i].mac, sTarget, 6)) { *out = sNetStruct[i]; return 1; }
+	u64 now = P3U_NowUs();
+	for (int i = 0; i < P3U_NETS_MAX; i++)
+		if (sCache[i].used && !memcmp(sCache[i].mac, sTarget, 6) && now - sCache[i].seenUs < (u64)CACHE_MS * 1000) { *out = sCache[i].net; return 2; }
+	return 0;
+}
 
 u64 P3U_NowUs(void) { return svcGetSystemTick() * 1000000ull / SYSCLOCK_ARM11; }
 
@@ -56,6 +78,13 @@ static void doScan(void)
 		n->nodes = nets[i].network.total_nodes;
 		n->maxNodes = nets[i].network.max_nodes;
 		sNetStruct[sNetCount] = nets[i].network;
+		{
+			int slot = -1;
+			for (int c = 0; c < P3U_NETS_MAX; c++) if (sCache[c].used && !memcmp(sCache[c].mac, n->mac, 6)) { slot = c; break; }
+			for (int c = 0; slot < 0 && c < P3U_NETS_MAX; c++) if (!sCache[c].used) slot = c;
+			if (slot < 0) { slot = 0; for (int c = 1; c < P3U_NETS_MAX; c++) if (sCache[c].seenUs < sCache[slot].seenUs) slot = c; }
+			memcpy(sCache[slot].mac, n->mac, 6); sCache[slot].net = nets[i].network; sCache[slot].seenUs = P3U_NowUs(); sCache[slot].used = 1;
+		}
 		sNetCount++;
 	}
 	LightLock_Unlock(&sLock);
@@ -70,7 +99,7 @@ static void pollStatus(void)
 	sMyNode = st.cur_NetworkNodeID;
 	/* A client whose host vanished (or the console slept) drops to a non-connected status with no host bit. */
 	if (sState == P3U_CLIENT && !(st.node_bitmask & 1)) {
-		PSPNativeMemLog("[WIRELESS] uds: host gone (status %lu, bitmask %04x)", st.status, st.node_bitmask);
+		WLOG("[WIRELESS] uds: host gone (status %lu, bitmask %04x)", st.status, st.node_bitmask);
 		udsDisconnectNetwork(); udsUnbind(&sBind); sRole = 0; sState = P3U_LOST;
 	}
 }
@@ -85,6 +114,7 @@ static void leave(void)
 static void worker(void *arg)
 {
 	(void)arg;
+	P3DS_ThreadGuard("uds");
 	u64 lastStatus = 0;
 	while (!sQuit) {
 		int cmd = __atomic_exchange_n(&sCmd, CMD_NONE, __ATOMIC_SEQ_CST);
@@ -94,12 +124,12 @@ static void worker(void *arg)
 			udsNetworkStruct net;
 			udsGenerateDefaultNetworkStruct(&net, WLANCOMMID, 0, (u8)sMaxNodes);
 			Result r = udsCreateNetwork(&net, kPass, sizeof kPass, &sBind, DATA_CHANNEL, UDS_DEFAULT_RECVBUFSIZE);
-			if (R_FAILED(r)) { PSPNativeMemLog("[WIRELESS] uds: create network failed %08lx", r); sState = P3U_FAILED; break; }
+			if (R_FAILED(r)) { WLOG("[WIRELESS] uds: create network failed %08lx", r); sState = P3U_FAILED; break; }
 			LightLock_Lock(&sLock);
 			r = udsSetApplicationData(sApp, sAppLen);
 			LightLock_Unlock(&sLock);
 			u8 ch = 0; udsGetChannel(&ch);
-			PSPNativeMemLog("[WIRELESS] uds: hosting, channel %u, %d nodes max, app data %d B%s", ch, sMaxNodes, sAppLen,
+			WLOG("[WIRELESS] uds: hosting, channel %u, %d nodes max, app data %d B%s", ch, sMaxNodes, sAppLen,
 			                R_FAILED(r) ? " (set FAILED)" : "");
 			sRole = 1; sState = P3U_HOST;
 			break;
@@ -107,22 +137,26 @@ static void worker(void *arg)
 		case CMD_CONNECT: {
 			leave();
 			udsNetworkStruct net;
-			int found = 0;
+			int found;
 			LightLock_Lock(&sLock);
-			for (int i = 0; i < sNetCount; i++) if (!memcmp(sNets[i].mac, sTarget, 6)) { net = sNetStruct[i]; found = 1; break; }
+			found = findTarget(&net);
 			LightLock_Unlock(&sLock);
-			if (!found) { PSPNativeMemLog("[WIRELESS] uds: connect target not in the scan list"); sState = P3U_FAILED; break; }
+			if (!found) { WLOG("[WIRELESS] uds: connect target not in the scan list or its 20 s cache"); sState = P3U_FAILED; break; }
+			if (found == 2) WLOG("[WIRELESS] uds: connect target not in the latest scan, using its cached beacon");
 			Result r = 0;
-			for (int t = 0; t < 5; t++) {
+			for (int t = 0; t < 20; t++) {
 				r = udsConnectNetwork(&net, kPass, sizeof kPass, &sBind, UDS_BROADCAST_NETWORKNODEID, UDSCONTYPE_Client,
 				                      DATA_CHANNEL, UDS_DEFAULT_RECVBUFSIZE);
 				if (R_SUCCEEDED(r)) break;
-				svcSleepThread(100000000);
+				if (t == 0 || t == 19) WLOG("[WIRELESS] uds: connect attempt %d failed %08lx", t + 1, r);
+				svcSleepThread(150000000);
+				doScan(); /* the host may have just restarted its network (new beacon data): refresh before retrying */
+				LightLock_Lock(&sLock); findTarget(&net); LightLock_Unlock(&sLock);
 			}
-			if (R_FAILED(r)) { PSPNativeMemLog("[WIRELESS] uds: connect failed %08lx", r); sState = P3U_FAILED; break; }
+			if (R_FAILED(r)) { WLOG("[WIRELESS] uds: connect failed %08lx", r); sState = P3U_FAILED; break; }
 			sRole = 2; sState = P3U_CLIENT;
 			pollStatus();
-			PSPNativeMemLog("[WIRELESS] uds: connected as node %u", sMyNode);
+			WLOG("[WIRELESS] uds: connected as node %u", sMyNode);
 			break;
 		}
 		case CMD_LEAVE:
@@ -150,13 +184,17 @@ static void worker(void *arg)
 int P3U_Init(void)
 {
 	if (sState != P3U_OFF) return 1;
+	{ FILE *f = fopen(PENDING_PATH, "rb");
+	  if (f) { fclose(f); remove(PENDING_PATH); WLOG("[WIRELESS] the previous run ended while UDS was active (wireless.pending): UDS refused this run, radio with nobody in range; it is tried again next run"); return 0; } }
+	{ FILE *f = fopen(PENDING_PATH, "wb"); if (f) { fputs("udsInit", f); fclose(f); } }
+	WLOG("[WIRELESS] udsInit starting (marker wireless.pending written)");
 	Result r = udsInit(0x3000, NULL);
-	if (R_FAILED(r)) { PSPNativeMemLog("[WIRELESS] udsInit failed %08lx (wireless switched off?)", r); return 0; }
+	if (R_FAILED(r)) { remove(PENDING_PATH); WLOG("[WIRELESS] udsInit failed %08lx (wireless switched off?)", r); return 0; }
 	LightLock_Init(&sLock);
 	sQuit = 0; sCmd = CMD_NONE; sScanOn = 0; sNetCount = 0; sState = P3U_IDLE;
-	sThread = threadCreate(worker, NULL, 0x4000, 0x31, -2, false);
-	if (!sThread) { udsExit(); sState = P3U_OFF; PSPNativeMemLog("[WIRELESS] uds worker thread failed"); return 0; }
-	PSPNativeMemLog("[WIRELESS] udsInit ok");
+	sThread = threadCreate(worker, NULL, 0x10000, 0x31, -2, false);
+	if (!sThread) { udsExit(); sState = P3U_OFF; remove(PENDING_PATH); WLOG("[WIRELESS] uds worker thread failed"); return 0; }
+	WLOG("[WIRELESS] udsInit ok");
 	return 1;
 }
 
@@ -168,7 +206,8 @@ void P3U_Exit(void)
 	threadFree(sThread);
 	udsExit();
 	sState = P3U_OFF;
-	PSPNativeMemLog("[WIRELESS] udsExit");
+	remove(PENDING_PATH);
+	WLOG("[WIRELESS] udsExit");
 }
 
 static void post(int cmd) { __atomic_store_n(&sCmd, cmd, __ATOMIC_SEQ_CST); }

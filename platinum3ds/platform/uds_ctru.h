@@ -16,6 +16,7 @@ typedef struct {
 unsigned long long P3U_NowUs(void);
 int P3U_Init(void);           /* udsInit + worker thread; 0 when wireless is off or the service fails */
 void P3U_Exit(void);
+void P3U_ClearPending(void); /* clean-exit hook: removes sdmc:/3ds/platinum3ds/wireless.pending */
 void P3U_Host(const void *app, int len, int maxNodes); /* async: state BUSY -> HOST or FAILED */
 void P3U_SetAppData(const void *app, int len);
 void P3U_Scan(int on);        /* worker scans while idle */
