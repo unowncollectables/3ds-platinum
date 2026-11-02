@@ -786,34 +786,34 @@ void MD5Digest(unsigned char *input, unsigned int len, char output[33])
 
 /* ---- run 99: use the real GameSpy profile id in the GTS ------------------------------------------------------------------------
  * Run 98: the login worked (profile id 603803353) but every GTS request still said pid=-1. The game keeps the id in SysInfo
- * (Save_SysInfo_GetDwcProfileId); earlier test runs stored -1 there, Save_SysInfo_SetDwcProfileId only writes when the field is 0, and
+ * (SystemData_GetDWCProfileId); earlier test runs stored -1 there, SystemData_SetDWCProfileId only writes when the field is 0, and
  * the game reads the field instead of asking DWC again. So: while this run's login succeeded, a stored 0 or -1 reads as the real id,
  * and a -1 that is about to be stored becomes the real id. Never touches the save except through the game's own setter. */
-extern int __real_Save_SysInfo_GetDwcProfileId(void *sysInfo);
-extern void __real_Save_SysInfo_SetDwcProfileId(void *sysInfo, int profileId);
-int __wrap_Save_SysInfo_GetDwcProfileId(void *sysInfo)
+extern int __real_SystemData_GetDWCProfileId(void *sysInfo);
+extern void __real_SystemData_SetDWCProfileId(void *sysInfo, int profileId);
+int __wrap_SystemData_GetDWCProfileId(void *sysInfo)
 {
-    int v = __real_Save_SysInfo_GetDwcProfileId(sysInfo);
+    int v = __real_SystemData_GetDWCProfileId(sysInfo);
     if ((v == -1 || v == 0) && sLoginDone == 2 && sLoginPid > 0) {
         static int told; if (!told) { told = 1; NLOG("[LOGIN] GTS profile id: save held %d, using the login's %d", v, sLoginPid); }
         return sLoginPid;
     }
     return v;
 }
-void __wrap_Save_SysInfo_SetDwcProfileId(void *sysInfo, int profileId)
+void __wrap_SystemData_SetDWCProfileId(void *sysInfo, int profileId)
 {
     if (profileId == -1 && sLoginDone == 2 && sLoginPid > 0) { NLOG("[LOGIN] storing the login's profile id %d instead of -1", sLoginPid); profileId = sLoginPid; }
-    __real_Save_SysInfo_SetDwcProfileId(sysInfo, profileId);
+    __real_SystemData_SetDWCProfileId(sysInfo, profileId);
 }
 
 /* ---- run 101: say which GTS state machine ends in the comm-error screen -------------------------------------------------------------
  * Run 100 log: after a finished deposit the game froze on its comm-error screen (error 4 = the ov70 state machines' 3600-frame wait
  * timeout, then a hard spin). The callers are lifted functions; the return address tells which one and the code says why it waited. */
-extern void __real_ShowCommunicationError(unsigned heapID, unsigned error, unsigned errorCode);
-void __wrap_ShowCommunicationError(unsigned heapID, unsigned error, unsigned errorCode)
+extern void __real_NetworkError_DisplayNetworkError(unsigned heapID, unsigned error, unsigned errorCode);
+void __wrap_NetworkError_DisplayNetworkError(unsigned heapID, unsigned error, unsigned errorCode)
 {
     extern int DWC_GetLastError(int *code); int dcode = 0, derr = DWC_GetLastError(&dcode);
-    NLOG("[COMM] ShowCommunicationError(heap %u, error %u, code %u) called from %p; DWC last error %d code %d; login %d pid %d",
+    NLOG("[COMM] NetworkError_DisplayNetworkError(heap %u, error %u, code %u) called from %p; DWC last error %d code %d; login %d pid %d",
          heapID, error, errorCode, __builtin_return_address(0), derr, dcode, sLoginDone, sLoginPid);
-    __real_ShowCommunicationError(heapID, error, errorCode);
+    __real_NetworkError_DisplayNetworkError(heapID, error, errorCode);
 }

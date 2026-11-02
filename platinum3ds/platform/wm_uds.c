@@ -298,17 +298,18 @@ static void stop(void){parent=FALSE;parentCallback=NULL;drop(WM_APIID_START_SCAN
 static void chooseMode(void){
  if(initialized)return;
  udsMode=0;
- {int w=P3DS_CfgInt("wireless",0);
-  if(w==1){
-   if(P3U_Init()){udsMode=1;PSPNativeMemLog("[WIRELESS] WM on 3DS local wireless (wireless=1)");}
-   else PSPNativeMemLog("[WIRELESS] wireless=1 but UDS is unavailable: radio with nobody in range");
-  } else if(w==2){
+ { extern void P3DS_LogFlushSync(void); int w=P3DS_CfgInt("wireless",0);
+  PSPNativeMemLog("[WIRELESS] WM init called by the game (wireless=%d)",w); P3DS_LogFlushSync();
+  if(w==2){
+   /* ONLINE: WM stays the radio-with-nobody; the game's Wi-Fi Connection code runs over 3DS sockets (p3ds_net.c). */
    extern int P3DS_NetInit(void);
    PSPNativeMemLog("[NET] online mode (wireless=2): sockets %s",P3DS_NetInit()?"up":"unavailable");
-   /* online uses the game's own Wi-Fi / DWC stack; WM local radio stays absent */
+  } else if(w==1){
+   if(P3U_Init()){udsMode=1;PSPNativeMemLog("[WIRELESS] WM on 3DS local wireless (wireless=1)");}
+   else PSPNativeMemLog("[WIRELESS] wireless=1 but UDS is unavailable: radio with nobody in range");
   }
  }
- if(!udsMode&&P3DS_CfgInt("wireless",0)!=2){static BOOL told;if(!told){told=TRUE;PSPNativeMemLog("[WIRELESS] WM stand-in: radio on, no other DS in range");}}
+ if(!udsMode){static BOOL told;if(!told){told=TRUE;PSPNativeMemLog("[WIRELESS] WM stand-in: radio on, no other DS in range");}}
 }
 WMErrCode WM_Init(void*buf,u16 dma){(void)buf;(void)dma;chooseMode();initialized=TRUE;return WM_ERRCODE_SUCCESS;}
 WMErrCode WM_Initialize(void*buf,WMCallbackFunc fn,u16 dma){

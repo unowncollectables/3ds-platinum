@@ -21,9 +21,11 @@ in Platinum and SoulSilver.
 So "everything like normal" splits into two parts. **Local play works between ports** (3DS to 3DS, Platinum and
 SoulSilver mixed). **Playing with legit games works online through a revival server**, not locally.
 
-## Online mode (wireless=2) — Run 124
+## Online mode (wireless=2) — Run 124 / 124b
 
 Ported from SoulSilver's `ss3ds_net.c` / `ss3ds_dwcstub.c` into `platinum3ds/platform/p3ds_net.c` and `p3ds_dwcstub.c`.
+**Run 124b (direct SS port):** `uds_ctru.c` taken from working SoulSilver (scan cache, 20× connect retry+rescan, sync WLOG, `wireless.pending` guard). GTS wraps remapped to Platinum names (`SystemData_*DWCProfileId`, `NetworkError_DisplayNetworkError`). Overlay thunks in `p3ds_dwcstub.c` remain SS-addressed; Platinum overlays already call real `DWC_*` from libntrdwc, so those thunks are unused here.
+
 
 - Settings → **WIRELESS**: OFF (default) / LOCAL (UDS 3DS↔3DS) / ONLINE.
 - ONLINE calls `P3DS_NetInit` (`socInit` + community DNS). Default DNS `178.62.43.212` (Poke Classic Network); override with `wifi_dns=<ipv4>` in config.txt.

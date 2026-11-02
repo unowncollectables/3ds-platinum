@@ -70,7 +70,7 @@ static void hardExit(int code) {
     extern BOOL PSPNative_CloseBackup(void); PSPNative_CloseBackup(); p3SaveBackup("exit");
     P3DS_ShutdownThreads(); P3DS_ShutdownSDL();
     PSPNativeMemLog("[3DS] exit: clean");
-    P3DS_LogFlushSync(); aptUnhook(&hookCookie); gfxExit(); exit(code);
+    { extern void P3U_ClearPending(void); P3U_ClearPending(); } P3DS_LogFlushSync(); aptUnhook(&hookCookie); gfxExit(); exit(code);
 }
 static char lastMsg[200];
 #include "crumbs.h"
