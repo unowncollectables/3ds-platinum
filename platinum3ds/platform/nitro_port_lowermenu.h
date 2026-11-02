@@ -91,3 +91,16 @@ int NitroPort_LowerMenuPanelAt(int x, int y, int *dsX, int *dsY);
 #endif
 
 #endif
+/* run 123: Gabe pokeplatinum-3ds lower-menu panel APIs (stubs until game patches land). Code/ideas from GabeSud0/pokeplatinum-3ds. */
+typedef struct { int y0, y1, srcY0; } NitroLowerPanelRun;
+typedef struct { int pad; } NitroLowerTabStyle;
+void NitroPort_LowerMenuSetTall(int tall);
+int NitroPort_LowerMenuTall(void);
+void NitroPort_LowerMenuSetPanelTouch(int on);
+void NitroPort_LowerMenuSetPanel(int shows);
+int NitroPort_LowerMenuPanel(void);
+void NitroPort_LowerMenuSetPanelRuns(const NitroLowerPanelRun *runs, int count);
+void NitroPort_LowerMenuSetTabs(int count, const char *const *labels, int active, const NitroLowerTabStyle *style);
+void NitroPort_LowerMenuSetPanelButtons(const short (*rects)[4], int count);
+void NitroPort_LowerMenuSetAvailable(int available);
+int NitroPort_LowerMenuAvailable(void);

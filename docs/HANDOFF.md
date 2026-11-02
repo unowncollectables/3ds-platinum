@@ -1,3 +1,10 @@
+# Run 123 — SoulSilver Batch 3 + Gabe lower-menu API stubs
+
+- Ported ribbons/celebrate/achievements/tracker modules (paths -> platinum3ds); toggles default OFF
+- type_hint draw path + P3DS_MoveHint (battle snapshot hook still needed)
+- Gabe pokeplatinum-3ds panel API stubs on lower menu (code/ideas only; no assets)
+- Not fully live without game-side hooks (summary, fight menu, badge publish, Johto map)
+
 # Run 122 — SoulSilver Batch 2 (stereo depth, save backups/export, crash log, quit-save)
 
 - stereo_depth settings row (FLAT/DEPTH, default DEPTH)

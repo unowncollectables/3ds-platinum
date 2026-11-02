@@ -1,4 +1,5 @@
 # platinum3ds progress
+- Run 123: SoulSilver Batch 3 — type_hint/ribbons/celebrate/achievements/tracker (+ Gabe lower-menu API stubs); hooks pending
 - Run 122: SoulSilver Batch 2 — stereo_depth, 8x save backups + export, crash-log keep, quit-save-first
 - Run 121: SoulSilver Batch 1 — speed tweaks (fps_tweaks 2-7 + par.c), FAST 3D/AUTO (g3_sharp), audio style CLEAN/LIGHT/DS RAW + wake/DSP/watchdog, skip-intro soft-reset stall fix
 ## Done

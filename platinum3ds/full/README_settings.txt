@@ -397,3 +397,13 @@ SAVE_BACKUP — now 8 rotating validated backups (was 3), also 2 s after each in
 EXPORT_SAVE (save_export) — action: A copies verified platinum.sav to export/ on the SD (read-back check).
 Crash log: unclean previous run kept as log_crash.txt; clean exit rotates to log_prev.txt.
 Quit: write/close save BEFORE tearing down threads (SS run 102).
+
+==== Run 123 (SoulSilver Batch 3 + Gabe menu APIs) ====
+TYPE_HINT (type_hint) — default OFF. FIGHT-menu effectiveness badges when P3DS_MoveHint is filled (battle hook not yet on Platinum; toggle is inert until then).
+RIBBON_CHECK — default OFF. X on summary for ribbon checklist (needs summary glue; inert until hook).
+CELEBRATIONS — default OFF. Holiday/birthday particles (map IDs still HGSS-oriented; use celeb_test=N to force).
+ACH_TOASTS — default OFF in menu row (module default was ON in SS; Platinum menu default OFF). Achievement unlocks need publish hook.
+TRACKER — default OFF. Roamer/daycare (HGSS Johto map UI; data publish hook not on Platinum yet).
+PM_SHORTCUTS — default OFF. Pokemon-menu X/Y shortcuts (needs SS hook 0123 equivalent).
+Gabe lower-menu panel APIs: SetPanel/SetTabs/SetPanelRuns/etc. stubbed in lowermenu.c (from pokeplatinum-3ds); full bag/party/save/options panels need Gabe game patches 0035-0041.
+Settings already had scrolling tabs+tooltips (runApp); new rows use that.
