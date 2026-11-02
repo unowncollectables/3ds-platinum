@@ -806,3 +806,15 @@ int NitroPort_LowerMenuTakePress(void)
 {
     return __atomic_exchange_n(&sPress, -1, __ATOMIC_ACQ_REL);
 }
+
+/* run 123 Gabe panel API stubs (no behaviour until panel patches hook them) */
+void NitroPort_LowerMenuSetTall(int tall){(void)tall;}
+int NitroPort_LowerMenuTall(void){return 0;}
+void NitroPort_LowerMenuSetPanelTouch(int on){(void)on;}
+void NitroPort_LowerMenuSetPanel(int shows){(void)shows;}
+int NitroPort_LowerMenuPanel(void){return 0;}
+void NitroPort_LowerMenuSetPanelRuns(const NitroLowerPanelRun *runs, int count){(void)runs;(void)count;}
+void NitroPort_LowerMenuSetTabs(int count, const char *const *labels, int active, const NitroLowerTabStyle *style){(void)count;(void)labels;(void)active;(void)style;}
+void NitroPort_LowerMenuSetPanelButtons(const short (*rects)[4], int count){(void)rects;(void)count;}
+void NitroPort_LowerMenuSetAvailable(int available){(void)available;}
+int NitroPort_LowerMenuAvailable(void){return 1;}

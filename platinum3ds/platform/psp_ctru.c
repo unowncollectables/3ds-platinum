@@ -193,6 +193,24 @@ int sceAudioOutputPannedBlocking(int ch, int l, int r, void *b) {
     memcpy((void *)w->data_vaddr, b, sasGrain * 4); DSP_FlushDataCache(w->data_vaddr, sasGrain * 4);
     ndspChnWaveBufAdd(0, w); wbNext = (wbNext + 1) % lead; return 0;
 }
+
+/* run 123: string config reader (birthdays= list etc.) */
+int P3DS_CfgStr(const char *key, char *out, int n) {
+    if (!key || !out || n < 2) return 0; out[0] = 0;
+    FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (!f) return 0;
+    char l[512]; size_t kl = strlen(key); int ok = 0;
+    while (fgets(l, sizeof l, f)) {
+        if (strncmp(l, key, kl) || l[kl] != '=') continue;
+        char *v = l + kl + 1; size_t vl = strlen(v); while (vl && (v[vl-1]=='\n'||v[vl-1]=='\r')) v[--vl]=0;
+        if ((int)vl >= n) vl = (size_t)n - 1; memcpy(out, v, vl); out[vl] = 0; ok = 1; break;
+    }
+    fclose(f); return ok;
+}
+volatile int P3DS_MmMap; /* celebrate/tracker: set from P3DS_CurMap each frame when wired */
+volatile int P3DS_SumOpen; /* ribbons: summary screen open (needs glue hook; stays 0 until ported) */
+volatile int P3DS_MoveHint[24]; /* type_hint fight-menu snapshot (needs battle hook; stays 0 until ported) */
+int P3DS_InBattle; /* run 123: set by battle glue when ported; type_hint stays inert until then */
+
 /* Pad, RTC, MAC, power callbacks, sysmem, file I/O. */
 #include <pspctrl.h>
 #include <psprtc.h>

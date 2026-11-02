@@ -376,7 +376,7 @@ extern "C" void P3DS_Toast(const char*t){snprintf(toastText,sizeof toastText,"%s
 /* run 76 dw_debris=1 (default 0): Distortion World void, 2D layer drawn over the field picture: 18 slow-drifting
    debris flecks at 3 parallax depths + 6 near-camera dust motes. Deterministic seed, capped counts, alpha-blended
    (dark violet / grey), per-eye shift by depth so it sits behind/in front in stereo. Visual only. */
-extern "C" int P3DS_CurMap,P3DS_InField,P3DS_StereoShiftNow(void);
+extern "C" int P3DS_CurMap,P3DS_InField,P3DS_StereoShiftNow(void); extern "C" volatile int P3DS_MmMap,P3DS_SumOpen; extern "C" volatile int P3DS_MoveHint[24]; extern "C" int P3DS_InBattle;
 static void drawTodTint(u32*img){/* run 76 tod_tint: soft evening/night tint on the DS picture outdoors (off by default) */
  extern int P3DS_MapOutdoor;if(!P3DS_InField||!P3DS_MapOutdoor)return;if(!P3DS_CfgInt("tod_tint",0))return;
  static const int ch[5]={0,7,12,18,22};int ct=P3DS_CfgInt("cheat_time",0);int h;if(ct>0&&ct<5)h=ch[ct];else{time_t t=time(nullptr);struct tm*lt=localtime(&t);h=lt?lt->tm_hour:12;}
@@ -449,6 +449,37 @@ static void emLoad(){emN=0;FILE*f=fopen("sdmc:/3ds/platinum3ds/emotes.bin","rb")
  fclose(f);PSPNativeMemLog("[FOL] emotes.bin: %d bubbles",emN);}
 extern "C" void P3DS_FolEmote(int i,int ms){if(emN<0)emLoad();emIdx=i;emMs=ms;emAt=svcGetSystemTick();PSPNativeMemLog("[FOL] emote %d",i);}
 extern "C" void P3DS_FolEmoteAt(int x,int y){emX=x;emY=y;}
+
+/* run 123 type_hint (default OFF): badges on FIGHT menu when P3DS_MoveHint is filled by a battle hook (not yet wired on Platinum). */
+extern "C" { void P3DS_RibbonDraw(unsigned*); void P3DS_RibbonFrame(unsigned); int P3DS_RibbonOn(void); void P3DS_CelebDraw(unsigned*,int); int P3DS_CelebOn(void);
+ void P3DS_AchSetToasts(int); int P3DS_AchToastsOn(void); void P3DS_TrkSetOn(int); int P3DS_TrkOn(void); void P3DS_RibbonSetOn(int); void P3DS_CelebSetOn(int); }
+static int hintMult(int a,int d){static const signed char T[][3]={{0,5,1},{0,8,1},{0,7,0},{10,10,1},{10,11,1},{10,12,4},{10,15,4},{10,6,4},{10,5,1},{10,16,1},{10,8,4},
+ {11,10,4},{11,11,1},{11,12,1},{11,4,4},{11,5,4},{11,16,1},{13,11,4},{13,13,1},{13,12,1},{13,4,0},{13,2,4},{13,16,1},
+ {12,10,1},{12,11,4},{12,12,1},{12,3,1},{12,4,4},{12,2,1},{12,6,1},{12,5,4},{12,16,1},{12,8,1},{15,10,1},{15,11,1},{15,12,4},{15,15,1},{15,4,4},{15,2,4},{15,16,4},{15,8,1},
+ {1,0,4},{1,15,4},{1,3,1},{1,2,1},{1,14,1},{1,6,1},{1,5,4},{1,7,0},{1,17,4},{1,8,4},{3,12,4},{3,3,1},{3,4,1},{3,5,1},{3,7,1},{3,8,0},
+ {4,10,4},{4,13,4},{4,3,4},{4,2,0},{4,6,1},{4,5,4},{4,8,4},{2,13,1},{2,12,4},{2,1,4},{2,6,4},{2,5,1},{2,8,1},
+ {14,1,4},{14,3,4},{14,14,1},{14,17,0},{14,8,1},{6,10,1},{6,12,4},{6,1,1},{6,3,1},{6,2,1},{6,14,4},{6,7,1},{6,17,4},{6,8,1},
+ {5,10,4},{5,15,4},{5,1,1},{5,4,1},{5,2,4},{5,6,4},{5,8,1},{7,0,0},{7,14,4},{7,7,4},{7,17,1},{7,8,1},{16,16,4},{16,8,1},
+ {17,1,1},{17,14,4},{17,7,4},{17,17,1},{17,8,1},{8,10,1},{8,11,1},{8,13,1},{8,15,4},{8,5,4},{8,8,1}};
+ for(int i=0;i<(int)(sizeof T/sizeof T[0]);i++)if(T[i][0]==a&&T[i][1]==d)return T[i][2];return 2;}
+static void drawTiny(u32*img,int x,int y,const char*t,u32 c){/* 3x5 caps */static const unsigned char F[26]={0x5f,0x7c,0x39,0x5e,0x79,0x71,0x3d,0x75,0x7f,0x6f,0x77,0x3c,0x37,0x76,0x3f,0x73,0x6b,0x74,0x6d,0x78,0x3e,0x1c,0x7a,0x55,0x6e,0x5b};
+ for(int i=0;t[i];i++){char ch=t[i];if(ch>='a'&&ch<='z')ch=(char)(ch-'a'+'A');unsigned char b=(ch>='A'&&ch<='Z')?F[ch-'A']:(ch=='/'?0x12:(ch=='X'?0x55:0));
+  for(int yy=0;yy<5;yy++)for(int xx=0;xx<3;xx++)if(b&(1<<(yy*3+xx))){int X=x+i*4+xx,Y=y+yy;if(X>=0&&X<256&&Y>=0&&Y<192)img[Y*256+X]=c;}}}
+static void drawTypeHint(u32*img){
+ if(!P3DS_InBattle||!P3DS_MoveHint[0]||!P3DS_CfgInt("type_hint",0))return;
+ static const int kHintX[2]={4,132},kHintY[2]={79,144},kHintW=120;
+ for(int k=0;k<4;k++){const int mv=P3DS_MoveHint[2+k],ty=P3DS_MoveHint[6+k];if(mv<=0||mv>=468||ty>=18||P3DS_MoveHint[10+k]<=0)continue;
+  int best=-1;bool two=P3DS_MoveHint[16]<18;
+  for(int f=0;f<(two?2:1);f++){const int t1=P3DS_MoveHint[14+2*f],t2=P3DS_MoveHint[15+2*f];if(t1>=18)continue;
+   int m=hintMult(ty,t1)*(t2<18&&t2!=t1?hintMult(ty,t2):2);if(f==0||m>best)best=m;}
+  if(best<0||best==4)continue;
+  const char*txt=best==0?"NO EFFECT":best==1?"RESIST X1/4":best==2?"RESIST X1/2":best==8?"SUPER X2":"SUPER X4";
+  u32 col=best==0?0x00707070u:best<4?0x003030C8u:0x0030A030u;
+  const int x0=kHintX[k&1],y0=kHintY[k>>1];const int w=(int)strlen(txt)*4-1,pw=w+6,px=x0+kHintW-4-pw,py=y0,ph=9;const u32 dk=(col>>1)&0x007F7F7Fu;
+  for(int yy=0;yy<ph;yy++)for(int xx=0;xx<pw;xx++){if((xx==0||xx==pw-1)&&(yy==0||yy>=ph-2))continue;
+   const int X=px+xx,Y=py+yy;if(X>=0&&X<256&&Y>=0&&Y<192)img[Y*256+X]=yy>=ph-1?dk:col;}
+  drawTiny(img,px+3,py+2,txt,0x00FFFFFFu);}}
+
 static void drawFolEmote(u32*img,u64 now){if(emIdx<0||emIdx>=emN||!emAt)return;const u64 el=(now-emAt)/CPU_TICKS_PER_MSEC;if(el>(u64)emMs||!P3DS_InField){emAt=0;return;}
  const u32*t=emTex[emIdx];int sc=el<120?(int)(el*16/120)+1:16;if(sc>16)sc=16;const int bob=el>=120&&((el/250)&1)?1:0;
  const int w=32*sc/16,x0=emX-w/2,y0=emY-w+10-bob;
@@ -892,11 +923,14 @@ static const MItem mItems[]={
  {"AUDIO_STYLE","audio_limiter",4,{"OFF","CLEAN","LIGHT","DS RAW"}},{"AUDIO_STALLFADE","audio_stallfade",2,{"OFF","ON"}},{"AUDIO_GAIN","audio_gain",7,{"4","5","6","7","8","9","10"}},
  /* run 122 Batch 2: stereo depth lock, export save action */
  {"STEREO_DEPTH","stereo_depth",2,{"FLAT","DEPTH"}},{"EXPORT_SAVE","save_export",2,{"A: EXPORT","EXPORT ON CLOSE"}},
+ /* run 123 Batch 3: type hint, ribbons, celebrate, achievements toasts, tracker, pm shortcuts (risky/default OFF) */
+ {"TYPE_HINT","type_hint",2,{"OFF","ON"}},{"RIBBON_CHECK","ribbon_check",2,{"OFF","ON"}},{"CELEBRATIONS","celebrations",2,{"OFF","ON"}},
+ {"ACH_TOASTS","ach_toasts",2,{"OFF","ON"}},{"TRACKER","tracker",2,{"OFF","ON"}},{"PM_SHORTCUTS","pm_shortcuts",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0,0,0,0,0,0,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(!strcmp(mItems[33+k].key,"fps_tweaks"))v=v<=0?0:v>=2&&v<=7?v-1:0;
    if(!strcmp(mItems[33+k].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};int b=6;for(int t=0;t<7;t++)if(abs(kG[t]-v)<abs(kG[b]-v))b=t;v=b;}
    if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
@@ -912,6 +946,12 @@ static void menuSet(int i,int v){if(i>=33){genGet(0);genV[i-33]=v;static const i
   if(!strcmp(mItems[i].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};P3DS_SetAudioGain(kG[v]);P3DS_CfgWrite("audio_gain",kG[v]);return;}
   if(!strcmp(mItems[i].key,"stereo_depth")){extern void P3DS_SetStereoDepth(int);P3DS_SetStereoDepth(v);P3DS_CfgWrite("stereo_depth",v);return;}
   if(!strcmp(mItems[i].key,"save_export")){if(v){extern int P3DS_SaveExport(void);P3DS_SaveExport();}genV[i-33]=0;return;}
+  if(!strcmp(mItems[i].key,"type_hint")){P3DS_CfgWrite("type_hint",v);return;}
+  if(!strcmp(mItems[i].key,"ribbon_check")){P3DS_RibbonSetOn(v);return;}
+  if(!strcmp(mItems[i].key,"celebrations")){P3DS_CelebSetOn(v);return;}
+  if(!strcmp(mItems[i].key,"ach_toasts")){P3DS_AchSetToasts(v);P3DS_CfgWrite("ach_toasts",v);return;}
+  if(!strcmp(mItems[i].key,"tracker")){P3DS_TrkSetOn(v);return;}
+  if(!strcmp(mItems[i].key,"pm_shortcuts")){P3DS_CfgWrite("pm_shortcuts",v);return;}
   return;}if(i>=27&&i<33)cheatV[i-27]=v;switch(i){case 0:fpsOn=v!=0;break;case 1:wideCfg=v;break;case 2:P3DS_SetScaleMode(v);break;case 3:P3DS_SetCstickMode(v);break;
   case 4:P3DS_CtlZl=v;if(!v){extern volatile int P3DS_RunToggle;P3DS_RunToggle=0;}break;case 5:P3DS_CtlZr=v;break;case 6:P3DS_CtlCp=v;break;case 7:wideFxV=v;break;case 8:P3DS_SetLogLevel(v?2:1);break;
   case 9:P3DS_SetCamZoom(v-2);break;case 10:stereoStr=v;break;case 11:P3DS_SetGpuSwizzle(v);break;case 12:G3G_SetFastConv(v);break;case 13:splitCfg=v;break;case 14:P3DS_SetFollowerCfg(v);break;case 15:P3DS_SetGpuComposeCfg(v);break;
@@ -1374,6 +1414,7 @@ static int Present(bool){
  if(async)bWaitDone(excl,earlyB?2:1,earlyB);
  if(onC1)LightEvent_Wait(&c1Done); P3DS_St[4]=svcGetSystemTick();
  huntTick();batteryTick();
+
  {/* run 76 display capture (DISPCAPCNT 0x4000064): the Spear Pillar / Giratina transition captures the screen into a VRAM
      bank and shows that bank; unimplemented it was black. Minimal version: source A (engine A output, 8-bit -> RGB555); display_capture=0 restores the old ignore,
      no blending, written into the LCDC bank; the enable bit is cleared like on hardware. */
@@ -1454,7 +1495,10 @@ static int Present(bool){
  {extern int P3DS_HazeOn;P3DS_HazeOn=0;if(P3DS_WideHazeCfg()&&!wideFxCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000))wideHaze(display[0],GPU3D::NativeFrame);}
  P3DS_WideFxOn=0;if(wideFxCfg()&&G3G_Wide&&G3G_StripValid>=1&&P3DS_InField&&(power&0x8000)){u64 tw=svcGetSystemTick();wideFx(display[0],GPU3D::NativeFrame,G3G_StripValid>=2?2:1);P3DS_WideFxOn=G3G_StripValid>=2?2:1;
   {static u64 acc;static unsigned n;acc+=svcGetSystemTick()-tw;if(++n==600){PSPNativeMemLog("[WIDE] wide_fx avg %u us/frame",(unsigned)(acc/600/268));acc=0;n=0;}}}
- {u64 nowT=svcGetSystemTick();u32*tt=(u32*)(stereo?eyeL:top);drawSaveBox(tt,nowT);if(stereo)drawSaveBox((u32*)eyeR,nowT);drawToast(tt,nowT);if(stereo)drawToast((u32*)eyeR,nowT);drawShinyFlash(tt,nowT);if(stereo)drawShinyFlash((u32*)eyeR,nowT);drawTodTint(tt);if(stereo)drawTodTint((u32*)eyeR);drawDwRoll(tt);if(stereo)drawDwRoll((u32*)eyeR);drawFolTalk(tt,nowT);drawFolEmote(tt,nowT);drawDwDebris(tt,0);if(stereo)drawDwDebris((u32*)eyeR,1);if(stereo)drawFolEmote((u32*)eyeR,nowT);drawSumIV(tt);drawPrompt(tt);if(stereo)drawPrompt((u32*)eyeR);if(stereo&&sumShow)drawSumIV((u32*)eyeR);if(stereo)drawFolTalk((u32*)eyeR,nowT);} P3DS_St[7]=svcGetSystemTick();
+ {u64 nowT=svcGetSystemTick();u32*tt=(u32*)(stereo?eyeL:top);drawSaveBox(tt,nowT);if(stereo)drawSaveBox((u32*)eyeR,nowT);drawToast(tt,nowT);if(stereo)drawToast((u32*)eyeR,nowT);drawShinyFlash(tt,nowT);if(stereo)drawShinyFlash((u32*)eyeR,nowT);drawTodTint(tt);if(stereo)drawTodTint((u32*)eyeR);drawDwRoll(tt);if(stereo)drawDwRoll((u32*)eyeR);drawFolTalk(tt,nowT);drawFolEmote(tt,nowT);drawDwDebris(tt,0);if(stereo)drawDwDebris((u32*)eyeR,1);if(stereo)drawFolEmote((u32*)eyeR,nowT);drawSumIV(tt);drawPrompt(tt);if(stereo)drawPrompt((u32*)eyeR);if(stereo&&sumShow)drawSumIV((u32*)eyeR);if(stereo)drawFolTalk((u32*)eyeR,nowT);
+  drawTypeHint((u32*)bot);if(P3DS_RibbonOn()){P3DS_RibbonFrame(hidKeysHeld());P3DS_RibbonDraw((unsigned*)bot);}
+  if(P3DS_CelebOn()){P3DS_CelebDraw((unsigned*)(stereo?eyeL:top),0);if(stereo)P3DS_CelebDraw((unsigned*)eyeR,1);}
+ } P3DS_St[7]=svcGetSystemTick();
  {static int fi;if(!fi){fi=1;fpsOn=P3DS_CfgInt("fps_counter",0)!=0;/* run 64: default 0 (clean launch) */}}/* run 55: fps_counter (menu-saved) */
  if(fpsOn){char b[24];snprintf(b,sizeof b,"%u %u.%u",fpsShown,msShown/10,msShown%10);u32*tt=(u32*)(stereo?eyeL:top);drawText(tt,2,2,b);if(stereo)drawText((u32*)eyeR,2,2,b);}
  {u64 nowS=svcGetSystemTick();if(splashActive(nowS)){drawSplash((u32*)(stereo?eyeL:top),nowS);if(stereo)drawSplash((u32*)eyeR,nowS);}}
@@ -1505,7 +1549,7 @@ static int Present(bool){
  if(mode&&gpuOk==1){extern int P3DS_GpuBotSame;P3DS_GpuBotSame=(power&0x8000)&&P3DS_BottomReused;/* run 41: !fpsOn removed (FPS text is drawn on the top screen; it blocked every skip) */P3DS_GpuPresent(stereo?eyeL:top,bot,mode,!P3DS_ConsoleOnBottom(),stereo?eyeR:nullptr);}
  else{present(GFX_TOP,400,top,0);if(!P3DS_ConsoleOnBottom())present(GFX_BOTTOM,320,bot,0);gfxFlushBuffers();gfxSwapBuffers();}
  P3DS_GameFramePresented();
- u64 tEnd=svcGetSystemTick();last2DUs=(unsigned)((tEnd-t0)/CPU_TICKS_PER_USEC);frames++;P3DS_FpsGuardFrame();
+ u64 tEnd=svcGetSystemTick();last2DUs=(unsigned)((tEnd-t0)/CPU_TICKS_PER_USEC);frames++;P3DS_FpsGuardFrame();P3DS_MmMap=P3DS_CurMap;{extern volatile int P3DS_CatchInfo[20];if(P3DS_CatchInfo[0]&&!P3DS_InField)P3DS_InBattle=1;else if(P3DS_InField)P3DS_InBattle=0;}
  {static unsigned bl;if(++bl%600==0){if(P3DS_LogLevel()>=2)PSPNativeMemLog("[2D] bottom_skip: reused %u, recomposed %u of last 600 | steal_b: engine B on main %u, worker %u | early_b %u | split_top %u",bSkips,bDraws,stealMain,stealWorker,earlyN,splitN);earlyN=0;splitN=0;bSkips=bDraws=0;stealMain=stealWorker=0;lS=lD=0;}}
  {unsigned total=tPrevEnd?(unsigned)((tEnd-tPrevEnd)/CPU_TICKS_PER_USEC):0,comp=(unsigned)((tComp-t0)/CPU_TICKS_PER_USEC),gpu=(unsigned)((tEnd-tComp)/CPU_TICKS_PER_USEC);
 #ifdef P3DS_PROF
