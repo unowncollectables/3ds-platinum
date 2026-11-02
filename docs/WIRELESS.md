@@ -21,6 +21,16 @@ in Platinum and SoulSilver.
 So "everything like normal" splits into two parts. **Local play works between ports** (3DS to 3DS, Platinum and
 SoulSilver mixed). **Playing with legit games works online through a revival server**, not locally.
 
+## Online mode (wireless=2) — Run 124
+
+Ported from SoulSilver's `ss3ds_net.c` / `ss3ds_dwcstub.c` into `platinum3ds/platform/p3ds_net.c` and `p3ds_dwcstub.c`.
+
+- Settings → **WIRELESS**: OFF (default) / LOCAL (UDS 3DS↔3DS) / ONLINE.
+- ONLINE calls `P3DS_NetInit` (`socInit` + community DNS). Default DNS `178.62.43.212` (Poke Classic Network); override with `wifi_dns=<ipv4>` in config.txt.
+- Risky: default OFF. Cheats block online (`P3DS_OnlineCheatBlocked`). Never writes the save; DWC identity wraps adopt the save's existing user id read-only.
+- `p3ds_dwcstub.c` still carries SoulSilver overlay thunks (`ov00_021EC…`). Those symbols are HGSS-layout; Platinum's overlays use different addresses, so the SS-specific inet/netcheck stubs do **not** hook Platinum's GTS path. What *does* apply: `socInit`, DNS, and the four `--wrap=DWC_*` auth helpers.
+- Honest status: sockets + DNS + auth wraps are in; end-to-end GTS/Wi-Fi Club against Poke Classic Network is **not proven** on Platinum until Platinum-specific DWC overlay glue is written (SS reached CONNECTED with its own stubs). Local wireless (LOCAL) is unchanged.
+
 ## What the ports do today
 
 - Both ports link pspoke's `port/native-audio-app/services/wm_absent.c` (Platinum: `platinum3ds/full/Makefile`
