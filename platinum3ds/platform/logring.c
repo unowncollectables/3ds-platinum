@@ -83,6 +83,8 @@ void P3DS_LogLine(const char *line) {
     if (start) { th = threadCreate(writer, NULL, 0x4000, 0x3F, -2, true); if (!th) th = (Thread)1; }
 }
 /* Synchronous flush for crash/exit/hold paths (lock attempted; written even if it can't be taken). */
+/* Soft sync request (SS logring sets a flag for the writer thread; here we just flush). */
+void P3DS_LogRequestSync(void) { P3DS_LogFlushSync(); }
 void P3DS_LogFlushSync(void) { ensureInit(); int got = !LightLock_TryLock(&lk); if (got) LightLock_Unlock(&lk); flushOnce(got);
     if (lf && dhead) { /* log_level 1: append the recent suppressed detail lines (oldest first, from a line start) */
         u32 n = dhead < DRING ? dhead : DRING, start = dhead - n; u32 k = 0;
