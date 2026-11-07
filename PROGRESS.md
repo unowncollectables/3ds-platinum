@@ -1493,3 +1493,12 @@ MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, li
 - Not ported: the branch's "run 99" WC_SpritesPastEdge gate (wide compositor only when a sprite crosses the DS edge). Main's own runs
   99-117 rebuilt that path (wide_early_check, wide_gpu_precheck, ...), so it no longer applies.
 - Not compiled in the cloud (no devkitARM). On a builder tree, the main_menu overlay patch is new, so main_menu.c is rebuilt.
+
+## Run 121 (hm_free fix)
+- Hardware report: hm_free=1 did nothing. Cause: it only hooked Party_HasMonWithMove (Surf, Waterfall) and only accepted a mon that could
+  LEARN the HM; Cut, Rock Smash and Strength go through the FindPartySlotWithMove script command, which never saw the setting.
+- Now hm_free=1 makes Party_HasMonWithMove return the first non-egg party member for any HM move (no learnability needed), and
+  ScrCmd_FindPartySlotWithMove (work_patches/overlays/scrcmd_party.c.patch) goes through it. Covers Cut, Surf, Strength, Rock Smash, Waterfall.
+  Badges still gate each move; the first party Pokemon is the one named in the text and cut-in. Nothing is written to the save.
+- Not covered: Fly, Flash, Defog, Rock Climb, which are only offered from the party menu for a Pokemon that knows them (that menu has 4
+  field-move text slots, so adding more needs layout work). Not compiled here (no devkitARM); needs a builder run.

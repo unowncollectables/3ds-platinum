@@ -1,0 +1,29 @@
+--- a/scrcmd_party.c
++++ b/scrcmd_party.c
+@@ -143,24 +143,8 @@
+     u16 *destVar = ScriptContext_GetVarPointer(ctx);
+     u16 move = ScriptContext_GetVar(ctx);
+ 
+-    u8 partyCount = Party_GetCurrentCount(SaveData_GetParty(fieldSystem->saveData));
+-
+-    u8 slot;
+-    for (slot = 0, *destVar = MAX_PARTY_SIZE; slot < partyCount; slot++) {
+-        Pokemon *mon = Party_GetPokemonBySlotIndex(SaveData_GetParty(fieldSystem->saveData), slot);
+-
+-        if (Pokemon_GetValue(mon, MON_DATA_IS_EGG, NULL) != FALSE) {
+-            continue;
+-        }
+-
+-        if ((Pokemon_GetValue(mon, MON_DATA_MOVE1, NULL) == move)
+-            || (Pokemon_GetValue(mon, MON_DATA_MOVE2, NULL) == move)
+-            || (Pokemon_GetValue(mon, MON_DATA_MOVE3, NULL) == move)
+-            || (Pokemon_GetValue(mon, MON_DATA_MOVE4, NULL) == move)) {
+-            *destVar = slot;
+-            break;
+-        }
+-    }
++    { int found = Party_HasMonWithMove(SaveData_GetParty(fieldSystem->saveData), move); /* includes hm_free */
++      *destVar = (found == PARTY_SLOT_NONE) ? MAX_PARTY_SIZE : found; }
+ 
+     return FALSE;
+ }
