@@ -1,11 +1,5 @@
 --- a/battle_sub_menus__battle_party.c
 +++ b/battle_sub_menus__battle_party.c
-@@ -1,4 +1,5 @@
- #include "battle_sub_menus/battle_party.h"
-+#include "pspoke_qol.h"
- 
- #include "constants/contests.h"
- #include "constants/moves.h"
 @@ -1619,6 +1620,8 @@
  {
      BattlePartyPokemon *pokemon = &battleParty->partyPokemon[battleParty->context->selectedPartyIndex];
@@ -15,16 +9,3 @@
      if (BattlePartyTask_CheckIfSwitchingWithPartnersPokemon(battleParty, battleParty->context->selectedPartyIndex) == TRUE) {
          String *string = MessageLoader_GetNewString(battleParty->messageLoader, BattleParty_Text_CantSwitchWithPartnersPokemon);
  
-@@ -1731,7 +1734,12 @@
-         move = battleParty->partyPokemon[battleParty->context->selectedPartyIndex].moves[battleParty->context->selectedMoveSlot].move;
-     }
- 
-+#if PSPOKE_QOL_FORGET_HMS
-+    (void)move;
-+    return FALSE; /* PSP QoL: HM moves can be forgotten like any other move. */
-+#else
-     return Item_IsHMMove(move);
-+#endif
- }
- 
- static void ClearMoveStats(BattleParty *battleParty)
