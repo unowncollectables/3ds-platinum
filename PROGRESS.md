@@ -1497,9 +1497,10 @@ MAP -> Bag on Key Items; wide_dirty mismatch localised (battler sprite pixel, li
 ## Run 121 (hm_free fix)
 - Hardware report: hm_free=1 did nothing. Cause: it only hooked Party_HasMonWithMove (Surf, Waterfall) and only accepted a mon that could
   LEARN the HM; Cut, Rock Smash and Strength go through the FindPartySlotWithMove script command, which never saw the setting.
-- Now a new helper P3DS_HMFreeSlot (work_patches/overlays/scrcmd_party.c.patch) returns a Pokemon that knows the move, else with hm_free=1
-  and an HM move the first non-egg party member. ScrCmd_FindPartySlotWithMove (Cut, Rock Smash, Strength scripts) and the Surf/Waterfall
-  checks in field_control.c (overlay005__field_control.c.patch) use it. unk_02054884.c.patch is unchanged (editing it made the builder
-  report a conflict). Badges still gate each move; the first party Pokemon is named in the text and cut-in. Nothing is written to the save.
+- hm_free=1 helper P3DS_HMFreeSlot (work_patches/overlays/scrcmd_party.c.patch): a Pokemon that knows the move, else a non-egg party
+  Pokemon that CAN LEARN that HM (game's Pokemon_CanLearnTM; Girafarig cannot learn Waterfall, so it never stands in for it). A first
+  version accepted any party member; that was wrong and is fixed. Used by ScrCmd_FindPartySlotWithMove (Cut, Rock Smash, Strength) and
+  the Surf/Waterfall checks in field_control.c (overlay005__field_control.c.patch). unk_02054884.c.patch is unchanged (editing it made
+  the builder report a conflict). Badges still gate each move; nothing is written to the save.
 - Not covered: Fly, Flash, Defog, Rock Climb, which are only offered from the party menu for a Pokemon that knows them (that menu has 4
   field-move text slots, so adding more needs layout work). Not compiled here (no devkitARM); needs a builder run.

@@ -1,38 +1,79 @@
 --- a/scrcmd_party.c
 +++ b/scrcmd_party.c
-@@ -137,30 +137,47 @@
+@@ -3,6 +3,7 @@
+ #include <nitro.h>
+ 
+ #include "constants/heap.h"
++#include "generated/items.h"
+ #include "generated/natures.h"
+ #include "generated/species.h"
+ 
+@@ -137,30 +138,62 @@
      return FALSE;
  }
  
--BOOL ScrCmd_FindPartySlotWithMove(ScriptContext *ctx)
 +/* hm_free=1 (default off): an HM field move works with no party Pokemon knowing it. Returns the slot of a Pokemon that knows
-+   the move, else (hm_free on, move is an HM) the first non-egg slot, else -1. Badges are still checked by the scripts. */
++   the move, else (hm_free on, move is an HM) the first non-egg slot of a Pokemon that can learn it, else -1. Badges are still checked by the scripts. */
 +int P3DS_HMFreeSlot(Party *party, u16 moveID)
++{
++    extern int P3DS_CfgInt(const char *, int);
++    extern void PSPNativeMemLog(const char *, ...);
++    static int hf = -1;
++    int i, n = Party_GetCurrentCount(party);
++
++    if (hf < 0) {
++        hf = P3DS_CfgInt("hm_free", 0) != 0;
++        PSPNativeMemLog("[HM] hm_free=%d (party Pokemon that can learn an HM may use it)", hf);
++    }
++    for (i = 0; i < n; i++) {
++        Pokemon *mon = Party_GetPokemonBySlotIndex(party, i);
++        if (Pokemon_GetValue(mon, MON_DATA_IS_EGG, NULL) != FALSE) {
++            continue;
++        }
++        if (Pokemon_GetValue(mon, MON_DATA_MOVE1, NULL) == moveID || Pokemon_GetValue(mon, MON_DATA_MOVE2, NULL) == moveID
++            || Pokemon_GetValue(mon, MON_DATA_MOVE3, NULL) == moveID || Pokemon_GetValue(mon, MON_DATA_MOVE4, NULL) == moveID) {
++            return i;
++        }
++    }
++    if (hf && Item_IsHMMove(moveID)) {
++        /* only a party Pokemon that CAN learn this HM (the game's own TM/HM compatibility) stands in for one that knows it */
++        int tm = -1, it;
++        for (it = ITEM_TM01; it <= ITEM_HM08; it++) {
++            if (Item_MoveForTMHM(it) == moveID) {
++                tm = it - ITEM_TM01;
++                break;
++            }
++        }
++        if (tm >= 0) {
++            for (i = 0; i < n; i++) {
++                Pokemon *mon = Party_GetPokemonBySlotIndex(party, i);
++                if (Pokemon_GetValue(mon, MON_DATA_IS_EGG, NULL) != FALSE) {
++                    continue;
++                }
++                if (Pokemon_CanLearnTM(mon, (u8)tm)) {
++                    return i;
++                }
++            }
++        }
++    }
++    return -1;
++}
++
+ BOOL ScrCmd_FindPartySlotWithMove(ScriptContext *ctx)
  {
--    FieldSystem *fieldSystem = ctx->fieldSystem;
--    u16 *destVar = ScriptContext_GetVarPointer(ctx);
--    u16 move = ScriptContext_GetVar(ctx);
--
+     FieldSystem *fieldSystem = ctx->fieldSystem;
+     u16 *destVar = ScriptContext_GetVarPointer(ctx);
+     u16 move = ScriptContext_GetVar(ctx);
+ 
 -    u8 partyCount = Party_GetCurrentCount(SaveData_GetParty(fieldSystem->saveData));
 -
 -    u8 slot;
 -    for (slot = 0, *destVar = MAX_PARTY_SIZE; slot < partyCount; slot++) {
 -        Pokemon *mon = Party_GetPokemonBySlotIndex(SaveData_GetParty(fieldSystem->saveData), slot);
 -
-+    extern int P3DS_CfgInt(const char *, int);
-+    extern void PSPNativeMemLog(const char *, ...);
-+    static int hf = -1;
-+    int i, first = -1, n = Party_GetCurrentCount(party);
-+
-+    if (hf < 0) {
-+        hf = P3DS_CfgInt("hm_free", 0) != 0;
-+        PSPNativeMemLog("[HM] hm_free=%d (any party Pokemon may use HMs)", hf);
-+    }
-+    for (i = 0; i < n; i++) {
-+        Pokemon *mon = Party_GetPokemonBySlotIndex(party, i);
-         if (Pokemon_GetValue(mon, MON_DATA_IS_EGG, NULL) != FALSE) {
-             continue;
-         }
+-        if (Pokemon_GetValue(mon, MON_DATA_IS_EGG, NULL) != FALSE) {
+-            continue;
+-        }
 -
 -        if ((Pokemon_GetValue(mon, MON_DATA_MOVE1, NULL) == move)
 -            || (Pokemon_GetValue(mon, MON_DATA_MOVE2, NULL) == move)
@@ -40,26 +81,8 @@
 -            || (Pokemon_GetValue(mon, MON_DATA_MOVE4, NULL) == move)) {
 -            *destVar = slot;
 -            break;
-+        if (first < 0) {
-+            first = i;
-+        }
-+        if (Pokemon_GetValue(mon, MON_DATA_MOVE1, NULL) == moveID || Pokemon_GetValue(mon, MON_DATA_MOVE2, NULL) == moveID
-+            || Pokemon_GetValue(mon, MON_DATA_MOVE3, NULL) == moveID || Pokemon_GetValue(mon, MON_DATA_MOVE4, NULL) == moveID) {
-+            return i;
-         }
-     }
-+    if (hf && Item_IsHMMove(moveID)) {
-+        return first;
-+    }
-+    return -1;
-+}
-+
-+BOOL ScrCmd_FindPartySlotWithMove(ScriptContext *ctx)
-+{
-+    FieldSystem *fieldSystem = ctx->fieldSystem;
-+    u16 *destVar = ScriptContext_GetVarPointer(ctx);
-+    u16 move = ScriptContext_GetVar(ctx);
-+
+-        }
+-    }
 +    { extern int P3DS_HMFreeSlot(Party *, u16);
 +      int found = P3DS_HMFreeSlot(SaveData_GetParty(fieldSystem->saveData), move);
 +      *destVar = (found < 0) ? MAX_PARTY_SIZE : found; }
