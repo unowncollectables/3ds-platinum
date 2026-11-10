@@ -33,6 +33,29 @@ Ported from SoulSilver's `ss3ds_net.c` / `ss3ds_dwcstub.c` into `platinum3ds/pla
 - `p3ds_dwcstub.c` still carries SoulSilver overlay thunks (`ov00_021EC…`). Those symbols are HGSS-layout; Platinum's overlays use different addresses, so the SS-specific inet/netcheck stubs do **not** hook Platinum's GTS path. What *does* apply: `socInit`, DNS, and the four `--wrap=DWC_*` auth helpers.
 - Honest status: sockets + DNS + auth wraps are in; end-to-end GTS/Wi-Fi Club against Poke Classic Network is **not proven** on Platinum until Platinum-specific DWC overlay glue is written (SS reached CONNECTED with its own stubs). Local wireless (LOCAL) is unchanged.
 
+### Run 125 (2026-11-10): the network libraries themselves
+Run 124 ported the platform side, but Platinum's pspoke still built libntrwifi/libntrdwc **without a socket backend**
+(SoulSilver's pspoke-patch 0137 never came over), so every CPS socket call compiled to nothing and ONLINE could not
+reach a server. Run 125 brings over all of SoulSilver's game-agnostic `compile-network.py` fixes as one pspoke-patch,
+`pspoke-patches/0012-platinum3ds-online-network-libraries-...patch` (ss3ds 0137, 0167/0172, 0177, 0178/0179, 0183,
+0184, 0193 network part, 0195, 0196; the same order SoulSilver applies them, checked to apply on 7477648 after
+0001-0011), plus the missing `toolchain-3ds/pspshim/ifaddrs.h` that the Linux socket branch includes.
+- Fresh build: nothing extra. Already staged tree (Nathan's WSL build): run `scripts/rebuild_network.sh` once, then the
+  normal quick build. It re-syncs the staged `compile-network.py`, makes it re-run safe (`scripts/p3ds_nw_idempotent.py`,
+  from ss3ds 0181), rebuilds `libnetwork-probe.a` and deletes the elf so it relinks.
+- Not compiled in the cloud (no ROM-derived tree here). First thing to watch on the next build: compile errors in
+  `cps/src/network.c` or the libntrdwc files, then on hardware `[NET] sockets up`, `[NET] local IP`, and the DWC log line
+  `ss3ds 0179: AC phase forced COMPLETE` when you enter the GTS with Wireless = ONLINE and no cheats.
+- NAS login and the GTS use plain HTTP against Poke Classic Network (as on SoulSilver), so the Wiimmfi DPPt certificate
+  patch is not needed for this path.
+
+### Union Room on Platinum
+Unlike SoulSilver (where the Union Room is translated Thumb assembly, patches 0117-0136 there), Platinum's Union Room
+and comm system are already decompiled C in pspoke. They sit directly on `wm_uds.c`, which is the same file SoulSilver
+uses for its hardware-proven two-console trade (only the default and the `wireless.pending` path differ). So with
+Wireless = LOCAL on two consoles the Platinum Union Room should already find the other 3DS; this has never been tested.
+Test on copies of both saves: Pokemon Center 2F, Union Room, greet, trade.
+
 ## What the ports do today
 
 - Both ports link pspoke's `port/native-audio-app/services/wm_absent.c` (Platinum: `platinum3ds/full/Makefile`
