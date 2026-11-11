@@ -1,4 +1,5 @@
 # platinum3ds progress
+- Run 125: online network libraries for GTS (pspoke-patch 0012 = SoulSilver 0137..0196 compile-network.py fixes, ifaddrs.h shim, scripts/rebuild_network.sh for staged trees); not built yet
 ## Done
 - Step 1: platinum3ds/platinum3ds.3dsx (heap.c + narc.c + ROM FS). Hardware-confirmed on New 3DS.
   Build: `cd platinum3ds && DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM make`

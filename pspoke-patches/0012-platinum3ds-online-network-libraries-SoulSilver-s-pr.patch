@@ -1,0 +1,217 @@
+From 065cf18acbc0c758decef29aedd2068a57214cd9 Mon Sep 17 00:00:00 2001
+From: platinum3ds <local@box>
+Date: Tue, 10 Nov 2026 13:06:07 +0000
+Subject: [PATCH] platinum3ds: online network libraries (SoulSilver's proven
+ GTS fixes)
+
+Brings the game-agnostic compile-network.py changes that made the GTS and
+Mystery Gift WFC download work on the SoulSilver port (hardware-tested
+2026-11-02) to Platinum. libntrdwc/libntrwifi are shared by both games, so
+these are the same edits, applied in the same order:
+
+- ss3ds 0137: -DSDK_BUILD_LINUX, so libntrwifi's CPS layer gets its BSD
+  socket + select-thread backend (p3ds_net.c supplies socInit, getifaddrs
+  and the DNS server). Without it every socket call compiles to nothing.
+- ss3ds 0167/0172: DWC backup (firmware.bin) is created on first login
+  instead of fseek(NULL); short reads pad with 0xFF.
+- ss3ds 0177: DWC_CleanupInet teardown loop bounded to 2 s.
+- ss3ds 0178/0179: skip the DS AC hardware association (the 3DS is
+  already online) and log once that the bypass ran.
+- ss3ds 0183: drop the raw decompiler offsets on the DWCHttp pointer
+  (null read when the NAS reply arrives).
+- ss3ds 0184: send the login request after a successful NAS acctcreate.
+- ss3ds 0193: plain http:// for the Nd download URL, fill the empty
+  SDK_PORT DWCi_NdCancelAsync (compile-network.py part only).
+- ss3ds 0195: SVL Http_StartThread priority 16 (OS thread prio <= 31).
+- ss3ds 0196: Nd setupHttp getDSdesc fold and getMacAddress hex fix.
+
+The log markers keep their "ss3ds NNNN" names so both ports' logs read
+the same. Only active at run time with wireless=2 (ONLINE). The network
+phase runs once per staged tree: on an existing tree use
+scripts/rebuild_network.sh in 3ds-platinum.
+---
+ port/native-probe/compile-network.py | 161 ++++++++++++++++++++++++++-
+ 1 file changed, 160 insertions(+), 1 deletion(-)
+
+diff --git a/port/native-probe/compile-network.py b/port/native-probe/compile-network.py
+index 59d7187..f906076 100644
+--- a/port/native-probe/compile-network.py
++++ b/port/native-probe/compile-network.py
+@@ -3,7 +3,7 @@ import re,json,subprocess,concurrent.futures
+ b=Path(__file__).resolve().parent;out=b/'networkobjects';out.mkdir(exist_ok=True)
+ incs=[b.parent/'native-backup-probe/include',b.parent/'native-fonts/include',b.parent/'native-input/include',b.parent/'native-startup/include',b/'backing/include',b.parent/'native-graphics/alias-proof/include',b/'generated',b.parent/'native-graphics/libntr/include',b/'libntrsystem/include',b/'libntrwifi/include',b/'libntrdwc/include',b/'libntrdwc/include/gs',b/'libntrdwc/include/base',b/'libvct/include']
+ incs.insert(0,Path('@PSPDEV@/psp/sdk/include'))
+-flags=['@PSPDEV@/bin/psp-gcc','-ffile-prefix-map='+str(b.parent)+'=/pspoke/build/tree/test-out/deterministic-path-token-----','-O2','-G0','-ffunction-sections','-fdata-sections','-std=gnu99','-DSDK_PORT','-DSDK_X86','-DSDK_CODE_X86','-DSDK_BUILD_PSP','-DSDK_VERSION_MAJOR=4','-DSDK_TS','-DSDK_4M','-DSDK_FINALROM','-DNNS_FINALROM','-D_NITRO','-DSDK_CW_FORCE_EXPORT_SUPPORT','-DLINK_PPWLOBBY']+['-I'+str(i) for i in incs]
++flags=['@PSPDEV@/bin/psp-gcc','-ffile-prefix-map='+str(b.parent)+'=/pspoke/build/tree/test-out/deterministic-path-token-----','-O2','-G0','-ffunction-sections','-fdata-sections','-std=gnu99','-DSDK_PORT','-DSDK_X86','-DSDK_CODE_X86','-DSDK_BUILD_PSP','-DSDK_BUILD_LINUX','-DSDK_VERSION_MAJOR=4','-DSDK_TS','-DSDK_4M','-DSDK_FINALROM','-DNNS_FINALROM','-D_NITRO','-DSDK_CW_FORCE_EXPORT_SUPPORT','-DLINK_PPWLOBBY']+['-I'+str(i) for i in incs]
+ files=[]
+ for repo in ['libntrdwc','libntrwifi','libvct']:
+  for m in (b/repo).rglob('meson.build'):
+@@ -11,6 +11,165 @@ for repo in ['libntrdwc','libntrwifi','libvct']:
+    p=m.parent/item
+    if p.exists():files.append(p)
+ files=sorted(p for p in set(files) if '/standalone/' not in str(p) and ('/libraries/stubs/' not in str(p) or '/libraries/stubs/md5/' in str(p)))
++# ss3ds (0167): fix the DWC backup (NVRAM) emulation in libntrdwc before compiling
++# it. NVRAMm_ExecuteCommand opens firmware.bin with "rb+" (requires an existing
++# file) and fseeks it without a NULL check, so a first login (no profile, no
++# firmware.bin) crashes in fseek. The staged lib copy is pristine (re-rsynced on
++# every stage), so the fix is applied here, at lib-build time, and fails loudly
++# if the expected code is not found -- a silent no-op would ship a "fixed" build
++# that still crashes. CLEAN BUILD REQUIRED: the network phase runs once per staged
++# tree, so an existing tree will not re-run this script on a normal rebuild.
++import sys
++_dwc_path = b / 'libntrdwc/libraries/bm/src/dwc_backup.c'
++_dwc_src = _dwc_path.read_text()
++def _dwc_replace(old, new):
++    global _dwc_src
++    if old not in _dwc_src:
++        sys.exit('ss3ds 0167: expected dwc_backup.c text not found; refusing to build with an unfixed NVRAM path')
++    _dwc_src = _dwc_src.replace(old, new, 1)
++_dwc_replace('\t\t\t  \tif(s_SIM_dwcbackup_fptr == NULL) {\n\t\t\t\t\ts_SIM_dwcbackup_fptr = fopen(s_SIM_DWCBACKUP_FILEPATH, "rb+");\n\t\t\t\t}\n\n\t\t\t\tfseek(s_SIM_dwcbackup_fptr, adr, SEEK_SET);\n\t\t\t\tfread(srcp, 1, size, s_SIM_dwcbackup_fptr);\n\t\t\t\tcbNvram(PXI_FIFO_TAG_NVRAM, 0, 0);', '\t\t\t  \tif(s_SIM_dwcbackup_fptr == NULL) {\n\t\t\t\t\ts_SIM_dwcbackup_fptr = fopen(s_SIM_DWCBACKUP_FILEPATH, "rb+");\n\t\t\t\t\tif (s_SIM_dwcbackup_fptr == NULL) {\n\t\t\t\t\t\t/* ss3ds 0167: first login, no backup file yet. Create it and seed the firmware header (u16 0x0100 at 0x20) so BACKUPlInit derives a stable backup address (0x400) on every run; without it the address would be garbage on run 2 and the profile would never persist. */\n\t\t\t\t\t\ts_SIM_dwcbackup_fptr = fopen(s_SIM_DWCBACKUP_FILEPATH, "wb+");\n\t\t\t\t\t\tif (s_SIM_dwcbackup_fptr != NULL) {\n\t\t\t\t\t\t\tu8 hdr[2] = {0x00, 0x01};\n\t\t\t\t\t\t\tfseek(s_SIM_dwcbackup_fptr, 0x20, SEEK_SET);\n\t\t\t\t\t\t\tfwrite(hdr, 1, 2, s_SIM_dwcbackup_fptr);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif (s_SIM_dwcbackup_fptr == NULL) {\n\t\t\t\t\t/* ss3ds 0167: cannot open or create the backup file (unwritable path). Never fseek NULL -- fail the NVRAM op instead. NOTE: readNvram retries forever on FALSE, so this hangs at GTS login with an NVRAM ERR log; that means a filesystem problem (SD write-protected/full, bad working directory), not a code bug. */\n\t\t\t\t\tDWC_Printf(DWC_REPORTFLAG_BM, " NVRAM ERR: cannot open firmware.bin\\n");\n\t\t\t\t\tnv_result = 0x00ff;\n\t\t\t\t\tnv_sending = TRUE;\n\t\t\t\t\tcbNvram(PXI_FIFO_TAG_NVRAM, 0, 0);\n\t\t\t\t} else {\n\t\t\t\t\tnv_result = SPI_PXI_RESULT_SUCCESS;\n\t\t\t\t\tfseek(s_SIM_dwcbackup_fptr, adr, SEEK_SET);\n\t\t\t\t\t{ u32 _n = fread(srcp, 1, size, s_SIM_dwcbackup_fptr); for (; _n < size; ++_n) srcp[_n] = 0xFF; }\n\t\t\t\t\tcbNvram(PXI_FIFO_TAG_NVRAM, 0, 0);\n\t\t\t\t}')
++_dwc_replace('\t\t\t  \tif(s_SIM_dwcbackup_fptr == NULL) {\n\t\t\t\t\ts_SIM_dwcbackup_fptr = fopen(s_SIM_DWCBACKUP_FILEPATH, "rb+");\n\t\t\t\t}\n\t\t\t\tfseek(s_SIM_dwcbackup_fptr, adr, SEEK_SET);\n\t\t\t\tfwrite(srcp, 1, size, s_SIM_dwcbackup_fptr);\n\t\t\t  \tnv_sending = TRUE;\n\t\t\t\tcbNvram(PXI_FIFO_TAG_NVRAM, 0, 0);', '\t\t\t  \tif(s_SIM_dwcbackup_fptr == NULL) {\n\t\t\t\t\ts_SIM_dwcbackup_fptr = fopen(s_SIM_DWCBACKUP_FILEPATH, "rb+");\n\t\t\t\t\tif (s_SIM_dwcbackup_fptr == NULL) {\n\t\t\t\t\t\ts_SIM_dwcbackup_fptr = fopen(s_SIM_DWCBACKUP_FILEPATH, "wb+");\n\t\t\t\t\t\tif (s_SIM_dwcbackup_fptr != NULL) {\n\t\t\t\t\t\t\tu8 hdr[2] = {0x00, 0x01};\n\t\t\t\t\t\t\tfseek(s_SIM_dwcbackup_fptr, 0x20, SEEK_SET);\n\t\t\t\t\t\t\tfwrite(hdr, 1, 2, s_SIM_dwcbackup_fptr);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif (s_SIM_dwcbackup_fptr == NULL) {\n\t\t\t\t\tDWC_Printf(DWC_REPORTFLAG_BM, " NVRAM ERR: cannot open firmware.bin\\n");\n\t\t\t\t\tnv_result = 0x00ff;\n\t\t\t\t\tnv_sending = TRUE;\n\t\t\t\t\tcbNvram(PXI_FIFO_TAG_NVRAM, 0, 0);\n\t\t\t\t} else {\n\t\t\t\t\tnv_result = SPI_PXI_RESULT_SUCCESS;\n\t\t\t\t\tfseek(s_SIM_dwcbackup_fptr, adr, SEEK_SET);\n\t\t\t\t\tfwrite(srcp, 1, size, s_SIM_dwcbackup_fptr);\n\t\t\t\t\tnv_sending = TRUE;\n\t\t\t\t\tcbNvram(PXI_FIFO_TAG_NVRAM, 0, 0);\n\t\t\t\t}')
++_dwc_path.write_text(_dwc_src)
++# ss3ds 0177: DWC_CleanupInet loops `while (!DWC_AC_Destroy()) OS_Sleep(10);`
++# with no bound. Under SDK_PORT the AC phase can stall in teardown (WCM async
++# ops never complete without DS wifi hardware), so the game thread sleeps
++# forever, frames stop, and the port's 10s watchdog halts the game (log-11:
++# main last "delay", EC210/DWC_ClearError just before it). Bound the loop to
++# 200 tries (2s max -- real teardown takes ~3); on timeout the existing
++# `stpInetCntl = NULL;` line still runs, so the game reaches its error screen
++# instead of hanging, and the displayed error names the trigger. Fails loudly
++# if the expected code is not found. CLEAN BUILD REQUIRED: same as 0172, the
++# network phase runs once per staged tree.
++_ci_path = b / 'libntrdwc/libraries/base/src/dwc_connectinet.c'
++_ci_src = _ci_path.read_text()
++_ci_old = "    while (!DWC_AC_Destroy()) {\n        OS_Sleep(10);\n    }\n"
++_ci_new = "    {\n        int ss3ds_cleanup_tries = 0;\n        while (!DWC_AC_Destroy() && ss3ds_cleanup_tries++ < 200) {\n            OS_Sleep(10);\n        }\n    }\n"
++if _ci_src.count(_ci_old) != 1:
++    sys.exit('ss3ds 0177: expected DWC_CleanupInet loop text not found exactly once; refusing to build with an unbounded teardown loop')
++_ci_src = _ci_src.replace(_ci_old, _ci_new, 1)
++_ci_path.write_text(_ci_src)
++# ss3ds 0178: bypass the DWC AC (auto-connect) hardware association under SDK_PORT.
++# The AC phase machine needs DS wifi hardware (WCM scan/associate); without it,
++# DWC_AC_Create fails at WCM_Init or a phase lands in error, and the connect
++# driver sets FATAL -50199 (log-14: error 9, code -50199, type 7), which
++# ClearError cannot clear by design, so GTS connect never reaches NAS login.
++# The port already has working CPS sockets, so association is redundant: (1)
++# tolerate a WCM_Init failure in DWC_AC_Create (keep the allocations, report
++# success, keep the Printf so the real WCM result stays visible), and (2) force
++# the AC phase to COMPLETE (0x10) on the first DWC_AC_Process call, so the
++# driver runs its genuine COMPLETE path (CheckDuplicate -> 1, Free_Disused)
++# and GetInetStatus reports CONNECTED. Fails loudly if either anchor is not
++# found exactly once. CLEAN BUILD REQUIRED: same as 0172/0177, the network
++# phase runs once per staged tree.
++_ac_path = b / 'libntrdwc/libraries/ac/src/dwc_ac.c'
++_ac_src = _ac_path.read_text()
++_ac_old1 = "  if ((iVar4 == 1) || (4 < iVar4)) {\n    DWC_Printf(DWC_REPORTFLAG_AC, \"WCM_Init result %d\\n\", iVar4);\n    DWCi_AC_FreeAll();\n    BVar5 = 0;\n  }"
++_ac_new1 = "  if ((iVar4 == 1) || (4 < iVar4)) {\n    DWC_Printf(DWC_REPORTFLAG_AC, \"WCM_Init result %d (ss3ds: ignored, AC phases bypassed)\\n\", iVar4);\n    BVar5 = 1;\n  }"
++_ac_old2 = "  if (acHold == (tagACHOLD *)0x0) {\n    OS_Panic(\"DWC_AC_Create isn't called.\");\n    myAcHold = (tagACHOLD *)0x0;\n  }"
++_ac_new2 = "  if (acHold == (tagACHOLD *)0x0) {\n    OS_Panic(\"DWC_AC_Create isn't called.\");\n    myAcHold = (tagACHOLD *)0x0;\n  }\n  phase = 0x10; /* ss3ds 0178: skip hardware association, report COMPLETE */"
++if _ac_src.count(_ac_old1) != 1 or _ac_src.count(_ac_old2) != 1:
++    sys.exit('ss3ds 0178: expected dwc_ac.c anchor text not found exactly once; refusing to build with an unbypassed AC layer')
++_ac_src = _ac_src.replace(_ac_old1, _ac_new1, 1)
++_ac_src = _ac_src.replace(_ac_old2, _ac_new2, 1)
++_ac_path.write_text(_ac_src)
++# ss3ds 0179: one-time log marker proving the AC bypass actually ran.
++# 0178's only log line fires when WCM_Init fails; if WCM_Init succeeds, the
++# bypass still runs (phase forced COMPLETE) but leaves no trace, so a game
++# log cannot prove 0178 is in the binary. This logs once, the first time the
++# forced COMPLETE path executes. Diagnostic only; no behavior change.
++# Depends on 0178 (anchors on its inserted line) and needs a Clean build
++# like every other network-phase patch.
++_ac_path = b / 'libntrdwc/libraries/ac/src/dwc_ac.c'
++_ac_src = _ac_path.read_text()
++_ac2_old = "  phase = 0x10; /* ss3ds 0178: skip hardware association, report COMPLETE */"
++_ac2_new = "  phase = 0x10; /* ss3ds 0178: skip hardware association, report COMPLETE */\n  { static int _ss3ds_ac_logged = 0; if (!_ss3ds_ac_logged) { _ss3ds_ac_logged = 1; DWC_Printf(DWC_REPORTFLAG_AC, \"ss3ds 0179: AC phase forced COMPLETE (bypass active)\\n\"); } }"
++if _ac_src.count(_ac2_old) != 1:
++    sys.exit('ss3ds 0179: expected 0178 marker line not found exactly once; refusing to build without the bypass marker')
++_ac_src = _ac_src.replace(_ac2_old, _ac2_new, 1)
++_ac_path.write_text(_ac_src)
++# ss3ds 0183: the decompiled DWC HTTP client (auth/src/dwc_http.c) does pointer math on the DWCHttp struct pointer with raw byte
++# offsets from the decompiler, e.g. `*(int *)(aHttp + 0x1a0c)`. Pointer arithmetic on a struct pointer scales by sizeof(DWCHttp), so
++# that reads an unmapped address and faults as soon as the first reply bytes arrive (run 92 boot.txt: null read in
++# DWCi_Http_CheckHeaderReceived). Use the real fields: 0x1a34 = receivedbody_len, 0x1a30 = content_len, 0x101c = timeout (use the
++# 60000 ms default), and body bytes received = write_index - (header end + 4) (the original sign was wrong, which would end the
++# receive loop before the body arrived). Idempotent on an already patched tree; fails loudly if the text moved.
++import re as _re
++_h_path = b / 'libntrdwc/libraries/auth/src/dwc_http.c'
++_h_src = _h_path.read_text()
++if 'ss3ds 0183' not in _h_src:
++    _h_n = 0
++    _h_src, _k = _re.subn(r"\*\(int \*\)\(aHttp \+ 0x1a34\) = \*\(int \*\)\(aHttp \+ 0x1a0c\) - \(int\)\(pcVar2 \+ 4\);", "/* ss3ds 0183: raw decompiler offsets removed */", _h_src); _h_n += _k
++    _h_src, _k = _re.subn(r"aHttp->receivedbody_len = \(u64\)\(aHttp->rep\.write_index\) - \(\(u64\)pcVar2\) \+ 4;", "aHttp->receivedbody_len = (int)((u64)(aHttp->rep.write_index) - (u64)(pcVar2 + 4));", _h_src); _h_n += _k
++    _h_src, _k = _re.subn(r"if \(\*\(int \*\)\(http \+ 0x101c\) < 1\) \{\s*local_48 = 60000;\s*\} else \{\s*local_48 = \*\(uint \*\)\(http \+ 0x101c\);\s*\}", "local_48 = 60000; /* ss3ds 0183 */", _h_src); _h_n += _k
++    if _h_n != 3:
++        sys.exit('ss3ds 0183: dwc_http.c raw-offset text not found as expected (%d of 3); refusing to build with a faulting HTTP client' % _h_n)
++    _h_src = _h_src.replace('*(int *)(http + 0x1a34)', 'http->receivedbody_len').replace('*(int *)(http + 0x1a30)', 'http->content_len')
++    _h_path.write_text(_h_src)
++# ss3ds 0184: the decompiled NAS client stops after a successful acctcreate (returncd 002): ParseHttp promotes the local id with
++# DWCi_AUTH_UpDateWiFiID and returns FINISH, with an empty token and challenge, and the login then hands those to GameSpy (GP parameter
++# error -61002, run 95 with Wiimmfi). The real flow is acctcreate followed by a `login` POST. DWCi_Auth_Thread already retries on
++# DWCAUTH_E_NASALREADYEXIST keeping the in-memory wifi info (getwifiinfofromflash = FALSE), and DWCi_Auth_Prepare_FirstPost sends
++# `login` (with gsbrcd) once attestedUserId is set, so return that after the id was promoted. Idempotent; fails loudly if the text moved.
++_a4_path = b / 'libntrdwc/libraries/auth/src/dwc_auth.c'
++_a4_src = _a4_path.read_text()
++_a4_old = '      (*freeFunc)((int)"FREE bmwork", pvVar2, 0);\n    }\n    return DWCAUTH_E_FINISH;\n'
++_a4_new = '      (*freeFunc)((int)"FREE bmwork", pvVar2, 0);\n      DWC_Printf(DWC_REPORTFLAG_AUTH, "\\tAuth : ss3ds 0184 account created, sending the login request\\n");\n      return DWCAUTH_E_NASALREADYEXIST;\n    }\n    return DWCAUTH_E_FINISH;\n'
++if 'ss3ds 0184' not in _a4_src:
++    if _a4_src.count(_a4_old) != 1:
++        sys.exit('ss3ds 0184: dwc_auth.c acctcreate success text not found exactly once; refusing to build without the login follow-up')
++    _a4_path.write_text(_a4_src.replace(_a4_old, _a4_new, 1))
++# ss3ds 0193: Mystery Gift Nd download. (1) Force plain http:// for the DLS URL - revival
++# servers terminate or accept HTTP the same way NAS does; Nitro SSL over 3DS sockets is unproven
++# and GTS already uses plain HTTP. (2) Fill the empty SDK_PORT DWCi_NdCancelAsync body so cancel
++# returns TRUE instead of falling off the end. CLEAN BUILD REQUIRED (network phase).
++_nd_path = b / 'libntrdwc/libraries/base/src/dwc_nd.c'
++_nd_src = _nd_path.read_text()
++if 'ss3ds 0193' not in _nd_src:
++    _nd_old0 = 'if (strlen(dwcndcnt->svlresult.svlhost) + strlen("https:///download") > SVLHOSTNAMEMAX) {'
++    _nd_new0 = 'if (strlen(dwcndcnt->svlresult.svlhost) + strlen("http:///download") > SVLHOSTNAMEMAX) { /* ss3ds 0193 */'
++    _nd_old1 = 'OS_SNPrintf(url, SVLHOSTNAMEMAX + 1, "https://%s/download", dwcndcnt->svlresult.svlhost);'
++    _nd_new1 = 'OS_SNPrintf(url, SVLHOSTNAMEMAX + 1, "http://%s/download", dwcndcnt->svlresult.svlhost); /* ss3ds 0193: plain HTTP like NAS */'
++    if _nd_src.count(_nd_old1) != 1 or _nd_src.count(_nd_old0) != 1:
++        sys.exit('ss3ds 0193: expected dwc_nd.c https download URL text not found exactly once; refusing to build with HTTPS Nd')
++    _nd_src = _nd_src.replace(_nd_old0, _nd_new0, 1).replace(_nd_old1, _nd_new1, 1)
++    _nd_oldc = "#ifdef SDK_PORT\nBOOL DWCi_NdCancelAsync( void ) {\n\n}\n#endif"
++    _nd_newc = "#ifdef SDK_PORT\nBOOL DWCi_NdCancelAsync( void ) {\n    /* ss3ds 0193: empty body fell off the end; report cancel accepted so MG teardown proceeds */\n    return TRUE;\n}\n#endif"
++    if _nd_src.count(_nd_oldc) != 1:
++        sys.exit('ss3ds 0193: expected empty SDK_PORT DWCi_NdCancelAsync not found exactly once')
++    _nd_src = _nd_src.replace(_nd_oldc, _nd_newc, 1)
++    _nd_path.write_text(_nd_src)
++# ss3ds 0195: DWC_Svl_GetTokenAsync hardcodes Nitro OS priority 0x69 then StartThread(0x68).
++# OS_CreateThreadReal aborts when priority>31 (run 110: abort() from 0x16bf58 right after
++# [LOGIN] NAS request during NdInit/SVL). Use 16 (same as NdInit's SVL wait thread / Auth).
++# CLEAN network rebuild. Idempotent.
++_svl_path = b / 'libntrdwc/libraries/auth/src/dwc_svl.c'
++_svl_src = _svl_path.read_text()
++if 'ss3ds 0195' not in _svl_src:
++    _svl_old = '          //TODO: Get the proper thread priority.\n          iVar1 = 0x69;\n          DWC_Http_StartThread(&intwork->http, iVar1 + -1);'
++    _svl_new = '          /* ss3ds 0195: Nitro used 0x69; CreateThreadReal only allows 0..31 */\n          iVar1 = 16;\n          DWC_Http_StartThread(&intwork->http, iVar1);'
++    if _svl_src.count(_svl_old) != 1:
++        sys.exit('ss3ds 0195: expected dwc_svl.c StartThread priority 0x69 text not found exactly once')
++    _svl_path.write_text(_svl_src.replace(_svl_old, _svl_new, 1))
++# ss3ds 0196: Nd setupHttp had getDSdesc commented out and tested uninitialized iVar1;
++# -O2 folded DWCi_NdGetFileListNumAsync to always set error 8 and return FALSE (run 111:
++# NdGetFileListNumAsync -> 0 after successful SVCLOC/NdSetAttr, no DLS HTTP). Also fix
++# attr2/attr3 pointers and getMacAddress hex encoding. CLEAN network rebuild.
++_fa_path = b / 'libntrdwc/libraries/nd/src/dwci_nd_fileapi.c'
++_fa_src = _fa_path.read_text()
++if 'ss3ds 0196' not in _fa_src:
++    _fa_old = 'static int setupHttp(tagDWCi_Ndi_HTTPREQ **param_1,NHTTPReq **param_2,char *postAction,char *buf,u32 len)\n{\n  int iVar1;\n  tagDWCi_Ndi_HTTPREQ *httpReq;\n  NHTTPReq *req;\n  BOOL BVar2;\n\n  BVar2 = 1;\n  \n  //iVar1 = DWCi_Ndi_getDSdesc(rhgamecode,userid);\n  if (iVar1 == 0) {\n    DWCi_Ndi_error = 8;\n    iVar1 = 0;\n  } else {\n    httpReq = (tagDWCi_Ndi_HTTPREQ *)(*DWCi_Ndi_alloc)(sizeof(tagDWCi_Ndi_HTTPREQ),4);\n    if (httpReq == NULL) {\n      DWCi_Ndi_error = 1;\n      iVar1 = 0;\n    } else {\n      httpReq->callback = DWCi_Ndi_dlcallback;\n      httpReq->threadEvent = (void *)0x0;\n      iVar1 = DWCi_Ndi_prepareHttpCallback();\n      if (iVar1 == 0) {\n        (*DWCi_Ndi_free)(httpReq);\n        DWCi_Ndi_error = 2;\n        iVar1 = 0;\n      } else {\n        req = NHTTP_CreateRequest(DWCi_Ndi_serverURL,1,buf,len,req_callback,httpReq);\n        if (req == (NHTTPReq *)0x0) {\n          DWCi_Ndi_unprepareHttpCallback();\n          (*DWCi_Ndi_free)(httpReq);\n          DWCi_Ndi_error = 3;\n          iVar1 = 0;\n        } else {\n          *param_1 = httpReq;\n          *param_2 = req;\n          iVar1 = NHTTP_SetCAChain(req, ca_array, 1);\n          if ((((((((BVar2 == 0) ||\n                   (BVar2 = NHTTP_AddHeaderField(req, "User-Agent",DWCi_Ndi_userAgent), BVar2 == 0)) ||\n                  (BVar2 = NHTTP_AddPostDataAscii(req, "gamecd",DWCi_Ndi_dwcgamecd), BVar2 == 0)) ||\n                 ((BVar2 = NHTTP_AddPostDataAscii(req, "rhgamecd",rhgamecode), BVar2 == 0 ||\n                  (BVar2 = NHTTP_AddPostDataAscii(req, "passwd",DWCi_Ndi_password), BVar2 == 0)))) ||\n                ((BVar2 = NHTTP_AddPostDataAscii(req, "token",DWCi_Ndi_authtoken), BVar2 == 0 ||\n                 ((BVar2 = NHTTP_AddPostDataAscii(req, "userid",userid), BVar2 == 0 ||\n                  (BVar2 = NHTTP_AddPostDataAscii(req, "macadr",DWCi_Ndi_macaddr), BVar2 == 0)))))) ||\n               (BVar2 = NHTTP_AddPostDataAscii(req, "action",postAction), BVar2 == 0)) ||\n              (((DWCi_Ndi_dlattr != (char *)0x0 &&\n                (BVar2 = NHTTP_AddPostDataAscii(req, "attr1",DWCi_Ndi_dlattr[0]), BVar2 == 0)) ||\n               ((DWCi_Ndi_isExistApinfo != (char *)0x0 &&\n                (BVar2 = NHTTP_AddPostDataAscii(req, "attr2",(char *)&DWCi_Ndi_isExistApinfo), BVar2 == 0))))))\n             || (((DWCi_Ndi_strApinfo != (char *)0x0 &&\n                  (BVar2 = NHTTP_AddPostDataAscii(req, "attr3",DWCi_Ndi_strApinfo), BVar2 == 0)) ||\n                 ((DWCi_Ndi_isExistApinfo != (char *)0x0 &&\n                  (BVar2 = NHTTP_AddPostDataAscii(req, "apinfo",DWCi_Ndi_strApinfo),\n                  BVar2 == 0)))))) {\n            freeHttp(httpReq,req);\n            DWCi_Ndi_error = 1;\n            iVar1 = 0;\n          }\n          else {\n            iVar1 = 1;\n          }\n        }\n      }\n    }\n  }\n  return iVar1;\n}\n'
++    _fa_new = 'static int setupHttp(tagDWCi_Ndi_HTTPREQ **param_1,NHTTPReq **param_2,char *postAction,char *buf,u32 len)\n{\n  /* ss3ds 0196: the decompiler left getDSdesc commented out and then tested the\n     uninitialized iVar1; -O2 folded every Nd Get* into DWCi_Ndi_error=8 / FALSE\n     (run 111: NdGetFileListNumAsync -> 0, no HTTP). Also attr2/attr3 used the wrong\n     pointers (isExistApinfo / strApinfo instead of dlattr[1]/[2]). */\n  int iVar1;\n  int n;\n  tagDWCi_Ndi_HTTPREQ *httpReq;\n  NHTTPReq *req;\n  BOOL ok;\n  char uidasc[16];\n  u8 mac[6];\n\n  /* rhgamecd mirrors the Nd gamecd (already base64). userid = base64(decimal) from MAC. */\n  for (n = 0; n < 9; n++) rhgamecode[n] = DWCi_Ndi_dwcgamecd[n];\n  OS_GetMacAddress(mac);\n  OS_SNPrintf(uidasc, sizeof(uidasc), "%u",\n              ((unsigned)mac[2] << 24) | ((unsigned)mac[3] << 16) |\n              ((unsigned)mac[4] << 8) | (unsigned)mac[5]);\n  if (uidasc[0] == \'0\' && uidasc[1] == \'\\0\') { uidasc[0] = \'1\'; uidasc[1] = \'\\0\'; }\n  n = DWCi_Ndi_encodeBASE64(userid, uidasc, DWCi_Ndi_strlen(uidasc));\n  if (n < 0) {\n    DWCi_Ndi_error = 8;\n    return 0;\n  }\n  userid[n] = \'\\0\';\n\n  httpReq = (tagDWCi_Ndi_HTTPREQ *)(*DWCi_Ndi_alloc)(sizeof(tagDWCi_Ndi_HTTPREQ), 4);\n  if (httpReq == NULL) {\n    DWCi_Ndi_error = 1;\n    return 0;\n  }\n  httpReq->callback = DWCi_Ndi_dlcallback;\n  httpReq->threadEvent = (void *)0x0;\n  iVar1 = DWCi_Ndi_prepareHttpCallback();\n  if (iVar1 == 0) {\n    (*DWCi_Ndi_free)(httpReq);\n    DWCi_Ndi_error = 2;\n    return 0;\n  }\n  req = NHTTP_CreateRequest(DWCi_Ndi_serverURL, 1, buf, len, req_callback, httpReq);\n  if (req == (NHTTPReq *)0x0) {\n    DWCi_Ndi_unprepareHttpCallback();\n    (*DWCi_Ndi_free)(httpReq);\n    DWCi_Ndi_error = 3;\n    return 0;\n  }\n  *param_1 = httpReq;\n  *param_2 = req;\n  (void)NHTTP_SetCAChain(req, ca_array, 1);\n  ok = NHTTP_AddHeaderField(req, "User-Agent", DWCi_Ndi_userAgent);\n  if (ok) ok = NHTTP_AddPostDataAscii(req, "gamecd", DWCi_Ndi_dwcgamecd);\n  if (ok) ok = NHTTP_AddPostDataAscii(req, "rhgamecd", rhgamecode);\n  if (ok) ok = NHTTP_AddPostDataAscii(req, "passwd", DWCi_Ndi_password);\n  if (ok) ok = NHTTP_AddPostDataAscii(req, "token", DWCi_Ndi_authtoken);\n  if (ok) ok = NHTTP_AddPostDataAscii(req, "userid", userid);\n  if (ok) ok = NHTTP_AddPostDataAscii(req, "macadr", DWCi_Ndi_macaddr);\n  if (ok) ok = NHTTP_AddPostDataAscii(req, "action", postAction);\n  if (ok && DWCi_Ndi_dlattr[0] != NULL)\n    ok = NHTTP_AddPostDataAscii(req, "attr1", DWCi_Ndi_dlattr[0]);\n  if (ok && DWCi_Ndi_dlattr[1] != NULL)\n    ok = NHTTP_AddPostDataAscii(req, "attr2", DWCi_Ndi_dlattr[1]);\n  if (ok && DWCi_Ndi_dlattr[2] != NULL)\n    ok = NHTTP_AddPostDataAscii(req, "attr3", DWCi_Ndi_dlattr[2]);\n  if (ok && DWCi_Ndi_isExistApinfo != 0)\n    ok = NHTTP_AddPostDataAscii(req, "apinfo", DWCi_Ndi_strApinfo);\n  if (!ok) {\n    freeHttp(httpReq, req);\n    DWCi_Ndi_error = 1;\n    return 0;\n  }\n  return 1;\n}\n'
++    if _fa_src.count(_fa_old) != 1:
++        sys.exit('ss3ds 0196: expected broken dwci_nd_fileapi.c setupHttp not found exactly once')
++    _fa_path.write_text(_fa_src.replace(_fa_old, _fa_new, 1))
++_mac_path = b / 'libntrdwc/libraries/nd/src/dwci_nd_os_nitro.c'
++_mac_src = _mac_path.read_text()
++if 'ss3ds 0196' not in _mac_src:
++    _mac_old = 'void DWCi_Ndi_getMacAddress(char *aMacAddr)\n{\n  int iVar1;\n  u8 local_30 [24];\n  \n  OS_GetMacAddress(local_30);\n  for (iVar1 = 0; iVar1 < 6; iVar1 = iVar1 + 1) {\n    //DWCi_Ndi_hexToStrFigure(local_30 + iVar1 * 2 + 6,local_30[iVar1],2);\n  }\n  DWCi_Ndi_encodeBASE64(aMacAddr, local_30 + 6,0xc);\n  return;\n}\n'
++    _mac_new = 'void DWCi_Ndi_getMacAddress(char *aMacAddr)\n{\n  /* ss3ds 0196: hexToStrFigure was commented out and encodeBASE64 read 12 bytes of\n     uninitialized stack after the 6-byte MAC. Encode 12 hex digits then base64. */\n  int iVar1;\n  u8 local_30[6];\n  char hex[12];\n  static const char *hv = "0123456789abcdef";\n\n  OS_GetMacAddress(local_30);\n  for (iVar1 = 0; iVar1 < 6; iVar1 = iVar1 + 1) {\n    hex[iVar1 * 2] = hv[(local_30[iVar1] >> 4) & 0xf];\n    hex[iVar1 * 2 + 1] = hv[local_30[iVar1] & 0xf];\n  }\n  iVar1 = DWCi_Ndi_encodeBASE64(aMacAddr, hex, 12);\n  if (iVar1 < 0) iVar1 = 0;\n  aMacAddr[iVar1] = \'\\0\';\n  return;\n}\n'
++    if _mac_src.count(_mac_old) != 1:
++        sys.exit('ss3ds 0196: expected broken DWCi_Ndi_getMacAddress not found exactly once')
++    _mac_path.write_text(_mac_src.replace(_mac_old, _mac_new, 1))
+ def comp(p):
+  name=str(p.relative_to(b)).replace('/','__');f=flags+['-I'+str(p.parent),'-I'+str(p.parent.parent/'include'),'-I'+str(p.parent.parent),'-include','pspkernel.h']
+  if p.name=='network.c':f+=['-include','sys/socket.h','-include','netinet/in.h','-include','arpa/inet.h']
+-- 
+2.43.0
+
