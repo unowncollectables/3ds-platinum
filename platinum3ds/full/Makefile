@@ -41,7 +41,12 @@ build/gpuscale.o: $(PLAT)/gpuscale.c build/blit_shbin.h
 	$(CC) $(DEFS) -Ibuild -I/opt/devkitpro/libctru/include -c $< -o $@
 build/platinum3ds.ld: $(A)/overlays/overlays.ld
 	python3 ../full/mkld.py $< $@
-platinum3ds_full.elf: $(POBJS) build/platinum3ds.ld build/p3ds.specs
+# The staged app Makefile copies the object without tracking the patched source.
+$(W)/native-audio-sound/audio_bank.o: $(W)/native-audio-probe/snd_bank.c
+	PATH="$(TC):$$PATH" PSPDEV="$(abspath $(TC)/..)" $(MAKE) -C "$(W)/native-audio-sound" audio_bank.o
+$(A)/audio_bank.o: $(W)/native-audio-sound/audio_bank.o
+	PATH="$(TC):$$PATH" PSPDEV="$(abspath $(TC)/..)" $(MAKE) -C "$(A)" audio_bank.o
+platinum3ds_full.elf: $(POBJS) build/platinum3ds.ld build/p3ds.specs $(A)/audio_bank.o
 	$(DKA)gcc -specs=build/p3ds.specs -Lbuild -B/opt/devkitpro/devkitARM/arm-none-eabi/lib/ $(ARCH) -Wl,--gc-sections -Wl,--allow-multiple-definition $(shell cat $(A)/overlays/constructors.flags) $(OV5WRAP) -Wl,--wrap=FS_LoadOverlay,--wrap=FS_StartOverlay,--wrap=FS_UnloadOverlay,--wrap=DWC_CheckValidConsole,--wrap=DWC_Auth_GetId,--wrap=DWC_CheckHasProfile,--wrap=DWC_Auth_SetCalInfoToHttp,--wrap=SystemData_GetDWCProfileId,--wrap=SystemData_SetDWCProfileId,--wrap=NetworkError_DisplayNetworkError,--wrap=CARD_UnlockBackup,--wrap=PSPNativeSasSnapshot,--wrap=DC_FlushRange,--wrap=NNS_G2dGetUnpackedAnimBank,--wrap=NNS_G2dGetUnpackedMCAnimBank,--wrap=NNS_G2dGetUnpackedCellBank,--wrap=NNS_G2dGetUnpackedCharacterData,--wrap=NNS_G2dGetUnpackedBGCharacterData,--wrap=WIN_CheckAndFreeAnimBank,--wrap=WIN_CheckAndFreeCellBank,--wrap=WIN_CheckAndFreeCharData -Wl,--wrap=ErrorHandling_AssertFail,--wrap=abort,--wrap=NNS_SndArcPlayerStartSeq,--wrap=NNS_SndArcPlayerStartSeqEx,--wrap=NNS_SndArcPlayerStartSeqArc,--wrap=NNS_SndArcPlayerStartSeqArcEx,--wrap=Easy3D_UploadTextureToVRAM,--wrap=NNS_G3dResDefaultSetup,--wrap=TextureResource_UploadToVRam,--wrap=NNS_GfdDoVramTransfer,--wrap=VramTransfer_Request,--wrap=Heap_Alloc,--wrap=Heap_AllocAtEnd,--wrap=Heap_Free,--wrap=Heap_FreeExplicit,--wrap=VramTransfer_Process,--wrap=NNS_G3dTexLoad,--wrap=NNS_G3dPlttLoad,--wrap=CommManager_IsInitialized,--wrap=G3X_GetBoxTestResult,--wrap=OS_WaitVBlankIntr,--wrap=OS_WaitIrq,--wrap=MI_WaitDma,--wrap=printf,--wrap=puts,--wrap=PSPNativeFatal,--wrap=LCRNG_SetSeed -Wl,--wrap=G3X_GetClipMtx -Wl,--wrap=G3X_GetVectorMtx,--wrap=ApplicationManager_New,--wrap=CTRDG_Init,--wrap=CommManager_InitializeSearchParty,--wrap=CommManager_GetAvailableConnections -Wl,--no-enum-size-warning -Wl,-Map,build/full.map \
 	  $(POBJS) $(addprefix $(A)/,$(APPOBJS)) $(RENDER) $(LIBS) -L/opt/devkitpro/libctru/lib -lcitro3d -lctru -lstdc++ -lm -o $@
 platinum3ds_full.smdh:
