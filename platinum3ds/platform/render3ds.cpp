@@ -225,7 +225,7 @@ static int bSkipCfg=-1;static volatile unsigned bPower;static unsigned bLastPowe
 #include "title_layers.h"
 extern "C" int P3DS_InTitle;
 extern "C" int P3DS_InPokewalker;
-static int titleCleanCfg();
+static int titleCleanCfg(){return 0;} /* SoulSilver title layout (Lugia title layers); Platinum keeps its own title */
 extern "C" {extern int P3DS_TitleWideRequested,P3DS_GcTitleWideValid;extern u32 P3DS_GcTitleStrips[];}
 static u32 titleCanvas[320*192],titleStrips[64*192];static volatile bool titleWideValid;
 static int titleCompose(bool wide){return SS3DS_Title2D(PSPNative_GfxRegisters+0x1000,GPU::VRAMFlat_BBG,(const uint16_t*)(GPU::Palette+1024),(uint32_t*)titleCanvas,wide);}
@@ -690,9 +690,6 @@ static int hintMult(int a,int d){static const signed char T[][3]={{0,5,1},{0,8,1
  {5,10,4},{5,15,4},{5,1,1},{5,4,1},{5,2,4},{5,6,4},{5,8,1},{7,0,0},{7,14,4},{7,7,4},{7,17,1},{7,8,1},{16,16,4},{16,8,1},
  {17,1,1},{17,14,4},{17,7,4},{17,17,1},{17,8,1},{8,10,1},{8,11,1},{8,13,1},{8,15,4},{8,5,4},{8,8,1}};
  for(int i=0;i<(int)(sizeof T/sizeof T[0]);i++)if(T[i][0]==a&&T[i][1]==d)return T[i][2];return 2;}
-static void drawTiny(u32*img,int x,int y,const char*t,u32 c){/* 3x5 caps */static const unsigned char F[26]={0x5f,0x7c,0x39,0x5e,0x79,0x71,0x3d,0x75,0x7f,0x6f,0x77,0x3c,0x37,0x76,0x3f,0x73,0x6b,0x74,0x6d,0x78,0x3e,0x1c,0x7a,0x55,0x6e,0x5b};
- for(int i=0;t[i];i++){char ch=t[i];if(ch>='a'&&ch<='z')ch=(char)(ch-'a'+'A');unsigned char b=(ch>='A'&&ch<='Z')?F[ch-'A']:(ch=='/'?0x12:(ch=='X'?0x55:0));
-  for(int yy=0;yy<5;yy++)for(int xx=0;xx<3;xx++)if(b&(1<<(yy*3+xx))){int X=x+i*4+xx,Y=y+yy;if(X>=0&&X<256&&Y>=0&&Y<192)img[Y*256+X]=c;}}}
 static void drawTypeHint(u32*img){
  if(!P3DS_InBattle||!P3DS_MoveHint[0]||!P3DS_CfgInt("type_hint",0))return;
  static const int kHintX[2]={4,132},kHintY[2]={79,144},kHintW=120;
@@ -1322,7 +1319,7 @@ extern "C"{int P3DS_Fps60Cfg(void);void P3DS_SetFps60(int);int P3DS_Fps60Active(
  u32*P3DS_GpuMidStripBuffer(int);int P3DS_GpuPresentMid(void*,void*,const u32*,const u32*,int,int);}
 static int gWlDone; /* this frame's top picture and strips came from the wide layout compose (fades already in them) */
 extern "C" {extern const char*P3DS_WideScreenName;extern int P3DS_WideShow[2];int P3DS_WideLayoutsOn(void);void P3DS_SetWideLayouts(int);int P3DS_WideGetParts(int,short*);}
-enum{kGpuBlendItem=72};enum{kSharpItem=117};enum{kAchToastItem=118};enum{kMenuGreyItem=119};enum{kPanelPartyItem=120};enum{kPanelLiveItem=121};enum{kBreedItem=125};enum{kEventAnyItem=129};enum{kContestItem=133};enum{kSteadyItem=130};enum{kEvenItem=131};enum{kBatchCullItem=126};enum{kGcDirectItem=127};enum{kMenuBtnItem=73,kWideBattleItem=74,kWDepthItem=75,kBottomMenuItem=76,kWCpuItem=77,kSelectResetItem=78,kSkipIntroItem=79,kWideScreensItem=80,kSmoothItem=81,kBottomMapItem=82,kBottomLayoutItem=83,kPgKantoItem=84,kVolumeItem=85,kLimiterItem=86,kStallFadeItem=87,kGcNfItem=88,kDirectItem=89,kBottomHdItem=90,kWideDexItem=91,kWidePcItem=92,kWirelessItem=93,kFpsTweakItem=94,kWideBoxItem=95,kDcSkipItem=96,kWildVisItem=97,kWildLastItem=101,kFogHoleItem=102,kHuntItem=103,kRateItem=104,kBattItem=105,kRibbonItem=106,kCelebItem=107,kUnionGuardItem=108,kSaveExportItem=109,kTrackerItem=110,kHintItem=111,kPgExtrasItem=112,kPmItem=113,kAutoRunItem=114,kSprDepthItem=115,kBumpItem=116};enum{kHuntStatsItem=123};enum{kWildAliveItem=128};enum{kPgFindItem=124};enum{kFlyTapItem=132};enum{kMapZoomItem=140};enum{kRoamSprItem=141};static_assert(kBumpItem==116&&kSharpItem==117&&kAchToastItem==118&&kMenuGreyItem==119&&kPanelPartyItem==120&&kPanelLiveItem==121&&kMapZoomItem==140&&kRoamSprItem==141&&kHuntStatsItem==MENU_N-45&&kPgFindItem==MENU_N-44&&kBreedItem==MENU_N-43&&kBatchCullItem==MENU_N-42&&kGcDirectItem==MENU_N-41&&kWildAliveItem==MENU_N-40&&kEventAnyItem==MENU_N-39&&kSteadyItem==MENU_N-38&&kEvenItem==MENU_N-37&&kFlyTapItem==MENU_N-36&&kContestItem==MENU_N-35,"rows moved");static int pmV=-1;extern "C" int P3DS_PmShortcutsCfg(void){if(pmV<0){pmV=P3DS_CfgInt("pm_shortcuts",0)!=0;PSPNativeMemLog("[PMENU] pm_shortcuts=%d",pmV);}return pmV;}extern "C" {int P3DS_FogHoleCfg(void);void P3DS_SetFogHole(int);}
+enum{kGpuBlendItem=72};enum{kSharpItem=117};enum{kAchToastItem=118};enum{kMenuGreyItem=119};enum{kPanelPartyItem=120};enum{kPanelLiveItem=121};enum{kBreedItem=125};enum{kEventAnyItem=129};enum{kContestItem=133};enum{kSteadyItem=130};enum{kEvenItem=131};enum{kBatchCullItem=126};enum{kGcDirectItem=127};enum{kMenuBtnItem=73,kWideBattleItem=74,kWDepthItem=75,kBottomMenuItem=76,kWCpuItem=77,kSelectResetItem=78,kSkipIntroItem=79,kWideScreensItem=80,kSmoothItem=81,kBottomMapItem=82,kBottomLayoutItem=83,kPgKantoItem=84,kVolumeItem=85,kLimiterItem=86,kStallFadeItem=87,kGcNfItem=88,kDirectItem=89,kBottomHdItem=90,kWideDexItem=91,kWidePcItem=92,kWirelessItem=93,kFpsTweakItem=94,kWideBoxItem=95,kDcSkipItem=96,kWildVisItem=97,kWildLastItem=101,kFogHoleItem=102,kHuntItem=103,kRateItem=104,kBattItem=105,kRibbonItem=106,kCelebItem=107,kUnionGuardItem=108,kSaveExportItem=109,kTrackerItem=110,kHintItem=111,kPgExtrasItem=112,kPmItem=113,kAutoRunItem=114,kSprDepthItem=115,kBumpItem=116};enum{kHuntStatsItem=123};enum{kWildAliveItem=128};enum{kPgFindItem=124};enum{kFlyTapItem=132};enum{kMapZoomItem=140};enum{kRoamSprItem=141};/* (SoulSilver row-number static_assert dropped: Platinum keeps its own settings rows) */static int pmV=-1;extern "C" int P3DS_PmShortcutsCfg(void){if(pmV<0){pmV=P3DS_CfgInt("pm_shortcuts",0)!=0;PSPNativeMemLog("[PMENU] pm_shortcuts=%d",pmV);}return pmV;}extern "C" {int P3DS_FogHoleCfg(void);void P3DS_SetFogHole(int);}
 extern "C" {extern volatile int P3DS_AudioGainV,P3DS_AudioLimiterV,P3DS_AudioStallFadeV;void P3DS_SetAudioGain(int);void P3DS_SetAudioLimiter(int);void P3DS_SetAudioStallFade(int);}
 static const int kVolGain[7]={4,5,6,7,8,9,10};
 static int volIdx(){int g=P3DS_AudioGainV;if(g<0)g=P3DS_CfgInt("audio_gain",7);int b=0;for(int k=1;k<7;k++)if(abs(kVolGain[k]-g)<abs(kVolGain[b]-g))b=k;return b;}
@@ -1522,6 +1519,39 @@ static void plate(u32*img,int x0,int y0,int x1,int y1,u32 fill,u32 edge){for(int
 static int gtxt(u32*img,int x,int y,const char*t,u32 fg,u32 sh){if(P3DS_GameFontReady())return P3DS_GameFontDraw(img,256,256,192,x,y,t,fg,sh,1,1);char u[64];toUpper(u,t,sizeof u);drawBig(img,x,y+4,u,fg);return (int)strlen(u)*8;}
 static int gw(const char*t){if(P3DS_GameFontReady())return P3DS_GameFontWidth(1,t);return (int)strlen(t)*8;}
 extern "C" void P3DS_GpuInvalidateBot(void);
+static void tri(u32*img,int x,int y,int dir,u32 c){for(int k=0;k<4;k++)for(int yy=k;yy<8-k;yy++){int X=dir>0?x+k:x+3-k;if(X>=0&&X<256&&y+yy>=0&&y+yy<192)img[(y+yy)*256+X]=c;}}
+static u32 kMenuFg(){return kMsgFg;}
+static int appCfg(){static int v=-1;if(v<0){v=P3DS_CfgInt("settings_app",1)!=0;PSPNativeMemLog("[APP] settings_app=%d",v);}return v;}
+
+#include "ss3ds_settings_ui.h"
+#include "p3ds_movenames.h"
+extern "C" { extern volatile int P3DS_OvDirty,P3DS_OvN; }
+static int suiDraw(u32*b,int x,int y,const char*t,u32 fg,u32 sh){return gtxt(b,x,y,t,fg,sh);}
+extern "C" int P3DS_GameFontWidth34(int,const char*);extern "C" int P3DS_GameFontDraw34(u32*,int,int,int,int,int,const char*,u32,int);
+static int suiDrawS(u32*b,int x,int y,const char*t,u32 fg,u32 sh){if(P3DS_GameFontReady())return P3DS_GameFontDraw34(b,256,256,192,x,y,t,fg,1);return gtxt(b,x,y,t,fg,sh);}
+static int gwS(const char*t){return P3DS_GameFontReady()?P3DS_GameFontWidth34(1,t):gw(t);}
+/* 2026-11-18 sharp text (ss3ds_sharptext.h): with sharp_text ON, the GPU stretch on and the ROM font loaded, kSuiText measures and draws at
+   the native size; strings drawn while btxBegin records leave the DS picture and go to the 320x240 text layer (gpuscale.c txDraw).
+   Widths and drawing switch together, so layouts and touch hit tests always match what is shown. */
+#include "ss3ds_sharptext.h"
+extern "C" { int P3DS_GameFontGlyph(int,int,unsigned char(*)[16]); u32*P3DS_TxBufGet(void); extern volatile int P3DS_TxOn,P3DS_TxDirty,P3DS_TxFailed; }
+static SBtxRec*gBtx;static bool txLastOn;static const SBtxList*txShownL;static uint32_t txShownGen;static unsigned txLogN;
+static bool btxMode(){
+ if(!sharpTextCfg()||P3DS_ScaleMode()==0||P3DS_TxFailed||!P3DS_GameFontReady())return false;
+ if(!gBtx){gBtx=(SBtxRec*)malloc(sizeof(SBtxRec));if(!gBtx){P3DS_TxFailed=1;PSPNativeMemLog("[TEXT] no memory for the text recorder (%u bytes): text stays in the DS picture",(unsigned)sizeof(SBtxRec));return false;}gBtx->on=false;gBtx->dst=nullptr;gBtxGlyph=P3DS_GameFontGlyph;}
+ return P3DS_TxBufGet()!=nullptr;}
+static int sharpDraw(u32*b,int x,int y,const char*t,u32 fg,u32 sh){return btxMode()?btxText(*gBtx,b,x,y,t,fg,sh,false):suiDraw(b,x,y,t,fg,sh);}
+static int sharpW(const char*t){return btxMode()?btxDsW(t,false):gw(t);}
+static int sharpDrawS(u32*b,int x,int y,const char*t,u32 fg,u32 sh){return btxMode()?btxText(*gBtx,b,x,y,t,fg,0,true):suiDrawS(b,x,y,t,fg,sh);}
+static int sharpWS(const char*t){return btxMode()?btxDsW(t,true):gwS(t);}
+static const SUiText kSuiText={sharpDraw,sharpW,sharpDrawS,sharpWS};
+/* the list on screen: re-rendered into the layer only when another list or a changed one is shown; P3DS_TxOn for this present */
+static void btxShow(const SBtxList*l){
+ if(!l||!l->n){P3DS_TxOn=0;return;}u32*a=P3DS_TxBufGet();if(!a){P3DS_TxOn=0;return;}
+ if(l!=txShownL||l->gen!=txShownGen){btxRender(*l,a);P3DS_TxDirty=1;txShownL=l;txShownGen=l->gen;}
+ P3DS_TxOn=1;}
+static void btxLog(const char*where,const SBtxList*l){if(!gBtx||txLogN>=12||(txLogN>=2&&!gBtx->covered&&!gBtx->full))return;txLogN++;
+ PSPNativeMemLog("[TEXT] sharp %s: %d strings at 320x240, %d left in the DS picture (something drawn over them), %d over the recorder size",where,l?l->n:0,gBtx->covered,gBtx->full);}
 static int touchToDS(int px,int py,int*x,int*y){int dx,dy;if(P3DS_ScaleMode()==0){dx=px-32;dy=py-24;}else{dx=px*256/320;dy=py*192/240;}if(dx<0||dx>255||dy<0||dy>191)return 0;*x=dx;*y=dy;return 1;}
 /* run 88 shiny_suite hunt panel (Ball tab when not showing catch info): one species' counters from hunt.txt.
    D-pad left/right = other species with a record, X twice = reset that counter, A = export all to a CSV in hunts/. */
@@ -2035,10 +2065,7 @@ static int PresentFrame(bool){
    printf("[3DLAYER] dispcntA %08x powcnt %04x 3D px alpha>0 %u bg0cnt %04x blend %04x/%04x\n",reg32(0),power,n,reg16(8),reg16(0x50),reg16(0x52));}}
  const bool async = engineBAsync();
  // Engine A's 2D result is discarded while the Bag displays B below the held field.
- const bool hidePanelTop = async && P3DS_PanelPartyOn && !gearInPanel && !P3DS_InField &&
-     sFieldHoldOk && (power & 0x8000) && !P3DS_MenuOpen &&
-     !P3DS_ConsoleOnBottom() && !(reg32(0x64) & 0x80000000u) &&
-     P3DS_GpuComposeCfg() == 2;
+ const bool hidePanelTop = false; /* SoulSilver: Pokegear panel app held over the field; Platinum has no such panel */
  u32*rightEye=P3DS_G3RightEye();
  int sd=rightEye?0:stereoShift(P3DS_ScaleMode());bool stereo=(rightEye||sd)&&(power&0x8000)&&engineA.Enabled;
  if(stereo&&!rightEye){G3G_DirectResolveWhy(1);shift3D(-sd);}  /* gpu_direct3d: shift3D edits NativeFrame on the CPU */

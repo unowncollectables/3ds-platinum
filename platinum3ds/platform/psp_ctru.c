@@ -548,6 +548,7 @@ void __wrap_GX_LoadBGExtPltt(const void *src, u32 destSlotAddr, u32 szByte)
     __real_GX_LoadBGExtPltt(src, destSlotAddr, szByte);
 }
 
+#ifdef SS3DS /* SoulSilver Pal Pad heap fix (--wrap=Heap_Destroy, SoulSilver link only) */
 /* Upstream pspoke 66da681 (Pal Pad > Register Friend Code crashed on OK): the friend-code entry app (unk_020850F4,
    translated asm) installs sub_020855CC as the VBlank callback and its exit destroys heap 0x6C without clearing it, so
    the next VBlank ran on a freed BgConfig. Clear exactly that callback when heap 0x6C goes away; every other
@@ -564,3 +565,4 @@ void __wrap_Heap_Destroy(u32 heapId)
     }
     __real_Heap_Destroy(heapId);
 }
+#endif

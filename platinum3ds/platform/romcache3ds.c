@@ -23,10 +23,6 @@ static unsigned stHit, stMiss, stReads; static unsigned long long stBytes;
 static u8 *slotPf; static u32 romSizeG;            /* run 51: slot filled by zone_prefetch and not yet used */
 static void learnFill(u32 b, u32 k, u64 ticks);
 static void zoneStatHit(void);
-/* run 86 [SPIKE]: ROM positions of this frame's cache misses (game thread), named at log time (P3DS_RomSpikeFiles) */
-#define SPKN 32
-static u32 spkPos[SPKN]; static unsigned spkN, spkAll;
-static void spkNote(u32 p) { if (spkN < SPKN) spkPos[spkN++] = p; spkAll++; }
 static void init(u32 romSize) {
     int mb = 32, ra = 1024;   /* run 51: default 32 (falls back 24/16/8/4/2 while keeping 12 MiB heap headroom) */ FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); char l[64]; int x;
     if (f) { while (fgets(l, sizeof l, f)) { if (sscanf(l, "rom_cache_mb=%d", &x) == 1) mb = x; if (sscanf(l, "rom_ra_kb=%d", &x) == 1) ra = x; } fclose(f); }

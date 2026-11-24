@@ -57,6 +57,7 @@ static void powerOff(void) {
 }
 extern void P3DS_LogFlushSync(void);
 static char crashScreen[1024]; /* onCrash fills this (version, registers, last log lines); empty = show `why` */
+static volatile int quitting;
 static void hold(const char *why) { P3DS_LogFlushSync();
     PSPNativeMemLog("[3DS] halted: %s  (press START to exit)", why);
     uiError(crashScreen[0] ? crashScreen : why);
