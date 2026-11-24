@@ -18,6 +18,8 @@ void P3DS_HuntSoftReset(void);
 void P3DS_HuntFrame(int paused);       /* every frame: time spent + periodic write */
 void P3DS_HuntFlush(void);
 void P3DS_HuntClear(int sp);
+int P3DS_HuntPinned(void);              /* species pinned as the hunt (ZR HUNT STATS screen), 0 = follow the last species met */
+void P3DS_HuntPin(int sp);             /* 0 unpins */
 double P3DS_HuntChanceBy(int n, int odds); /* chance to have seen at least one shiny in n encounters */
 int P3DS_HuntExportCsv(const char *const *names, int nNames, char *path, int pathN);
 void P3DS_HuntChime(void);
@@ -26,6 +28,7 @@ extern volatile int P3DS_HuntGame[5];  /* field side, shiny_suite only: [0] vali
                                           [3] Poke Radar chain (0 = none), [4] Day Care 0 = <2 parents, 1 same language, 2 Masuda */
 extern volatile int P3DS_ShinyForce;   /* wild_vis_shiny: 1 = next wild Pokemon shiny, 2 = decided not shiny (no shiny_rate roll) */
 int P3DS_HuntRateOdds(void);           /* shiny_rate as odds: 8192 (original), 4096, 2048, 1024 */
+int P3DS_HuntRateIdx(void);            /* 0..3, settings app row */
 void P3DS_HuntSetRate(int idx);        /* settings app */
 int P3DS_ShinyRoll(void);              /* overlay006 CreateWildMon: 1 = take the game's own shiny path */
 int P3DS_WildShinyRoll(int always);    /* wild_vis_shiny: does a visible wild Pokemon spawn shiny */

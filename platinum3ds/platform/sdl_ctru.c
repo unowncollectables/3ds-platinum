@@ -16,15 +16,15 @@ int SDL_UnlockMutex(SDL_mutex *m) { RecursiveLock_Unlock(&m->l); return 0; }
 void SDL_DestroyMutex(SDL_mutex *m) { free(m); }
 SDL_sem *SDL_CreateSemaphore(Uint32 v) { SDL_sem *s = malloc(sizeof *s); LightSemaphore_Init(&s->s, v, 0x7fff); return s; }
 void SDL_DestroySemaphore(SDL_sem *s) { free(s); }
-int SDL_SemWait(SDL_sem *s) { CRUMB("semwait"); while (LightSemaphore_TryAcquire(&s->s, 1)) { if (p3ds_quit && threadGetCurrent()) threadExit(0); svcSleepThread(1000000); } return 0; }
+int SDL_SemWait(SDL_sem *s) { CRUMB("semwait"); while (!LightSemaphore_TryAcquire(&s->s, 1)) { if (p3ds_quit && threadGetCurrent()) threadExit(0); svcSleepThread(1000000); } return 0; }
 int SDL_SemWaitTimeout(SDL_sem *s, Uint32 ms) { CRUMB("semwaitto");
     if (ms == SDL_MUTEX_MAXWAIT) return SDL_SemWait(s);
     u64 end = svcGetSystemTick() + (u64)ms * (SYSCLOCK_ARM11 / 1000);
-    while (LightSemaphore_TryAcquire(&s->s, 1)) { if (svcGetSystemTick() >= end) return SDL_MUTEX_TIMEDOUT; svcSleepThread(200000); }
+    while (!LightSemaphore_TryAcquire(&s->s, 1)) { if (svcGetSystemTick() >= end) return SDL_MUTEX_TIMEDOUT; svcSleepThread(200000); }
     return 0;
 }
 int SDL_SemPost(SDL_sem *s) { LightSemaphore_Release(&s->s, 1); return 0; }
-static void tramp(void *p) { SDL_Thread *t = p; t->result = t->fn(t->arg); }
+static void tramp(void *p) { SDL_Thread *t = p; P3DS_ThreadGuard("sdl-thread"); t->result = t->fn(t->arg); }
 SDL_Thread *SDL_CreateThread(SDL_ThreadFunction fn, const char *name, void *data) {
     (void)name; SDL_Thread *t = calloc(1, sizeof *t); t->fn = fn; t->arg = data;
     t->t = threadCreate(tramp, t, 0x10000, 0x2F, -2, false); if (!t->t) { free(t); return NULL; } return t;
@@ -37,7 +37,7 @@ Uint64 SDL_GetTicks64(void) { return svcGetSystemTick() / (SYSCLOCK_ARM11 / 1000
 Uint32 SDL_GetTicks(void) { return (Uint32)SDL_GetTicks64(); }
 /* Timers: one thread per timer (libntr uses at most a couple). */
 typedef struct { Thread t; volatile int live; Uint32 iv; SDL_TimerCallback cb; void *p; } Tm; static Tm timers[8];
-static void tloop(void *a) { Tm *t = a; while (t->live && !p3ds_quit) { svcSleepThread((s64)t->iv * 1000000); if (!t->live) break; Uint32 n = t->cb(t->iv, t->p); if (!n) { t->live = 0; break; } t->iv = n; } }
+static void tloop(void *a) { Tm *t = a; P3DS_ThreadGuard("sdl-timer"); while (t->live && !p3ds_quit) { svcSleepThread((s64)t->iv * 1000000); if (!t->live) break; Uint32 n = t->cb(t->iv, t->p); if (!n) { t->live = 0; break; } t->iv = n; } }
 SDL_TimerID SDL_AddTimer(Uint32 iv, SDL_TimerCallback cb, void *p) { for (int i = 0; i < 8; i++) if (!timers[i].live) { timers[i] = (Tm){0, 1, iv, cb, p}; timers[i].t = threadCreate(tloop, &timers[i], 0x4000, 0x28, -2, false); return i + 1; } return 0; }
 SDL_bool SDL_RemoveTimer(SDL_TimerID id) { if (id < 1 || id > 8) return SDL_FALSE; timers[id - 1].live = 0; return SDL_TRUE; }
 int SDL_ShowSimpleMessageBox(Uint32 f, const char *t, const char *m, SDL_Window *w) { printf("[SDL] %s: %s\n", t, m); return 0; }

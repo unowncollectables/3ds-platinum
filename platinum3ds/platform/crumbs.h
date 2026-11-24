@@ -6,6 +6,9 @@ extern "C" {
 #endif
 void P3DS_Crumb(const char *tag, void *caller);
 void P3DS_CrumbDump(void);
+/* Crash handler (main3ds.c): a per-thread fault handler that writes thread name/id, registers, FPU state and a stack sample
+   to sdmc:/3ds/platinum3ds/boot.txt. Call P3DS_ThreadGuard first in every thread. */
+void P3DS_ThreadGuard(const char *name);
 #ifdef __cplusplus
 }
 #endif

@@ -4,7 +4,7 @@
  * 3ds_port/game/app/main_3ds.c: EnableSpeedup / LogSpeedup / TimeCore / CheckCoreSpeed.
  * The three timing jobs (SpeedJobMain) follow theirs closely (same loops and constants, so the ms figures
  * are comparable); the surrounding code is rewritten for this project's log (PSPNativeMemLog) and config
- * (P3DS_CfgInt). Credited in THIRD_PARTY.md.
+ * (P3DS_CfgInt). Credited in docs/THIRD_PARTY.md.
  *
  * Why: osSetSpeedupEnable() does nothing, silently, if the program can't use the ptm:sysm service, and the
  * exheader flags (CpuSpeed 804MHz / EnableL2Cache) only apply to an installed CIA. The log said "Speedup is on"

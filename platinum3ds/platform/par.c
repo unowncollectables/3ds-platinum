@@ -23,6 +23,7 @@ static LightLock lk, jobLk;
 static LightEvent ev;
 static Thread th;
 static int state;                       /* 0 not tried, 1 helper running, -1 no helper */
+static volatile int parQuit;
 static P3DSParFn jfn; static void *jctx; static unsigned jn, jnext, jdone;
 static unsigned long long nJobs, nSerial, chM, chW, usTot;
 
@@ -39,8 +40,10 @@ static void helper(void *arg) {
     (void)arg;
     for (;;) {
         LightEvent_Wait(&ev);
+        if (parQuit) break;
         P3DSParFn f; void *c; unsigned i;
         while (claim(&f, &c, &i)) { f(c, i); finish(1); }
+        if (parQuit) break;
     }
 }
 
@@ -71,4 +74,14 @@ void P3DS_ParFor(P3DSParFn fn, void *ctx, unsigned n) {
             (unsigned)(chW * 100 / (chW + chM ? chW + chM : 1)), (unsigned)(usTot / 600), (unsigned)nSerial);
         chW = chM = usTot = 0; nSerial = 0;
     }
+}
+/* Soft-reset / exit: wake the helper off Wait and join before GPU/heap free. */
+void P3DS_ParShutdown(void) {
+    if (state <= 0 || !th) return;
+    parQuit = 1;
+    LightEvent_Signal(&ev);
+    if (R_SUCCEEDED(threadJoin(th, 500000000ULL))) threadFree(th);
+    else PSPNativeMemLog("[3DS] exit: par helper did not stop in 500 ms");
+    th = NULL; state = -1;
+    PSPNativeMemLog("[3DS] exit: par helper stopped");
 }

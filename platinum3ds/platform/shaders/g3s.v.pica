@@ -1,0 +1,24 @@
+; ss3ds: g3_stereo_gpu ONLY — right eye from left vb: x += stereok * dsh * w
+; kmtx: fps60 in-between matrix applied AFTER the shift (identity on real frames) so gpuRight and the in-between coexist.
+; Default g3.v.pica is unchanged (run 887: always-on layout blanked 3D).
+.fvec stereok
+.fvec kmtx[4]
+.out outpos position
+.out outtc0 texcoord0
+.out outclr color
+.alias inpos v0
+.alias intc v1
+.alias inclr v2
+.alias indsh v3
+.proc main
+	mov r5, inpos
+	mul r6.xyzw, indsh.xxxx, r5.wwww
+	mad r5.x, r6.x, stereok.x, r5.x
+	dp4 outpos.x, kmtx[0], r5
+	dp4 outpos.y, kmtx[1], r5
+	dp4 outpos.z, kmtx[2], r5
+	dp4 outpos.w, kmtx[3], r5
+	mov outtc0, intc
+	mov outclr, inclr
+	end
+.end

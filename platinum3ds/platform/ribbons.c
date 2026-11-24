@@ -89,6 +89,7 @@ void P3DS_RibbonFrame(unsigned held_keys) {
 enum { FG = 0x00505858, SH = 0x00B8B8A8, OKC = 0x00206020, NOC = 0x00404090 };
 void P3DS_RibbonDraw(unsigned *img) {
   if (sec < 0 || !onV || !P3DS_SumOpen || !haveValid || !P3DS_GameBoxReady()) return;
+  { extern void P3DS_TopTouch(void); P3DS_TopTouch(); }  /* direct screen: fetch the GPU-composed picture before drawing on it */
   const char *names[RIBBON_MAX]; int n = 0, nowTot = 0, nowHave = 0, gone = 0; unsigned char mark[RIBBON_MAX];
   for (int i = 0; i < NRIB; i++) { const Rib *r = &kRib[i]; int h = held(r->id);
     if (r->grp != G_OLD && (h || r->grp == G_NOW)) { nowTot++; nowHave += h; }

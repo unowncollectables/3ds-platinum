@@ -1,4 +1,10 @@
 PROF ?= 1
+# Version = git (from the SoulSilver port): run number = commit count of HEAD, plus short hash (+ if edited). Written to
+# build/ss3ds_buildid.h only when it changes. A shallow clone/no git gives "run 0 (no git)".
+SSGIT_N := $(shell git -C .. rev-list --count HEAD 2>/dev/null || echo 0)
+SSGIT_H := $(shell git -C .. rev-parse --short=7 HEAD 2>/dev/null || echo nogit)$(shell git -C .. diff --quiet HEAD -- 2>/dev/null || echo +)
+SSVER  := run $(SSGIT_N) ($(SSGIT_H))
+$(shell mkdir -p build; printf '#define SS3DS_VERSION "%s"\n' '$(SSVER)' > build/ss3ds_buildid.h.new; cmp -s build/ss3ds_buildid.h.new build/ss3ds_buildid.h && rm -f build/ss3ds_buildid.h.new || mv -f build/ss3ds_buildid.h.new build/ss3ds_buildid.h)
 CRUMBS ?= 0
 COMMA := ,
 OV5WRAP := $(if $(filter 1,$(CRUMBS)),-Wl$(COMMA)@ov5wrap.txt) $(if $(filter 1,$(PROF)),-Wl$(COMMA)@ov5profwrap.txt)
@@ -12,7 +18,7 @@ A      := $(W)/native-audio-app
 DEFS   := -O2 -DSDK_PORT -DSDK_X86 -DSDK_TS -DSDK_4M -DSDK_FINALROM -DNNS_FINALROM -DSDK_VERSION_MAJOR=4 -DSDL_MAIN_HANDLED -DMELONDS_PSP -DPSP_NATIVE_RGBA_OUTPUT=1 -DPOKEPLATINUM_GENERATED_ENUM -ffunction-sections -fdata-sections
 INC    := -I$(W)/native-probe/backing/include -I$(W)/native-graphics/alias-proof/include -I$(W)/native-probe/generated -I$(W)/native-graphics/libntr/include -I$(W)/../melon -I$(W)/native-render-opt -I$(A)/overlays/include
 PLAT   := ../platform
-POBJS  := build/heapfast.o build/lowermenu.o build/main3ds.o build/logring.o build/psp_ctru.o build/sdl_ctru.o build/stubs3ds.o build/render3ds.o build/g3soft.o $(if $(filter 1,$(CRUMBS)),build/ov5crumbs.o) $(if $(filter 1,$(PROF)),build/ov5prof.o build/ov5profc.o) build/gpuscale.o build/blit_shbin.o build/g3gpu.o build/g3_shbin.o build/gpucomp.o build/par.o build/romcache3ds.o build/p3ds_gamefont.o build/p3ds_foltalk.o build/wideapi.o build/widecomp.o build/speedcheck.o build/hunt.o build/ribbons.o build/celebrate.o build/achievements.o build/tracker.o build/wm_uds.o build/uds_ctru.o build/p3ds_net.o build/p3ds_dwcstub.o
+POBJS  := build/g3packet.o build/g3thr.o build/dcskip.o build/g3k_shbin.o build/g3s_shbin.o build/heapfast.o build/lowermenu.o build/main3ds.o build/logring.o build/psp_ctru.o build/sdl_ctru.o build/stubs3ds.o build/render3ds.o build/g3soft.o $(if $(filter 1,$(CRUMBS)),build/ov5crumbs.o) $(if $(filter 1,$(PROF)),build/ov5prof.o build/ov5profc.o) build/gpuscale.o build/blit_shbin.o build/g3gpu.o build/g3_shbin.o build/gpucomp.o build/par.o build/romcache3ds.o build/p3ds_gamefont.o build/p3ds_foltalk.o build/wideapi.o build/widecomp.o build/speedcheck.o build/hunt.o build/ribbons.o build/celebrate.o build/achievements.o build/tracker.o build/wm_uds.o build/uds_ctru.o build/p3ds_net.o build/p3ds_dwcstub.o
 # wireless M1: pspoke's wm_absent.o is replaced by build/wm_uds.o (same behaviour with wireless=0; docs/WIRELESS.md).
 APPOBJS:= sas_out.o vram_dirty.o stackprobe.o ctrdg_absent.o search_disabled.o fx_mtx_native.o cadence.o audio_bank.o audio_loader.o audio_out.o audio_backend.o audio_seq.o audio_exchannel.o audio_channel.o audio_engine.o mic_pm.o os_sync.o offline.o gx_dma.o frame.o owner_lock.o threads.o alarms.o overlay.o config.o platform.o input.o romfs.o backup.o backing.o graphics_registers.o trainer_ai.o mi_memory.o mi_dma.o memprobe.o power.o
 RENDER := $(W)/native-render-opt/native_gpu.o $(W)/native-render-opt/GPU2D_Soft.o $(W)/native-stack-render/g3_handler.o $(W)/native-stack-render/frontend.o
@@ -20,7 +26,7 @@ LIBS   := -Wl,--start-group $(A)/overlays/libplatinum-overlays.a $(A)/overlays/l
 ARCH   := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 all: platinum3ds_full.3dsx
 build/%.o: $(PLAT)/%.c
-	@mkdir -p build; $(CC) $(DEFS) $(INC) -c $< -o $@
+	@mkdir -p build; $(CC) $(DEFS) -Ibuild $(INC) -c $< -o $@
 build/main3ds.o build/stubs3ds.o: DEFS += -DPLATINUM3DS_APP
 build/render3ds.o: DEFS += $(if $(filter 1,$(PROF)),-DP3DS_PROF)
 build/ov5profc.o: $(PLAT)/ov5profc.c
@@ -28,7 +34,7 @@ build/ov5profc.o: $(PLAT)/ov5profc.c
 build/%.o: $(PLAT)/%.S
 	@mkdir -p build; /opt/devkitpro/devkitARM/bin/arm-none-eabi-as -march=armv6k -mfloat-abi=hard -mfpu=vfp $< -o $@
 build/%.o: $(PLAT)/%.cpp
-	@mkdir -p build; $(CXX) $(DEFS) $(INC) -std=gnu++17 -fno-exceptions -fno-rtti -fpermissive -c $< -o $@
+	@mkdir -p build; $(CXX) $(DEFS) -Ibuild $(INC) -std=gnu++17 -fno-exceptions -fno-rtti -fpermissive -c $< -o $@
 build/sdl_ctru.o build/psp_ctru.o build/uds_ctru.o build/p3ds_net.o: INC :=
 build/p3ds_net.o: DEFS += -fshort-enums
 # libctru/citro3d ABI uses short enums; game-facing code uses int enums (pspoke/DS data layout).
@@ -83,5 +89,15 @@ build/g3_shbin.o: build/g3_shbin.s
 	/opt/devkitpro/devkitARM/bin/arm-none-eabi-as $< -o $@
 build/gpucomp.o: $(PLAT)/gpucomp.c build/blit_shbin.h
 	$(CC) $(DEFS) -fshort-enums -Ibuild -I/opt/devkitpro/libctru/include -c $< -o $@
-build/g3gpu.o: $(PLAT)/g3gpu.c build/g3_shbin.h
+build/g3gpu.o: $(PLAT)/g3gpu.c build/g3_shbin.h build/g3k_shbin.h build/g3s_shbin.h
 	$(CC) $(DEFS) -fshort-enums -Ibuild -I/opt/devkitpro/libctru/include -c $< -o $@
+
+# SoulSilver sync (2026-11): the k-matrix (fps60 in-between) and stereo right-eye vertex shaders
+build/g3k_shbin.h build/g3k_shbin.s: $(PLAT)/shaders/g3k.v.pica
+	@mkdir -p build; /opt/devkitpro/tools/bin/picasso -o build/g3k.shbin $< && cd build && /opt/devkitpro/tools/bin/bin2s -H g3k_shbin.h g3k.shbin > g3k_shbin.s
+build/g3s_shbin.h build/g3s_shbin.s: $(PLAT)/shaders/g3s.v.pica
+	@mkdir -p build; /opt/devkitpro/tools/bin/picasso -o build/g3s.shbin $< && cd build && /opt/devkitpro/tools/bin/bin2s -H g3s_shbin.h g3s.shbin > g3s_shbin.s
+build/g3k_shbin.o: build/g3k_shbin.s
+	/opt/devkitpro/devkitARM/bin/arm-none-eabi-as $< -o $@
+build/g3s_shbin.o: build/g3s_shbin.s
+	/opt/devkitpro/devkitARM/bin/arm-none-eabi-as $< -o $@

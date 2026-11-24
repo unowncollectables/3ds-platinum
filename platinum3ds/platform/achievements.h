@@ -8,8 +8,11 @@ extern "C" {
 enum { ACH_ZEPHYR, ACH_HIVE, ACH_PLAIN, ACH_FOG, ACH_STORM, ACH_MINERAL, ACH_GLACIER, ACH_RISING, /* Johto badges = bit 0..7 of the badge mask */
        ACH_BOULDER, ACH_CASCADE, ACH_THUNDER, ACH_RAINBOW, ACH_SOUL, ACH_MARSH, ACH_VOLCANO, ACH_EARTH, /* Kanto badges = bit 8..15 */
        ACH_CHAMPION, ACH_RED, ACH_TRADE, ACH_SHINY,
-       ACH_BDAY, ACH_NEWYEAR, ACH_VALENTINE, ACH_STPAT, ACH_CANADA, ACH_HALLOWEEN, ACH_XMAS, ACH_COUNT };
-enum { ACH_CAT_GYMS, ACH_CAT_MILESTONES, ACH_CAT_SHINY, ACH_CAT_DATES, ACH_CATS };
+       ACH_BDAY, ACH_NEWYEAR, ACH_VALENTINE, ACH_STPAT, ACH_CANADA, ACH_HALLOWEEN, ACH_XMAS,
+       ACH_ALL16, ACH_WIFITRADE, ACH_CATCH1, ACH_CATCH50, ACH_CATCH200, ACH_HATCH1, ACH_HATCH25, ACH_STEPS10K, ACH_STEPS100K, ACH_BIKE10K,
+       ACH_BATTLE50, ACH_BATTLE250, ACH_WILD500, ACH_FISH25, ACH_BERRY10, ACH_FOSSIL, ACH_NICK5, ACH_MAIL, ACH_SPLASH, ACH_BOOM,
+       ACH_CONTEST, ACH_TOWER, ACH_RIBBON, ACH_SIGNED, ACH_SKYLEGEND, ACH_SKYSHINY, ACH_HUGEWILD, ACH_COUNT };
+enum { ACH_CAT_GYMS, ACH_CAT_MILESTONES, ACH_CAT_SHINY, ACH_CAT_DATES, ACH_CAT_ADVENTURE, ACH_CATS };
 typedef struct { const char *name, *desc; int pts, cat; } P3DS_AchInfo;
 const P3DS_AchInfo *P3DS_AchGet(int id);
 int P3DS_AchDate(int id);                 /* yyyymmdd, 0 = locked */
@@ -18,7 +21,11 @@ const char *P3DS_AchCatName(int cat);
 int P3DS_AchToastsOn(void);               /* Settings > Play, default ON; the list works either way */
 void P3DS_AchSetToasts(int v);
 void P3DS_AchUnlock(int id);              /* idempotent; saves the file, queues a toast + chime */
+void P3DS_AchSky(int what);               /* game thread (hook 0110/0217/0218 alive wild): 1 = a legendary flew over, 0 = a shiny flyer, 2 = a huge wild one */
 void P3DS_AchPublish(int badges, int clear, int red); /* game thread (hook 0145): save flags; the first call per boot carries over silently */
+/* game thread (hook 0213): read-only GameStats counters (idx = GAME_STAT_* number); like AchPublish, the first call per boot carries over silently */
+void P3DS_AchStats(const unsigned short *idx, const unsigned *val, int n);
+int P3DS_AchProgress(int id, unsigned *cur, unsigned *goal); /* 1 = counter-based and a value is known (cur may exceed goal) */
 int P3DS_AchUnviewed(void);               /* unlocks not yet seen in the list */
 void P3DS_AchViewed(void);
 /* top screen: the toast, call once per eye per frame (eye 0 advances the queue); fills the two lines, returns 0 when nothing is showing.
