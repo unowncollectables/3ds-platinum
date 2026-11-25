@@ -161,7 +161,7 @@
      PokemonSummaryScreen_FreeCameraAndMonSprite(summaryScreen);
      PokemonSummaryScreen_FreeSpriteResources(summaryScreen);
      PokemonSummaryScreen_RemoveWindows(summaryScreen);
-@@ -1168,6 +1308,12 @@
+@@ -1168,6 +1308,19 @@
          }
      }
  
@@ -171,10 +171,17 @@
 +        static const int evId[6] = { MON_DATA_HP_EV, MON_DATA_ATK_EV, MON_DATA_DEF_EV, MON_DATA_SPATK_EV, MON_DATA_SPDEF_EV, MON_DATA_SPEED_EV };
 +        for (int i = 0; i < 6; i++) { P3DS_SumIV[i] = Pokemon_GetValue(mon, ivId[i], NULL); P3DS_SumEV[i] = Pokemon_GetValue(mon, evId[i], NULL); }
 +    }
++    { /* SoulSilver ribbon_check, Platinum version: the ribbon checklist (X) reads this Pokemon's ribbons, read only */
++        extern int P3DS_RibbonOn(void);
++        extern void P3DS_RibbonCapture(unsigned mon, unsigned (*get)(unsigned, int, void *));
++        if (P3DS_RibbonOn()) {
++            P3DS_RibbonCapture((unsigned)mon, (unsigned (*)(unsigned, int, void *))Pokemon_GetValue);
++        }
++    }
      Pokemon_ExitDecryptionContext(mon, reencrypt);
  }
  
-@@ -1385,6 +1531,9 @@
+@@ -1385,6 +1538,9 @@
      Bg_LoadToTilemapRect(summaryScreen->bgConfig, BG_LAYER_MAIN_3, tilemap->rawData, 0, 0, 32, 32);
      Bg_ScheduleTilemapTransfer(summaryScreen->bgConfig, BG_LAYER_MAIN_3);
      Heap_Free(memberBuffer);
@@ -184,7 +191,7 @@
  
      if (summaryScreen->page == SUMMARY_PAGE_INFO) {
          DrawExperienceProgressBar(summaryScreen);
-@@ -1630,6 +1779,9 @@
+@@ -1630,6 +1786,9 @@
  {
      switch (summaryScreen->pageState) {
      case PAGE_STATE_INITIAL:
@@ -194,7 +201,7 @@
          Bg_ScheduleScroll(summaryScreen->bgConfig, BG_LAYER_MAIN_2, BG_OFFSET_UPDATE_SET_X, 136);
          Bg_ScheduleScroll(summaryScreen->bgConfig, BG_LAYER_MAIN_2, BG_OFFSET_UPDATE_SET_Y, 0);
          PokemonSummaryScreen_UpdatePageArrows(summaryScreen, FALSE);
-@@ -1701,6 +1853,9 @@
+@@ -1701,6 +1860,9 @@
          }
      } break;
      case PAGE_STATE_SCROLL_FINISHED:
@@ -204,7 +211,7 @@
          Window_ScheduleCopyToVRAM(&summaryScreen->staticWindows[SUMMARY_WINDOW_MON_LEVEL]);
          Window_ScheduleCopyToVRAM(&summaryScreen->staticWindows[SUMMARY_WINDOW_LABEL_ITEM]);
          Window_ScheduleCopyToVRAM(&summaryScreen->staticWindows[SUMMARY_WINDOW_ITEM_NAME]);
-@@ -1837,6 +1992,9 @@
+@@ -1837,6 +1999,9 @@
  {
      switch (summaryScreen->pageState) {
      case PAGE_STATE_INITIAL:
@@ -214,7 +221,7 @@
          Bg_ScheduleScroll(summaryScreen->bgConfig, BG_LAYER_MAIN_2, BG_OFFSET_UPDATE_SET_X, 136);
          Bg_ScheduleScroll(summaryScreen->bgConfig, BG_LAYER_MAIN_2, BG_OFFSET_UPDATE_SET_Y, 256);
          UpdateAppealHearts(summaryScreen, SUMMARY_MOVE_NONE);
-@@ -1903,6 +2061,9 @@
+@@ -1903,6 +2068,9 @@
          }
      } break;
      case PAGE_STATE_SCROLL_FINISHED:

@@ -19,27 +19,27 @@ extern void P3DS_HuntChime(void);
 #endif
 
 static const struct { const char *key; P3DS_AchInfo i; } kAch[ACH_COUNT] = {
-  { "zephyr", { "Zephyr Badge", "Beat Falkner of Violet City.", 20, 0 } }, { "hive", { "Hive Badge", "Beat Bugsy of Azalea Town.", 20, 0 } },
-  { "plain", { "Plain Badge", "Beat Whitney of Goldenrod City.", 20, 0 } }, { "fog", { "Fog Badge", "Beat Morty of Ecruteak City.", 20, 0 } },
-  { "storm", { "Storm Badge", "Beat Chuck of Cianwood City.", 20, 0 } }, { "mineral", { "Mineral Badge", "Beat Jasmine of Olivine City.", 20, 0 } },
-  { "glacier", { "Glacier Badge", "Beat Pryce of Mahogany Town.", 20, 0 } }, { "rising", { "Rising Badge", "Beat Clair of Blackthorn City.", 20, 0 } },
-  { "boulder", { "Boulder Badge", "Beat Brock of Pewter City.", 30, 0 } }, { "cascade", { "Cascade Badge", "Beat Misty of Cerulean City.", 30, 0 } },
-  { "thunder", { "Thunder Badge", "Beat Lt. Surge of Vermilion City.", 30, 0 } }, { "rainbow", { "Rainbow Badge", "Beat Erika of Celadon City.", 30, 0 } },
-  { "soul", { "Soul Badge", "Beat Janine of Fuchsia City.", 30, 0 } }, { "marsh", { "Marsh Badge", "Beat Sabrina of Saffron City.", 30, 0 } },
-  { "volcano", { "Volcano Badge", "Beat Blaine of Cinnabar Island.", 30, 0 } }, { "earth", { "Earth Badge", "Beat Blue of Viridian City.", 30, 0 } },
-  { "champion", { "Johto League Champion", "Enter the Hall of Fame.", 100, 1 } }, { "red", { "Mt. Silver Showdown", "Defeat Red on Mt. Silver.", 200, 1 } },
+  { "zephyr", { "Coal Badge", "Beat Roark of Oreburgh City.", 20, 0 } }, { "hive", { "Forest Badge", "Beat Gardenia of Eterna City.", 20, 0 } },
+  { "plain", { "Cobble Badge", "Beat Maylene of Veilstone City.", 20, 0 } }, { "fog", { "Fen Badge", "Beat Crasher Wake of Pastoria City.", 20, 0 } },
+  { "storm", { "Relic Badge", "Beat Fantina of Hearthome City.", 20, 0 } }, { "mineral", { "Mine Badge", "Beat Byron of Canalave City.", 20, 0 } },
+  { "glacier", { "Icicle Badge", "Beat Candice of Snowpoint City.", 20, 0 } }, { "rising", { "Beacon Badge", "Beat Volkner of Sunyshore City.", 20, 0 } },
+  { "boulder", { "National Pokedex", "Get the National Pokedex.", 30, 0 } }, { "cascade", { "Sinnoh Collector", "Catch 50 Pokemon in the Sinnoh Pokedex.", 30, 0 } },
+  { "thunder", { "Sinnoh Expert", "Catch 150 Pokemon in the Sinnoh Pokedex.", 30, 0 } }, { "rainbow", { "Sinnoh Pokedex", "Complete the Sinnoh Pokedex.", 30, 0 } },
+  { "soul", { "National Researcher", "Catch 300 Pokemon in the National Pokedex.", 30, 0 } }, { "marsh", { "National Pokedex Complete", "Complete the National Pokedex.", 30, 0 } },
+  { "volcano", { "Frontier Brain Hunter", "Take on a Battle Frontier challenge.", 30, 0 } }, { "earth", { "Hall of Fame Regular", "Enter the Hall of Fame 5 times.", 30, 0 } },
+  { "champion", { "Sinnoh League Champion", "Enter the Hall of Fame.", 100, 1 } }, { "red", { "Lord of the Distortion", "Catch Giratina.", 200, 1 } },
   { "trade", { "First Trade", "Complete a link trade.", 25, 1 } }, { "shiny", { "First Shiny", "Meet a shiny Pokemon.", 100, 2 } },
-  { "bday", { "Happy Birthday!", "See the birthday sparkle at Sprout Tower.", 25, 3 } }, { "newyear", { "New Year's", "Watch the New Year fireworks.", 25, 3 } },
+  { "bday", { "Happy Birthday!", "See the birthday sparkle.", 25, 3 } }, { "newyear", { "New Year's", "Watch the New Year fireworks.", 25, 3 } },
   { "valentine", { "Valentine's", "See the Valentine's hearts.", 25, 3 } }, { "stpat", { "St. Patrick's", "See the St. Patrick's sparkles.", 25, 3 } },
   { "canada", { "Canada Day", "See the Canada Day sparkles.", 25, 3 } }, { "halloween", { "Halloween", "See the Halloween wisps.", 25, 3 } },
   { "xmas", { "Christmas", "See the Christmas snow.", 25, 3 } },
-  { "all16", { "Master of Two Regions", "Collect all 16 badges.", 100, 1 } },
+  { "all16", { "Eight Badges", "Collect all 8 Sinnoh badges.", 100, 1 } },
   { "wifitrade", { "Global Trader", "Complete a Wi-Fi or GTS trade.", 25, 1 } },
   { "catch1", { "Gotcha!", "Catch your first Pokemon.", 10, 4 } }, { "catch50", { "Rising Trainer", "Catch 50 Pokemon.", 25, 4 } },
   { "catch200", { "Pokemon Hoarder", "Catch 200 Pokemon.", 50, 4 } },
   { "hatch1", { "Egg-cellent", "Hatch your first egg.", 15, 4 } }, { "hatch25", { "Day Care Hero", "Hatch 25 eggs.", 40, 4 } },
   { "steps10k", { "Out for a Stroll", "Walk 10,000 steps.", 15, 4 } }, { "steps100k", { "Marathon Runner", "Walk 100,000 steps.", 50, 4 } },
-  { "bike10k", { "Cycle Champ", "Ride 10,000 steps on the Bicycle.", 20, 4 } },
+  { "bike10k", { "Day Care Regular", "Leave 10 Pokemon at the Day Care.", 20, 4 } },
   { "battle50", { "Battle Ready", "Win 50 trainer battles.", 20, 4 } }, { "battle250", { "Battle Hardened", "Win 250 trainer battles.", 50, 4 } },
   { "wild500", { "Tall Grass Regular", "Meet 500 wild Pokemon.", 25, 4 } },
   { "fish25", { "Gone Fishin'", "Reel in 25 fish.", 20, 4 } }, { "berry10", { "Green Thumb", "Plant 10 berries.", 15, 4 } },
@@ -48,10 +48,10 @@ static const struct { const char *key; P3DS_AchInfo i; } kAch[ACH_COUNT] = {
   { "boom", { "Going Out with a Bang", "Use Explosion or Self-Destruct.", 15, 4 } },
   { "contest", { "Contest Star", "Win a Pokemon Contest.", 40, 4 } }, { "tower", { "Tower Victor", "Win a Battle Frontier battle.", 40, 4 } },
   { "ribbon", { "Ribbon Collector", "Earn a ribbon.", 25, 4 } }, { "signed", { "Autograph Hound", "Have your Trainer Card signed.", 15, 4 } },
-  { "skylegend", { "Legend in the Sky", "See a legendary Pokemon fly overhead.", 100, 4 } },
-  { "skyshiny", { "Shiny on the Wing", "Spot a shiny Pokemon flying past.", 50, 2 } },
-  { "hugewild", { "Something Big", "Meet a rare huge wild Pokemon.", 50, 4 } } };
-static const char *const kCat[ACH_CATS] = { "Gyms", "Milestones", "Shiny", "Special Dates", "Adventure" };
+  { "skylegend", { "Evolution Expert", "Evolve 50 Pokemon.", 100, 4 } },
+  { "skyshiny", { "Footprint Fan", "Check 25 footprints.", 25, 4 } },
+  { "hugewild", { "Honey Hunter", "Meet 10 Pokemon at Honey Trees.", 50, 4 } } };
+static const char *const kCat[ACH_CATS] = { "Badges & Dex", "Milestones", "Shiny", "Special Dates", "Adventure" };
 
 #ifdef ACH_HOST_TEST
 #define LOCK()
@@ -67,12 +67,14 @@ static unsigned long long nowTick(void) { return svcGetSystemTick(); }
 #endif
 
 /* counter-based achievements: GAME_STAT_* index (read from the save by hook 0213) and the goal; trade ones accept several counters (sum) */
+/* Platinum GameRecords ids (pokeplatinum generated/game_records.txt), published by p3ds_follower.h P3DS_AchFieldFrame */
 static const struct { unsigned short stat; unsigned goal; short id; } kStat[] = {
-  { 20, 1, ACH_TRADE }, { 25, 1, ACH_TRADE }, { 25, 1, ACH_WIFITRADE }, { 10, 1, ACH_CATCH1 }, { 10, 50, ACH_CATCH50 }, { 10, 200, ACH_CATCH200 },
-  { 12, 1, ACH_HATCH1 }, { 12, 25, ACH_HATCH25 }, { 0, 10000, ACH_STEPS10K }, { 0, 100000, ACH_STEPS100K }, { 1, 10000, ACH_BIKE10K },
-  { 9, 50, ACH_BATTLE50 }, { 9, 250, ACH_BATTLE250 }, { 8, 500, ACH_WILD500 }, { 11, 25, ACH_FISH25 }, { 5, 10, ACH_BERRY10 },
-  { 116, 1, ACH_FOSSIL }, { 50, 5, ACH_NICK5 }, { 46, 1, ACH_MAIL }, { 77, 1, ACH_SPLASH }, { 79, 1, ACH_BOOM }, { 80, 1, ACH_BOOM },
-  { 93, 1, ACH_CONTEST }, { 94, 1, ACH_CONTEST }, { 30, 1, ACH_TOWER }, { 95, 1, ACH_RIBBON }, { 115, 1, ACH_SIGNED }, { 114, 1, ACH_WIFITRADE } };
+  { 19, 1, ACH_TRADE }, { 24, 1, ACH_TRADE }, { 24, 1, ACH_WIFITRADE }, { 9, 1, ACH_CATCH1 }, { 9, 50, ACH_CATCH50 }, { 9, 200, ACH_CATCH200 },
+  { 11, 1, ACH_HATCH1 }, { 11, 25, ACH_HATCH25 }, { 0, 10000, ACH_STEPS10K }, { 0, 100000, ACH_STEPS100K }, { 40, 10, ACH_BIKE10K },
+  { 8, 50, ACH_BATTLE50 }, { 8, 250, ACH_BATTLE250 }, { 7, 500, ACH_WILD500 }, { 10, 25, ACH_FISH25 }, { 4, 10, ACH_BERRY10 },
+  { 115, 1, ACH_FOSSIL }, { 49, 5, ACH_NICK5 }, { 45, 1, ACH_MAIL }, { 76, 1, ACH_SPLASH }, { 78, 1, ACH_BOOM }, { 79, 1, ACH_BOOM },
+  { 92, 1, ACH_CONTEST }, { 93, 1, ACH_CONTEST }, { 29, 1, ACH_TOWER }, { 94, 1, ACH_RIBBON }, { 114, 1, ACH_SIGNED },
+  { 12, 50, ACH_SKYLEGEND }, { 116, 25, ACH_SKYSHINY }, { 117, 10, ACH_HUGEWILD } };
 enum { NSTAT = (int)(sizeof kStat / sizeof kStat[0]) };
 static unsigned statNow[NSTAT]; static unsigned char statKnown;
 static int date[ACH_COUNT], carried, loaded, unviewed, onV = -1, bootScan = 1, bootStats = 1;
@@ -123,7 +125,7 @@ void P3DS_AchPublish(int badges, int clear, int red) {
   LOCK(); load(); const int first = bootScan; bootScan = 0; int n = 0, ch = 0;
   for (int i = 0; i < 16; i++) if ((badges >> i) & 1) ch += unlockLocked(i, first);
   if (clear) ch += unlockLocked(ACH_CHAMPION, first);
-  if ((badges & 0xFFFF) == 0xFFFF) ch += unlockLocked(ACH_ALL16, first);
+  if ((badges & 0xFF) == 0xFF) ch += unlockLocked(ACH_ALL16, first); /* Platinum: the 8 Sinnoh badges (bits 8..15 are Pokedex / Frontier milestones) */
   if (red) ch += unlockLocked(ACH_RED, first);
   n = ch;
   if (first) { if (n > 0 && P3DS_AchToastsOn()) push(-n); carried = 1; PSPNativeMemLog("[ACH] save scan: badges %04x, hall of fame %d, red %d -> %d carried over", badges & 0xFFFF, clear, red, n); save(); }

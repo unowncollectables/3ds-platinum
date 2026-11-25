@@ -1,6 +1,14 @@
 --- a/main_menu__main_menu.c
 +++ b/main_menu__main_menu.c
-@@ -1132,6 +1132,7 @@
+@@ -1125,6 +1125,7 @@
+     appData->scrollPos = FX32_CONST(0);
+     appData->scrollTarget = FX32_CONST(0);
+     appData->trainerInfo = SaveData_GetTrainerInfo(appData->saveData);
++    { extern void P3DS_GtsPreviewTrainer(unsigned trainerId); P3DS_GtsPreviewTrainer(TrainerInfo_ID(appData->trainerInfo)); } /* SoulSilver 0270: the GTS preview cache and server pick belong to this save */
+     appData->pokedex = SaveData_GetPokedex(appData->saveData);
+     appData->playTime = SaveData_GetPlayTime(appData->saveData);
+     appData->pokedexObtained = Pokedex_IsObtained(appData->pokedex);
+@@ -1132,6 +1133,7 @@
      appData->alertsState = MAIN_MENU_ALERTS_STATE_WAIT;
  
      MainMenuUtil_Init(HEAP_ID_MAIN_MENU);
@@ -8,7 +16,7 @@
  
      if (!SaveData_DataExists(appData->saveData)) {
          appData->isNewGame = TRUE;
-@@ -1206,6 +1207,15 @@
+@@ -1206,6 +1208,15 @@
                  Sound_PlayEffect(SE_CONFIRM_sseq_3);
                  appData->nextApplication = appData->optionApps[appData->focusedOption];
  

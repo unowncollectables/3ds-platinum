@@ -1,8 +1,8 @@
 /* ribbon_check=1 (default off; settings app Battle tab "Ribbon checklist"): read-only ribbon checklist for the Pokemon on the
  * summary screen. Port overlay only: it never writes to the Pokemon or the save and cannot grant, remove or edit a ribbon.
  *
- * Data: the summary screen's gather function ends with ReleaseMonLock(mon, lock) while the Pokemon is decrypted (pspoke
- * patch 0051 retargets it to SS3DS_SummaryRelease in ss3ds_glue.c). There P3DS_RibbonCapture asks the game's own
+ * Data (Platinum): the summary screen's SetMonDataFromMon (applications/pokemon_summary_screen/main.c work patch) calls
+ * P3DS_RibbonCapture while the Pokemon is decrypted. P3DS_RibbonCapture asks the game's own
  * GetMonData for every ribbon id (the same call the summary screen's ribbon page uses), so no bit position is guessed.
  * Ids are pret/pokeheartgold include/constants/pokemon.h MON_DATA_*_RIBBON: 25..52 (ribbonsDS1: Sinnoh Champ, Battle Tower
  * "Ability" set, daily set, Footprint, Legend, event ribbons), 78..109 (ribbonsGBA: Hoenn contest / Battle Tower / Effort / commemorative) and
@@ -30,15 +30,20 @@ extern volatile int P3DS_SumOpen;
 enum { G_NOW = 0, G_OLD = 1, G_GONE = 2 }; /* obtainable in SoulSilver / only from earlier games / obtainable but no longer possible */
 typedef struct { short id; unsigned char grp; const char *name; } Rib;
 static const Rib kRib[] = {
-  /* obtainable in SoulSilver */
-  { 38, G_NOW, "Smile" }, { 32, G_NOW, "Alert" }, { 33, G_NOW, "Shock" }, { 34, G_NOW, "Downcast" }, { 35, G_NOW, "Careless" },
-  { 36, G_NOW, "Relax" }, { 37, G_NOW, "Snooze" }, { 102, G_NOW, "Effort" }, { 45, G_NOW, "Legend" },
+  /* obtainable in Platinum (Platinum port, 2026-11-25; the ids are the same MON_DATA_* values in pokeplatinum) */
+  { 25, G_NOW, "Sinnoh Champ" },
   { 26, G_NOW, "Ability" }, { 27, G_NOW, "Great Ability" }, { 28, G_NOW, "Double Ability" }, { 29, G_NOW, "Multi Ability" }, { 30, G_NOW, "Pair Ability" },
   { 31, G_GONE, "World Ability" },
-  /* earlier games (Platinum / Diamond / Pearl, Hoenn, events) */
-  { 25, G_OLD, "Sinnoh Champ" }, { 42, G_OLD, "Footprint" },
-  { 39, G_OLD, "Gorgeous" }, { 40, G_OLD, "Royal" }, { 41, G_OLD, "Gorgeous Royal" },
-  { 43, G_OLD, "Record" }, { 44, G_OLD, "History" }, { 46, G_OLD, "Red" }, { 47, G_OLD, "Green" }, { 48, G_OLD, "Blue" },
+  { 38, G_NOW, "Smile" }, { 32, G_NOW, "Alert" }, { 33, G_NOW, "Shock" }, { 34, G_NOW, "Downcast" }, { 35, G_NOW, "Careless" },
+  { 36, G_NOW, "Relax" }, { 37, G_NOW, "Snooze" },
+  { 39, G_NOW, "Gorgeous" }, { 40, G_NOW, "Royal" }, { 41, G_NOW, "Gorgeous Royal" }, { 42, G_NOW, "Footprint" }, { 102, G_NOW, "Effort" },
+  { 123, G_NOW, "S.Cool" }, { 124, G_NOW, "S.Cool Great" }, { 125, G_NOW, "S.Cool Ultra" }, { 126, G_NOW, "S.Cool Master" },
+  { 127, G_NOW, "S.Beauty" }, { 128, G_NOW, "S.Beauty Great" }, { 129, G_NOW, "S.Beauty Ultra" }, { 130, G_NOW, "S.Beauty Master" },
+  { 131, G_NOW, "S.Cute" }, { 132, G_NOW, "S.Cute Great" }, { 133, G_NOW, "S.Cute Ultra" }, { 134, G_NOW, "S.Cute Master" },
+  { 135, G_NOW, "S.Smart" }, { 136, G_NOW, "S.Smart Great" }, { 137, G_NOW, "S.Smart Ultra" }, { 138, G_NOW, "S.Smart Master" },
+  { 139, G_NOW, "S.Tough" }, { 140, G_NOW, "S.Tough Great" }, { 141, G_NOW, "S.Tough Ultra" }, { 142, G_NOW, "S.Tough Master" },
+  /* other games and events (HeartGold / SoulSilver, Hoenn, events) */
+  { 45, G_OLD, "Legend" }, { 43, G_OLD, "Record" }, { 44, G_OLD, "History" }, { 46, G_OLD, "Red" }, { 47, G_OLD, "Green" }, { 48, G_OLD, "Blue" },
   { 49, G_OLD, "Festival" }, { 50, G_OLD, "Carnival" }, { 51, G_OLD, "Classic" }, { 52, G_OLD, "Premier" },
   { 78, G_OLD, "Cool" }, { 79, G_OLD, "Cool Super" }, { 80, G_OLD, "Cool Hyper" }, { 81, G_OLD, "Cool Master" },
   { 82, G_OLD, "Beauty" }, { 83, G_OLD, "Beauty Super" }, { 84, G_OLD, "Beauty Hyper" }, { 85, G_OLD, "Beauty Master" },
@@ -48,11 +53,6 @@ static const Rib kRib[] = {
   { 98, G_OLD, "Champion" }, { 99, G_OLD, "Winning" }, { 100, G_OLD, "Victory" }, { 101, G_OLD, "Artist" },
   { 103, G_OLD, "Marine" }, { 104, G_OLD, "Land" }, { 105, G_OLD, "Sky" }, { 106, G_OLD, "Country" },
   { 107, G_OLD, "National" }, { 108, G_OLD, "Earth" }, { 109, G_OLD, "World" },
-  { 123, G_OLD, "S.Cool" }, { 124, G_OLD, "S.Cool Great" }, { 125, G_OLD, "S.Cool Ultra" }, { 126, G_OLD, "S.Cool Master" },
-  { 127, G_OLD, "S.Beauty" }, { 128, G_OLD, "S.Beauty Great" }, { 129, G_OLD, "S.Beauty Ultra" }, { 130, G_OLD, "S.Beauty Master" },
-  { 131, G_OLD, "S.Cute" }, { 132, G_OLD, "S.Cute Great" }, { 133, G_OLD, "S.Cute Ultra" }, { 134, G_OLD, "S.Cute Master" },
-  { 135, G_OLD, "S.Smart" }, { 136, G_OLD, "S.Smart Great" }, { 137, G_OLD, "S.Smart Ultra" }, { 138, G_OLD, "S.Smart Master" },
-  { 139, G_OLD, "S.Tough" }, { 140, G_OLD, "S.Tough Great" }, { 141, G_OLD, "S.Tough Ultra" }, { 142, G_OLD, "S.Tough Master" },
 };
 #define NRIB ((int)(sizeof kRib / sizeof kRib[0]))
 

@@ -32,6 +32,13 @@
 #include "map_header.h"
 #include "field_overworld_state.h"
 #include "rtc.h"
+#include "special_encounter.h"
+#include "map_header_util.h"
+#include "overlay005/daycare.h"
+#include "game_records.h"
+#include "pokedex.h"
+#include "trainer_info.h"
+#include "constants/species.h"
 
 extern int P3DS_FollowerCfg(void);
 extern int P3DS_FollowerOpen(void);
@@ -385,8 +392,86 @@ void P3DS_SeasonTreePalette(NNSG3dResTex *tex)
     if (done) PSPNativeMemLog("[WEATHER] %d tree palette(s) tinted for season %d", done, season);
 }
 
+/* SoulSilver 0145/0213 achievements data, Platinum version: every 2 s in the field (not during a task) the badges, Pokedex
+   milestones, Hall of Fame / Battle Frontier records and the game's record counters go to the platform (achievements.c).
+   Read only; nothing is written to the save. */
+static void P3DS_AchFieldFrame(FieldSystem *fieldSystem)
+{
+    extern void P3DS_AchPublish(int badges, int clear, int red);
+    extern void P3DS_AchStats(const unsigned short *idx, const unsigned *val, int n);
+    static unsigned t;
+    if (!fieldSystem || !fieldSystem->saveData || FieldSystem_IsRunningTask(fieldSystem) || ++t % 120) return;
+    TrainerInfo *ti = SaveData_GetTrainerInfo(fieldSystem->saveData);
+    Pokedex *dex = SaveData_GetPokedex(fieldSystem->saveData);
+    GameRecords *gr = SaveData_GetGameRecords(fieldSystem->saveData);
+    int badges = 0;
+    for (int i = 0; i < 8; i++) if (TrainerInfo_HasBadge(ti, i)) badges |= 1 << i;
+    if (Pokedex_IsNationalDexObtained(dex)) badges |= 1 << 8;
+    if (Pokedex_CountCaught_Local(dex) >= 50) badges |= 1 << 9;
+    if (Pokedex_CountCaught_Local(dex) >= 150) badges |= 1 << 10;
+    if (Pokedex_LocalDexCompleted(dex)) badges |= 1 << 11;
+    if (Pokedex_CountCaught_National(dex) >= 300) badges |= 1 << 12;
+    if (Pokedex_NationalDexCompleted(dex)) badges |= 1 << 13;
+    if (GameRecords_GetRecordValue(gr, 58 /* RECORD_TIMES_STARTED_BATTLE_FRONTIER_CHALLENGE */) >= 1) badges |= 1 << 14;
+    if (GameRecords_GetRecordValue(gr, 73 /* RECORD_TIMES_ENTERED_HALL_OF_FAME */) >= 5) badges |= 1 << 15;
+    P3DS_AchPublish(badges, SystemFlag_CheckGameCompleted(SaveData_GetVarsFlags(fieldSystem->saveData)) ? 1 : 0,
+        Pokedex_HasCaughtSpecies(dex, SPECIES_GIRATINA) ? 1 : 0);
+    static const unsigned short sIdx[] = { 0, 4, 7, 8, 9, 10, 11, 12, 19, 24, 29, 40, 45, 49, 76, 78, 79, 92, 93, 94, 114, 115, 116, 117 };
+    unsigned val[sizeof sIdx / sizeof sIdx[0]];
+    for (unsigned i = 0; i < sizeof sIdx / sizeof sIdx[0]; i++) val[i] = GameRecords_GetRecordValue(gr, sIdx[i]);
+    P3DS_AchStats(sIdx, val, (int)(sizeof sIdx / sizeof sIdx[0]));
+}
+
+/* SoulSilver 0120 roamer + Day-Care tracker, Platinum version (tracker=1): every 2 s in the field the roaming Pokemon (Mesprit,
+   Cresselia, the legendary birds ...) with their level, HP and current place, and the Day-Care pair, egg chance and egg go to the
+   platform (tracker.c; settings app page "Roamers & Day Care"). Read only. */
+char P3DS_TrkPlace[4][24];
+static void P3DS_TrkFieldFrame(FieldSystem *fieldSystem)
+{
+    extern int P3DS_TrkOn(void);
+    extern void P3DS_TrkPublish(const int *r, const int *d);
+    static unsigned t; static int lastMap[4] = { -1, -1, -1, -1 };
+    if (!fieldSystem || !fieldSystem->saveData || FieldSystem_IsRunningTask(fieldSystem) || ++t % 120 || !P3DS_TrkOn()) return;
+    SpecialEncounter *se = SaveData_GetSpecialEncounters(fieldSystem->saveData);
+    int r[4 * 6], d[7], k = 0;
+    memset(r, 0, sizeof r);
+    for (int i = 0; i < 6 && k < 4; i++) {
+        if (!SpecialEncounter_IsRoamerActive(se, (u8)i)) continue;
+        Roamer *m = SpecialEncounter_GetRoamer(se, (u8)i);
+        const int map = (int)Roamer_GetData(m, ROAMER_DATA_MAP_ID);
+        r[k * 6 + 0] = 1;
+        r[k * 6 + 1] = (int)Roamer_GetData(m, ROAMER_DATA_SPECIES);
+        r[k * 6 + 2] = (int)Roamer_GetData(m, ROAMER_DATA_LEVEL);
+        r[k * 6 + 3] = (int)Roamer_GetData(m, ROAMER_DATA_CURRENT_HP);
+        r[k * 6 + 4] = map;
+        r[k * 6 + 5] = -1;
+        if (map != lastMap[k]) {
+            String *str = String_Init(64, HEAP_ID_FIELD2);
+            if (str) { charcode_t cc[32]; MapHeader_LoadName(map, HEAP_ID_FIELD2, str); String_ToChars(str, cc, 32); cc[31] = 0xFFFF; p3dsCcToLatin(cc, P3DS_TrkPlace[k], 24); String_Free(str); }
+            lastMap[k] = map;
+        }
+        k++;
+    }
+    Daycare *dc = SaveData_GetDaycare(fieldSystem->saveData);
+    int sp[2] = { 0, 0 }, n = 0;
+    for (int i = 0; i < 2; i++) {
+        BoxPokemon *bp = DaycareMon_GetBoxMon(Daycare_GetDaycareMon(dc, i));
+        const int s = (int)BoxPokemon_GetValue(bp, MON_DATA_SPECIES, NULL);
+        if (s) { sp[i] = s; n++; }
+    }
+    static const int kCompat[4] = { 70, 50, 20, 0 };
+    d[0] = n; d[1] = sp[0]; d[2] = sp[1];
+    d[3] = n == 2 ? kCompat[Daycare_GetCompatibilityLevel(dc) & 3] : 0;
+    d[4] = n == 2 && Daycare_AreParentLanguagesDifferent(dc) ? 1 : 0;
+    d[5] = Daycare_HasEgg(dc) ? 1 : 0;
+    d[6] = n == 2 && !d[5] ? (255 - (Daycare_GetStepCounter(dc) & 255)) & 255 : -1;
+    P3DS_TrkPublish(r, d);
+}
+
 static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
 {
+    P3DS_TrkFieldFrame(fieldSystem); /* SoulSilver 0120 */
+    P3DS_AchFieldFrame(fieldSystem); /* SoulSilver 0145/0213 */
     P3DS_AmbientWeatherFrame(fieldSystem); /* SoulSilver ambient weather */
     if (fieldSystem) p3dsMapSnap(fieldSystem);
     P3DS_HuntGameFrame(fieldSystem);

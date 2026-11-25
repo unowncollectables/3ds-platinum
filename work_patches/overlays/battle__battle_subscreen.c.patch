@@ -1,0 +1,47 @@
+--- a/battle__battle_subscreen.c
++++ b/battle__battle_subscreen.c
+@@ -14,6 +14,8 @@
+ 
+ #include "battle/battle_display.h"
+ #include "battle/battle_system.h"
++#include "battle/battle_lib.h" /* SoulSilver 0121 */
++#include "constants/battle.h" /* SoulSilver 0121 */
+ #include "battle/cursor_renderer.h"
+ #include "battle/indicator.h"
+ #include "overlay011/move_palettes.h"
+@@ -1066,6 +1068,35 @@
+     SpriteSystem_LoadPaletteBufferFromOpenNarc(BattleSystem_GetPaletteData(btlSubscreen->battleSys), 3, spriteSys, spriteMan, spriteNarc, 72, 0, 7, NNS_G2D_VRAM_TYPE_2DSUB, 20023);
+     btlSubscreen->activeMenuConfigIndex = menuConfigIndex;
+ 
++    { /* SoulSilver 0121/0214 move type hint: read-only snapshot while the FIGHT (move select) menu is up, cleared by any other menu */
++        extern volatile int P3DS_MoveHint[24];
++        if (newBattleMenuConfig->drawMenu == BattleSubscreen_DrawMoveSelectMenu) {
++            const MoveSelectData *md = &btlSubscreen->activeMenuData.moveData;
++            BattleContext *hctx = BattleSystem_GetBattleContext(btlSubscreen->battleSys);
++            int hi;
++            for (hi = 0; hi < 4; hi++) {
++                const u16 mv = md->moveIDs[hi];
++                P3DS_MoveHint[2 + hi] = mv;
++                P3DS_MoveHint[6 + hi] = mv ? (int)MoveTable_LoadParam(mv, MOVEATTRIBUTE_TYPE) : 255;
++                P3DS_MoveHint[10 + hi] = mv ? (int)MoveTable_LoadParam(mv, MOVEATTRIBUTE_POWER) : 0;
++                P3DS_MoveHint[18 + hi] = md->currPP[hi];
++            }
++            P3DS_MoveHint[14] = BattleMon_Get(hctx, 1, BATTLEMON_CUR_HP, NULL) > 0 ? BattleMon_Get(hctx, 1, BATTLEMON_TYPE_1, NULL) : 255;
++            P3DS_MoveHint[15] = BattleMon_Get(hctx, 1, BATTLEMON_CUR_HP, NULL) > 0 ? BattleMon_Get(hctx, 1, BATTLEMON_TYPE_2, NULL) : 255;
++            if ((BattleSystem_GetBattleType(btlSubscreen->battleSys) & BATTLE_TYPE_DOUBLES) && BattleMon_Get(hctx, 3, BATTLEMON_CUR_HP, NULL) > 0) {
++                P3DS_MoveHint[16] = BattleMon_Get(hctx, 3, BATTLEMON_TYPE_1, NULL);
++                P3DS_MoveHint[17] = BattleMon_Get(hctx, 3, BATTLEMON_TYPE_2, NULL);
++            } else {
++                P3DS_MoveHint[16] = 255;
++                P3DS_MoveHint[17] = 255;
++            }
++            P3DS_MoveHint[1] = P3DS_MoveHint[1] + 1;
++            P3DS_MoveHint[0] = 1;
++        } else {
++            P3DS_MoveHint[0] = 0;
++        }
++    }
++
+     G2S_SetBlendAlpha(GX_BLEND_PLANEMASK_BG1, GX_BLEND_BGALL, 8, 12);
+     BattleSubscreen_FreeAllSprites(btlSubscreen);
+ 
