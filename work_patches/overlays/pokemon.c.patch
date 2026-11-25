@@ -1,0 +1,17 @@
+--- a/pokemon.c
++++ b/pokemon.c
+@@ -2952,6 +2952,14 @@
+             spriteTemplate->personality = personality;
+         }
+     }
++    { /* SoulSilver 0298/0299 Black 2 sprites: remember what this template shows (read only) */
++        extern int SS3DS_B2Want(void);
++        extern void SS3DS_B2Note(int narc, int chr, int pal, int species, int gender, int facing, int shiny, int form, int height);
++        if (SS3DS_B2Want()) {
++            SS3DS_B2Note(spriteTemplate->narcID, spriteTemplate->character, spriteTemplate->palette, species, gender, face, shiny, form,
++                LoadPokemonSpriteYOffset(species, gender, face, form, personality));
++        }
++    }
+ }
+ 
+ u8 Pokemon_SanitizeFormId(u16 monSpecies, u8 monForm)

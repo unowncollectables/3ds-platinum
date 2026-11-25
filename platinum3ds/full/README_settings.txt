@@ -284,6 +284,11 @@ mobile_pc=0          (1 = SoulSilver's Mobile PC: the settings Quick menu gets a
                       app (Move Pokemon, like a Pokemon Center PC) from the field once you are in the Hall of Fame. Not in the
                       Mystery Zone, Great Marsh, Pal Park or Distortion World. Reads the Hall of Fame flag only; writes nothing)
 mobile_pc_dev=0      (Debug: 1 = Mobile PC before the Hall of Fame, runtime only; never sets any flag)
+b2_sprites=0         (1 = SoulSilver's Black 2 / White 2 animated Pokemon sprites, in battle (full size, slower at yellow/red HP,
+                      still while asleep or frozen) and in every other Pokemon picture (fitted into the game's 80x80 box).
+                      Needs sdmc:/3ds/platinum3ds/b2sprites.bin, made from your own Black 2 / White 2 ROM by SoulSilver's
+                      tools/b2sprites/build_pack.sh (the builder's Black 2 step); SoulSilver's sdmc:/3ds/soulsilver3ds/b2sprites.bin
+                      is used when Platinum's folder has none. Read once per battle; no pack = the game's own sprites)
 battle_anim_speed=0  (1 = skip plain move animations; Fly/Dig/Dive/Bounce/Shadow Force/Transform/Substitute/Minimize still play)
 Run 76
   battle_anim_speed=2  (also makes the HP bar drain 3x faster; damage and end values unchanged)
