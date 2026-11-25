@@ -1340,6 +1340,8 @@ static const MItem mItems[]={
  {"GBA_SLOT","slot2",2,{"OFF","ON"}},{"GBA_PAK","slot2_pak",6,{"1","2","3","4","5","6"}},
  /* 130..131: SoulSilver 0281-0283 visible wilds life (p3ds_follower.h), default OFF */
  {"WILD_VIS_ALIVE","wild_vis_alive",2,{"OFF","ON"}},{"WILD_VIS_CRIES","wild_vis_cries",2,{"OFF","ON"}},
+ /* 132: SoulSilver 0269 GTS server picker */
+ {"GTS_PICKER","gts_picker",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 extern "C" {int P3DS_B2Cfg(void);void P3DS_B2SetCfg(int);void P3DS_Slot2SetPak(int);}
@@ -1414,7 +1416,7 @@ static int bmV=-1;static int bmCfg(){if(bmV<0){bmV=P3DS_CfgInt("bottom_menu",1)!
 static int menuBtnV=-1;static int menuBtnCfg(){if(menuBtnV<0){menuBtnV=P3DS_CfgInt("menu_button",1);if(menuBtnV<0||menuBtnV>2)menuBtnV=1;PSPNativeMemLog("[BTN] menu_button=%d",menuBtnV);}return menuBtnV;}
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(!strcmp(mItems[33+k].key,"fps_tweaks"))v=v<=0?0:v>=2&&v<=7?v-1:0;
    if(!strcmp(mItems[33+k].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};int b=6;for(int t=0;t<7;t++)if(abs(kG[t]-v)<abs(kG[b]-v))b=t;v=b;}
    if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
@@ -1760,6 +1762,48 @@ static void runAppPages(const u32*top,int mode,bool gpu){ /* the pre-2026-11-25 
    touch opens it; the game is paused. Tabs LOOK / BATTLE / PLAY / PALS / SYSTEM, SELECT shows DEBUG. Up/Down = row, Left/X and
    Right/A = value, tap a value's left/right half, L/R = tab, B / START / L+R+Y close (changes are applied and saved then).
    A row with id >= L_HUNT opens a page of the old app (runAppPages): hunt stats, wild Pokemon here, quick menu. ---- */
+/* SoulSilver 0269 Online Settings (gts_picker, default ON like SoulSilver): the main menu's Nintendo WFC Settings row opens this
+   screen instead: pick the GTS server (Poke Classic or StarMe, key gts_server), or read how Wi-Fi is set up. Last-seen GTS
+   previews are shown when the network layer has one. Platinum: no party icons (SoulSilver reads them from HGSS archives). */
+#include "ss3ds_gts_preview.h"
+extern "C" int P3DS_GtsPickerEnabled(void);
+extern "C" int P3DS_GtsStarMeSelected(void);
+static bool onlineSettingsRequested;
+extern "C" void P3DS_RequestOnlineSettings(void){__atomic_store_n(&onlineSettingsRequested,true,__ATOMIC_RELEASE);}
+static void runOnlineSettings(const u32*top,int mode,bool gpu){
+ u32*bottom=(u32*)malloc(256*192*sizeof(u32));if(!bottom)return;
+ P3DS_MenuOpen=1;P3DS_LowerMenuDraw=0;
+ const char*const names[]={"Poke Classic","StarMe","Wi-Fi Setup"};
+ const GtsPreview preview[]={P3DS_GtsPreviewRead(0),P3DS_GtsPreviewRead(1),{}};
+ const int rowHeight=20,previewHeight=26;int rowY[]={26,0,0};
+ for(int sv=0;sv<2;++sv)rowY[sv+1]=rowY[sv]+rowHeight+3+(preview[sv].state?previewHeight+3:0);
+ bool wifiSetup=false;int choice=P3DS_GtsStarMeSelected();u32 held=hidKeysHeld();
+ PSPNativeMemLog("[GTS] online settings open (server %s)",choice?"StarMe":"Poke Classic");
+ while(aptMainLoop()){
+  hidScanInput();held&=hidKeysHeld();const u32 pressed=hidKeysDown()&~held;bool select=(pressed&KEY_A)!=0;
+  if(!wifiSetup&&(pressed&KEY_TOUCH)){touchPosition t;hidTouchRead(&t);int x,y;if(touchToDS(t.px,t.py,&x,&y)&&x>=4&&x<252)for(int r=0;r<3;++r)if(y>=rowY[r]&&y<rowY[r]+rowHeight){choice=r;select=true;break;}}
+  if(pressed&KEY_B){if(!wifiSetup)break;wifiSetup=false;}
+  else if(!wifiSetup){if(pressed&KEY_DUP)choice=(choice+2)%3;if(pressed&KEY_DDOWN)choice=(choice+1)%3;
+   if(select){if(choice==2)wifiSetup=true;else if(choice!=P3DS_GtsStarMeSelected()){P3DS_CfgWrite("gts_server",choice);PSPNativeMemLog("[GTS] selected %s",choice?"StarMe":"Poke Classic");}}}
+  suiBackground(bottom);
+  gtxt(bottom,12,6,wifiSetup?"Wi-Fi Setup":"GTS Server",kMsgFg,kMsgSh);
+  if(wifiSetup){gtxt(bottom,12,44,"Set up your connection in",kMsgFg,kMsgSh);gtxt(bottom,12,62,"Nintendo 3DS System Settings.",kMsgFg,kMsgSh);gtxt(bottom,12,96,"Online connects on its own.",kMsgFg,kMsgSh);}
+  else{const int active=P3DS_GtsStarMeSelected();
+   for(int r=0;r<3;++r){const int y=rowY[r];const bool on=choice==r;
+    suiPanel(bottom,4,y,252,y+rowHeight,on?kSuiSelCell:kSuiCell,on?kSuiSelLo:kSuiCellLo,on?kSuiSelEdge:kSuiEdge,on);
+    gtxt(bottom,10,y+2,names[r],kSuiName,kSuiNameSh);if(r==active)gtxt(bottom,240-gw("Active"),y+2,"Active",kSuiVal,kSuiValSh);
+    const GtsPreview&pv=preview[r];if(!pv.state)continue;const int t=y+rowHeight+2;
+    suiPanel(bottom,14,t,252,t+previewHeight,kSuiCell,kSuiCellLo,kSuiEdge,false);char line[64];
+    if(pv.species&&pv.species<494){if(pv.wanted&&pv.wanted<494)snprintf(line,sizeof line,"%s Lv.%u, seeking %s",kP3dsSpec[pv.species],(unsigned)pv.level,kP3dsSpec[pv.wanted]);else snprintf(line,sizeof line,"%s Lv.%u deposited",kP3dsSpec[pv.species],(unsigned)pv.level);}
+    else snprintf(line,sizeof line,"%s",pv.state==GTS_PREVIEW_PICKUP?"Trade ready for pickup":"Pokemon deposited");
+    suiDrawS(bottom,20,t+6,line,kSuiName,kSuiNameSh);}
+   gtxt(bottom,12,174,"A: Select   B: Back",kSuiName,kSuiNameSh);}
+  {extern int P3DS_GpuBotSame;P3DS_GpuBotSame=0;}
+  if(mode&&gpu)P3DS_GpuPresent(top,bottom,mode,true,nullptr);else{present(GFX_TOP,400,top,0);present(GFX_BOTTOM,320,bottom,0);gfxFlushBuffers();gfxSwapBuffers();}
+  gspWaitForVBlank();}
+ for(int f=0;f<120&&aptMainLoop()&&(hidKeysHeld()&(KEY_A|KEY_B|KEY_TOUCH));++f){gspWaitForVBlank();hidScanInput();}
+ free(bottom);P3DS_GpuInvalidateBot();P3DS_MenuOpen=0;}
+
 struct PAppRow{int it;const char*nm,*tip;};
 enum{kPMaxRows=40};
 struct PAppTab{int n;PAppRow r[kPMaxRows];};
@@ -1844,13 +1888,14 @@ static const PAppTab kPTabs[kPTotalTabs]={
      {39,"Idle look-around","Your follower looks around when you stand still."},
      {40,"Follower gap","Your follower keeps a step's distance."},
      {41,"Behind player","Your follower always walks behind you."}}},
- {15,{{3,"C-stick","What the C-stick does."},
+ {16,{{3,"C-stick","What the C-stick does."},
      {4,"ZL run toggle","ZL switches running on and off."},
      {5,"ZR = item (Y)","ZR uses your registered item (then ZR hunt stats is off)."},
      {6,"Circle pad D-pad","The circle pad acts as the D-pad."},
      {66,"Touch quick menu","Tap the bottom screen corner for the quick menu."},
      {68,"Bottom button strip","Button strip on the bottom screen in the field."},
      {77,"Bottom icon menu","Icon menu around the bottom screen in the field (GabeSud0)."},
+     {132,"GTS server picker","The main menu's Wi-Fi settings row opens Online Settings: pick the GTS server (Poke Classic or StarMe)."},
      {51,"Save backups","Keeps 8 rotating copies of your save: at launch, after each save, at exit."},
      {115,"Export save","Press A, then close this menu: copies your save to the SD export folder."},
      {18,"Menu music","The game's music keeps playing in this menu."},
@@ -2755,6 +2800,7 @@ static int PresentFrame(bool){
    if(tDown){cZone=z;cT=svcGetSystemTick();}else if(z!=cZone)cZone=0;
    if(cZone&&svcGetSystemTick()-cT>CPU_TICKS_PER_MSEC*300){cZone=0;cornerOpen=true;PSPNativeMemLog("[APP] opened by corner touch");}}
   else cZone=0;}
+ if(__atomic_exchange_n(&onlineSettingsRequested,false,__ATOMIC_ACQ_REL)){if(P3DS_GtsPickerEnabled()&&!P3DS_ConsoleOnBottom())runOnlineSettings(stereo?eyeL:top,mode,mode&&gpuOk==1);return 0;} /* SoulSilver 0269 */
  /* SoulSilver battle Y companion + ZR hunt stats: both are overlays on the bottom picture (cyFrame in the present above), the game keeps
     running underneath. Y in battle (catch_overlay or the hunt counter on): wild catch info, trainer foe info, damage check (dmg_check).
     ZR in the field (hunt_stats, needs the hunt counter): hunt stats. ZR stays the item button when zr_item is on. */

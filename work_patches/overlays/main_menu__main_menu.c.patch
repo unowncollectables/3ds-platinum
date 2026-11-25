@@ -8,3 +8,19 @@
  
      if (!SaveData_DataExists(appData->saveData)) {
          appData->isNewGame = TRUE;
+@@ -1206,6 +1207,15 @@
+                 Sound_PlayEffect(SE_CONFIRM_sseq_3);
+                 appData->nextApplication = appData->optionApps[appData->focusedOption];
+ 
++                { /* SoulSilver 0269: with gts_picker on, the Wi-Fi settings row opens the port's Online Settings (GTS server) screen */
++                    extern int P3DS_GtsPickerEnabled(void);
++                    extern void P3DS_RequestOnlineSettings(void);
++                    if (appData->nextApplication == NEXT_APP_WFC_SETTINGS && P3DS_GtsPickerEnabled()) {
++                        P3DS_RequestOnlineSettings();
++                        break;
++                    }
++                }
++
+                 if (appData->nextApplication == NEXT_APP_GBA_MIGRATION) {
+                     if (CTRDG_IsPulledOut() == TRUE) {
+                         if (appData->wirelessCheckState != MAIN_MENU_WIRELESS_CHECK_IDLE) {
