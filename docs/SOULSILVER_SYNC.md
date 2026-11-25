@@ -90,3 +90,19 @@ SoulSilver's `event_any_mon` (Ilex shrine / Arceus scenes without event Pokemon)
 (`ScrCmd_CheckItem`: Member Card, Oak's Letter, Azure Flute, Secret Key count as in the bag) and `scrcmd.c`
 (`ScrCmd_CheckDistributionEvent`: the Darkrai, Shaymin, Arceus and Rotom distributions count as received). Nothing is added
 to the bag; the scripts' other conditions (game cleared, National Pokedex, ...) stay. Default ON like SoulSilver.
+
+## Options that had no game data on Platinum (2026-11-25)
+
+Earlier Platinum runs copied several SoulSilver platform features without the SoulSilver game hooks that feed them, so their
+rows did nothing (or showed Johto content). Now fed from Platinum's game code:
+
+| Option | SoulSilver hook | Platinum |
+|---|---|---|
+| Move type hint | 0121 + 0214 (`battle_input.c`) | `battle__battle_subscreen.c.patch`: `BattleSubscreen_SetupBackground` publishes `P3DS_MoveHint` while the move-select menu is up, clears it for any other menu |
+| GTS server picker | 0270 (title menu: save's trainer id) | `main_menu__main_menu.c.patch`: `P3DS_GtsPreviewTrainer(TrainerInfo_ID(...))`. Without it the StarMe choice could never connect (`DWC_CheckValidConsole` needs it) |
+| Achievements | 0145 + 0213 (`field_control.c`) | `achievements.c` list rewritten for Sinnoh (8 badges, Pokedex / Frontier / Hall of Fame milestones, Giratina, Platinum GameRecords ids); `p3ds_follower.h` `P3DS_AchFieldFrame` publishes every 2 s |
+| Roamer + Day-Care tracker | 0120 (`field_control.c`) | `p3ds_follower.h` `P3DS_TrkFieldFrame` (roamers via `SpecialEncounter_*`, place names from the game's location bank, Day-Care compatibility / Masuda / egg); new settings page "Roamers & Day Care" (BATTLE tab) |
+| Ribbon checklist | capture in `ss3ds_glue.c` | `applications__pokemon_summary_screen__main.c.patch` `SetMonDataFromMon` captures; `ribbons.c` groups ribbons by what Platinum can earn (Sinnoh Champ, Ability set, dailies, Gorgeous/Royal, Footprint, Effort, Super Contest) |
+
+Checked and not needed on Platinum: 0197 (grey title options: Platinum only lists Ranger / Wii rows when such a device is
+found, which never happens on a 3DS), 0226 steady music (HGSS soundplates), 0279 party move cache (Platinum's own HM check).

@@ -1514,7 +1514,7 @@ extern "C" volatile int P3DS_CatchInfo[20];static int appStartTab=-1;
 /* settings redesign (after run 88): 6 tabs (+ hidden Debug), each a one-per-line list (8 rows a page). Item ids >= L_HUNT are
    rows that open one of the full pages below the tab bar (Hunt stats = the old Ball tab, Wild Pokemon here = the old
    Map tab, Quick menu = the old Menu tab); B on such a page goes back to the row that opened it. */
-enum{L_HUNT=1000,L_MAP,L_MENU};
+enum{L_HUNT=1000,L_MAP,L_MENU,L_TRACK};
 struct ATab{const char*name;int n;int it[40];const char*nm[40];};
 /* run 100 (v1.0): one/two-line help for the selected setting (top screen). */
 static const char*settingHelp(const char*k){static const char*const H[][2]={
@@ -1808,6 +1808,34 @@ static void runOnlineSettings(const u32*top,int mode,bool gpu){
  for(int f=0;f<120&&aptMainLoop()&&(hidKeysHeld()&(KEY_A|KEY_B|KEY_TOUCH));++f){gspWaitForVBlank();hidScanInput();}
  free(bottom);P3DS_GpuInvalidateBot();P3DS_MenuOpen=0;}
 
+/* SoulSilver 0120 tracker page (Platinum): the roaming Pokemon and the Day-Care, from the field publisher in p3ds_follower.h */
+#include "tracker.h"
+extern "C" char P3DS_TrkPlace[4][24];
+static void runTrackerPage(const u32*top,int mode,bool gpu){
+ u32*bottom=(u32*)malloc(256*192*sizeof(u32));if(!bottom)return;
+ P3DS_MenuOpen=1;P3DS_LowerMenuDraw=0;u32 held=hidKeysHeld();
+ while(aptMainLoop()){hidScanInput();held&=hidKeysHeld();const u32 pressed=hidKeysDown()&~held;if(pressed&(KEY_A|KEY_B|KEY_START|KEY_TOUCH))break;
+  suiBackground(bottom);gtxt(bottom,12,6,"Roamers & Day Care",kMsgFg,kMsgSh);char l[64];int y=28;
+  if(!P3DS_TrkOn()){gtxt(bottom,12,44,"Turn on Tracker (BATTLE tab).",kMsgFg,kMsgSh);}
+  else if(!P3DS_TrkReady){gtxt(bottom,12,44,"Walk around a little first.",kMsgFg,kMsgSh);}
+  else{int any=0;
+   for(int i=0;i<4;i++){const P3DS_TrkRoamer&rm=P3DS_TrkRoam[i];if(!rm.active)continue;any=1;
+    suiPanel(bottom,4,y,252,y+30,kSuiCell,kSuiCellLo,kSuiEdge,false);
+    snprintf(l,sizeof l,"%s  Lv.%d  HP %d",rm.species>0&&rm.species<494?kP3dsSpec[rm.species]:"?",rm.level,rm.hp);gtxt(bottom,10,y+1,l,kSuiName,kSuiNameSh);
+    suiDrawS(bottom,10,y+17,P3DS_TrkPlace[i][0]?P3DS_TrkPlace[i]:"somewhere in Sinnoh",kSuiVal,kSuiValSh);y+=33;}
+   if(!any){gtxt(bottom,12,y+2,"No Pokemon is roaming.",kSuiName,kSuiNameSh);y+=22;}
+   const P3DS_TrkDaycare&dc=P3DS_TrkDc;suiPanel(bottom,4,y,252,y+44,kSuiCell,kSuiCellLo,kSuiEdge,false);
+   if(dc.n==0)snprintf(l,sizeof l,"Day Care: empty");else if(dc.n==1)snprintf(l,sizeof l,"Day Care: %s",kP3dsSpec[dc.sp[0]<494?dc.sp[0]:0]);
+   else snprintf(l,sizeof l,"Day Care: %s + %s",kP3dsSpec[dc.sp[0]<494?dc.sp[0]:0],kP3dsSpec[dc.sp[1]<494?dc.sp[1]:0]);
+   gtxt(bottom,10,y+1,l,kSuiName,kSuiNameSh);
+   if(dc.n==2){if(dc.egg)snprintf(l,sizeof l,"An Egg is waiting!");else snprintf(l,sizeof l,"Egg chance %d%%%s, next check in %d steps",dc.compat,dc.masuda?" (Masuda)":"",dc.toCheck);suiDrawS(bottom,10,y+19,l,kSuiVal,kSuiValSh);}}
+  gtxt(bottom,12,174,"A / B: Back",kSuiName,kSuiNameSh);
+  {extern int P3DS_GpuBotSame;P3DS_GpuBotSame=0;}
+  if(mode&&gpu)P3DS_GpuPresent(top,bottom,mode,true,nullptr);else{present(GFX_TOP,400,top,0);present(GFX_BOTTOM,320,bottom,0);gfxFlushBuffers();gfxSwapBuffers();}
+  gspWaitForVBlank();}
+ for(int f=0;f<120&&aptMainLoop()&&(hidKeysHeld()&(KEY_A|KEY_B|KEY_TOUCH));++f){gspWaitForVBlank();hidScanInput();}
+ free(bottom);P3DS_GpuInvalidateBot();P3DS_MenuOpen=0;}
+
 struct PAppRow{int it;const char*nm,*tip;};
 enum{kPMaxRows=40};
 struct PAppTab{int n;PAppRow r[kPMaxRows];};
@@ -1832,7 +1860,7 @@ static const PAppTab kPTabs[kPTotalTabs]={
      {61,"Uneasy Pokemon","Your follower looks uneasy in the Distortion World."},
      {62,"Distant cry","Giratina's cry now and then in the Distortion World."},
      {0,"FPS counter","Shows the frame rate on screen."}}},
- {22,{{58,"Faster battles","1: skips plain move animations. 2: HP bars also drain 3 times faster."},
+ {23,{{58,"Faster battles","1: skips plain move animations. 2: HP bars also drain 3 times faster."},
      {57,"Battle Y screen","Y at the command menu: catch info for wild Pokemon, the foe's moves and team in trainer battles."},
      {122,"Damage check","Adds a rough damage and speed page to the battle Y screen (singles)."},
      {116,"Move type hint","SUPER / RESIST / NO EFFECT tags on the FIGHT menu's move buttons."},
@@ -1853,7 +1881,8 @@ static const PAppTab kPTabs[kPTotalTabs]={
      {102,"Swap catch into party","A caught Pokemon can go straight into your party."},
      {100,"Exp. Share: party","The Exp. Share gives experience to the whole party."},
      {106,"Low battery warning","Warns when the battery is low and saves the hunt file."},
-     {120,"Tracker","Roamer and breeding tracker on the hunt page."}}},
+     {120,"Tracker","Follows the roaming Pokemon and the Day-Care pair (egg chance, Masuda)."},
+     {L_TRACK,"Roamers & Day Care","Opens the tracker page: where each roaming Pokemon is now, and the Day-Care."}}},
  {29,{{23,"Reusable TMs","TMs are not used up when you teach a move."},
      {135,"Event Pokemon w/o event","Darkrai, Shaymin, Arceus and the Rotom room work without the Mystery Gift items. The story conditions still apply."},
      {50,"Field moves w/o HM","Field moves like Cut and Surf work without a Pokemon that knows them."},
@@ -1962,6 +1991,7 @@ static void runApp(const u32*top,int mode,bool gpu){
  for(int i=0;i<120&&aptMainLoop();i++){hidScanInput();if(!(hidKeysHeld()&(KEY_A|KEY_B|KEY_X|KEY_START|KEY_Y|KEY_L|KEY_R|KEY_TOUCH|KEY_DUP|KEY_DDOWN|KEY_DLEFT|KEY_DRIGHT)))break;gspWaitForVBlank();}
  free(base);P3DS_TxOn=0;P3DS_GpuInvalidateBot();int ch=0;for(int i=0;i<N;i++)if(val[i]!=old[i]){menuSet(i,val[i]);ch++;PSPNativeMemLog("[APP] saved %s=%s",mItems[i].key,mItems[i].lab[val[i]]);}
  P3DS_MenuOpen=0;PSPNativeMemLog("[APP] settings closed after %u ms, %d change(s)%s",(unsigned)((svcGetSystemTick()-t0)/CPU_TICKS_PER_MSEC),ch,openPage>=0?", opening a page":"");
+ if(openPage==L_TRACK){runTrackerPage(top,mode,gpu);return;}
  if(openPage>=0){appStartTab=tabFind(openPage==L_HUNT?-3:openPage==L_MAP?-2:-1);runAppPages(top,mode,gpu);}
 }
 
