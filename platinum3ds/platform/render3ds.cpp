@@ -2124,7 +2124,7 @@ static int PresentFrame(bool){
     picks wide_gpu. Before, it skipped wide_early, the GPU then declined it, and the right eye fell to the serial CPU path
     (path S, ~54 ms frames for the first ~6 s after launch with the slider up). Now it takes the CPU wide path as in Run 109. */
  static int wgPre=-1;if(wgPre<0){wgPre=P3DS_CfgInt("wide_gpu_precheck",1)!=0;PSPNativeMemLog("[WIDE] wide_gpu_precheck=%d",wgPre);}
- static int wgCfg=-1;if(wgCfg<0){wgCfg=0;PSPNativeMemLog("[WIDE] wide_gpu=0: the GPU wide compose is not on the SoulSilver compositor yet, wide frames use the CPU wide path");}
+ static int wgCfg=-1;if(wgCfg<0){wgCfg=P3DS_CfgInt("wide_gpu",1);if(wgCfg<0||wgCfg>2)wgCfg=1;PSPNativeMemLog("[WIDE] wide_gpu=%d (re-ported onto the SoulSilver compositor 2026-11-25)",wgCfg);}
  const bool wgNow=wgCfg&&wlNow&&(stereo?rightEye!=nullptr:wgCfg==2)&&gcMode0==2&&engineA.Enabled&&!engineA.CaptureLatch&&WC_Check(&wcPlan,PSPNative_GfxRegisters,1)==0&&gcEligible()&&(!wgPre||P3DS_GcBlendPredictOk((const u8*)PSPNative_GfxRegisters));
  /* run 113: the run 110 stereo_gpu_battle 4:3 mode (default off since run 111, superseded by wide_gpu) is removed; the key is ignored. */
  if((wlNow&&!wgNow)||engineA.CaptureLatch)G3G_DirectResolveWhy(2);  /* gpu_direct3d: widecomp / display capture read NativeFrame */

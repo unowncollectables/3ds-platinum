@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "blit_shbin.h"
+#include "widecomp.h"
 static unsigned gcEngineB;
 int P3DS_TitleWideRequested,P3DS_GcTitleWideValid;
 u32 P3DS_GcTitleStrips[64*192];
@@ -279,7 +280,34 @@ static int tile(int obj, int bpp8, unsigned bank, const u8 *src, unsigned addr) 
 }
 static unsigned nq;
 static u32 blendA, blendB, blendY;  /* clamped BLDALPHA EVA/EVB and BLDY EVY of the frame being composed */
+/* Platinum run 111 wide_gpu (re-ported 2026-11-25): while gW is set the frame is the 320-wide layout of widecomp's plan gP,
+   drawn into a 512x256 target (DS column -32 at x 0). Quads are clipped to cx0..cx1 / cy0..cy1 (one part's columns/lines)
+   with u/v following the clip linearly, so a clipped quad samples exactly the texels it covers. */
+static int gW; static const WcPlan *gP; static u32 *gStrip; static C3D_Tex rtWTex; static C3D_RenderTarget *rtW; static u32 *rbW; static int wReady = -1;
+static float cx0 = 0, cx1 = 320, cy0 = 0, cy1 = 192;
+static void quadUV(float x0, float y0, float x1, float y1, float u0, float u1, float v0, float v1) {
+    if (x1 <= cx0 || x0 >= cx1 || y1 <= cy0 || y0 >= cy1) return;
+    if (nq >= MAXQ) { fail = 1; return; }
+    const float W = x1 - x0, H = y1 - y0, U = u1 - u0, V = v1 - v0;
+    if (x0 < cx0) { u0 += U * (cx0 - x0) / W; x0 = cx0; } if (x1 > cx1) { u1 -= U * (x1 - cx1) / W; x1 = cx1; }
+    if (y0 < cy0) { v0 += V * (cy0 - y0) / H; y0 = cy0; } if (y1 > cy1) { v1 -= V * (y1 - cy1) / H; y1 = cy1; }
+    GV *v = vb + nq * 6; nq++;
+    v[0] = (GV){ x0, y0, u0, v0 }; v[1] = (GV){ x0, y1, u0, v1 }; v[2] = (GV){ x1, y0, u1, v0 };
+    v[3] = (GV){ x1, y0, u1, v0 }; v[4] = (GV){ x0, y1, u0, v1 }; v[5] = (GV){ x1, y1, u1, v1 };
+}
+/* one texel column (texel tc of the tile's stored rows) stretched across x0..x1 (wide mode: a stretched edge) */
+static void quadCol(int slot, float x0, float x1, float y, int tc, int vf) {
+    const unsigned tx = slot % (AW / 8), ty = slot / (AW / 8);
+    const float u = (tx * 8 + tc + 0.5f) / AW; float vt = 1.0f - (ty * 8 + 8.0f) / AH, vb_ = 1.0f - ty * 8.0f / AH;
+    if (vf) { float t = vt; vt = vb_; vb_ = t; }
+    quadUV(x0, y, x1, y + 8, u, u, vt, vb_);
+}
 static void quad(int slot, float x, float y, int hf, int vf) {
+    if (gW) { const unsigned tx = slot % (AW / 8), ty = slot / (AW / 8);
+        float u0 = tx * 8.0f / AW, u1 = (tx * 8 + 8.0f) / AW, vt = 1.0f - (ty * 8 + 8.0f) / AH, vb_ = 1.0f - ty * 8.0f / AH;
+        if (hf) { float t = u0; u0 = u1; u1 = t; }
+        if (vf) { float t = vt; vt = vb_; vb_ = t; }
+        quadUV(x, y, x + 8, y + 8, u0, u1, vt, vb_); return; }
     if (nq >= MAXQ) { fail = 1; return; }
     const unsigned tx = slot % (AW / 8), ty = slot / (AW / 8);
     float u0 = tx * 8.0f / AW, u1 = (tx * 8 + 8.0f) / AW, vt = 1.0f - (ty * 8 + 8.0f) / AH, vb_ = 1.0f - ty * 8.0f / AH;
@@ -307,7 +335,52 @@ static struct { u32 stamp; u16 me; s16 slot; } memo[4][1024];
  * P3DS_GcRowSd -1 = off. */
 int P3DS_GcRowSd = -1; int P3DS_GcRowOn[4];
 extern int P3DS_BattleRowExtra(int y, int sd);
+static int bgSlot(int i, const u8 *vram, unsigned mapb, unsigned charb, unsigned w, unsigned h, int bpp8, unsigned tx, unsigned ty, u16 *meOut) {
+    tx &= w - 1; ty &= h - 1;
+    const unsigned ma = (mapb + ((tx >> 5) + (ty >> 5) * (w >> 5)) * 0x800 + ((ty & 31) * 32 + (tx & 31)) * 2) & 0x7FFFF;
+    const u16 me = *(const u16 *)(vram + ma); *meOut = me;
+    const unsigned mi = (me ^ (me >> 10)) & 1023; const u16 mk = me & 0xF3FF;
+    if (memo[i][mi].stamp == frameNo && memo[i][mi].me == mk) return memo[i][mi].slot;
+    const unsigned ta = (charb + (me & 0x3FF) * (bpp8 ? 64 : 32)) & 0x7FFFF;
+    const int s = tile(0, bpp8, me >> 12, vram + ta, ta); memo[i][mi].stamp = frameNo; memo[i][mi].me = mk; memo[i][mi].slot = (s16)s; return s;
+}
+/* wide_gpu: BG i across the 320-wide layout from the plan's column maps (widecomp.c buildRow: per line, wide column X ->
+   picture column or -1). Lines sharing a map are one band; each map splits into runs that are either contiguous (picture
+   column + 1 per column: the layer drawn shifted, clipped to the run) or constant (one picture column repeated: a stretched
+   edge). Same as Platinum run 111. */
+static void drawBGWide(const u8 *regs, const u8 *vram, u32 dc, int i) {
+    const u16 cnt = rh(regs, 8 + i * 2);
+    const unsigned charb = ((cnt >> 2) & 15) * 0x4000 + ((dc >> 24) & 7) * 0x10000;
+    const unsigned mapb = ((cnt >> 8) & 31) * 0x800 + ((dc >> 27) & 7) * 0x10000;
+    const unsigned sz = cnt >> 14, w = (sz & 1) ? 64 : 32, h = (sz & 2) ? 64 : 32, M = w * 8 - 1;
+    const int bpp8 = (cnt & 0x80) != 0;
+    const int vofs = rh(regs, 0x12 + i * 4) & 0x1FF;
+    const float sx0 = cx0, sx1 = cx1, sy0 = cy0, sy1 = cy1;
+    for (int ya = 0; ya < 192;) {
+        const u8 ri = gP->rowOf[i][ya]; if (ri == 255) { fail = 1; return; }
+        int yb = ya + 1; while (yb < 192 && gP->rowOf[i][yb] == ri) yb++;
+        const short *m = gP->rows[ri];
+        const int wy0 = (ya + vofs) >> 3, wy1 = (yb - 1 + vofs) >> 3;
+        for (int X = 0; X < 320;) {
+            if (m[X] < 0) { X++; continue; }
+            const int p0 = m[X]; int X1 = X + 1, cst = 0;
+            if (X1 < 320 && m[X1] == p0) { cst = 1; while (X1 < 320 && m[X1] == p0) X1++; }
+            else while (X1 < 320 && m[X1] >= 0 && m[X1] == ((m[X1 - 1] + 1) & (int)M)) X1++;
+            cx0 = X; cx1 = X1; cy0 = ya; cy1 = yb;
+            for (int wy = wy0; wy <= wy1; wy++) { const float dy = wy * 8.0f - vofs;
+                if (cst) { u16 me; const int s = bgSlot(i, vram, mapb, charb, w, h, bpp8, (unsigned)(p0 >> 3), (unsigned)wy, &me);
+                    if (s >= 0) { const int fx = p0 & 7; quadCol(s, X, X1, dy, (me & 0x400) ? 7 - fx : fx, me & 0x800); } }
+                else { const int wx0 = p0 >> 3, wx1 = (p0 + (X1 - X) - 1) >> 3;
+                    for (int wx = wx0; wx <= wx1; wx++) { u16 me; const int s = bgSlot(i, vram, mapb, charb, w, h, bpp8, (unsigned)wx, (unsigned)wy, &me);
+                        if (s >= 0) quad(s, (float)(X + wx * 8 - p0), dy, me & 0x400, me & 0x800); } }
+                if (fail) break; }
+            X = X1; if (fail) break; }
+        cx0 = sx0; cx1 = sx1; cy0 = sy0; cy1 = sy1;
+        if (fail) return;
+        ya = yb; }
+}
 static void drawBG(const u8 *regs, const u8 *vram, u32 dc, int i) {
+    if (gW) { drawBGWide(regs, vram, dc, i); return; }
     gcTitleScale=gcTitleWide&&i==3;
     const u16 cnt = rh(regs, 8 + i * 2);
     const unsigned charb = ((cnt >> 2) & 15) * 0x4000 + ((dc >> 24) & 7) * 0x10000;
@@ -361,9 +434,16 @@ static void drawOBJ(const u16 *oam, const u8 *ov, u32 dc, unsigned prio) {
     for (int n = 127; n >= 0; n--) { const u16 a0 = oam[n * 4], a1 = oam[n * 4 + 1], a2 = oam[n * 4 + 2];
         if (((a2 >> 10) & 3) != prio || (a0 & 0x300) == 0x200) continue;
         const unsigned sp = (a0 >> 14) | ((a1 & 0xC000) >> 12); const int w = SW[sp], hh = SH[sp];
-        if(a0&0x100){drawAffineOBJ(n,oam,ov,dc,a0,a1,a2,w,hh);continue;}
+        if(a0&0x100){if(gW){fail=1;return;}drawAffineOBJ(n,oam,ov,dc,a0,a1,a2,w,hh);continue;}  /* wide_gpu: rotating/scaling sprites stay on widecomp's CPU path */
         int y = a0 & 255; if (y >= 192) y -= 256; if (y + hh <= 0) continue;
-        const int x = (s32)((u32)a1 << 23) >> 23; if (x <= -w || x >= 256) continue;
+        const int x0 = (s32)((u32)a1 << 23) >> 23;
+        int x = x0, sdx = 0, sst = 0;
+        if (gW) { /* wide_gpu: as widecomp */
+            if (gP->objParts) { const int ccx = x0 + w / 2, ccy = y + hh / 2;
+                for (int k = 0; k < gP->n; k++) { const short *t = gP->parts + k * 8; if (t[0] != 3) continue;
+                    if (ccx >= t[4] && ccx < t[5] && ccy >= t[2] && ccy < t[3]) { sdx = t[6]; sst = t[7] == 1; break; } } }
+            x = x0 + sdx + 32; if ((x + w <= 0 || x >= 320) && !sst) continue; }
+        else if (x <= -w || x >= 256) continue;
         const int bpp8 = (a0 & 0x2000) != 0, hf = (a1 & 0x1000) != 0, vf = (a1 & 0x2000) != 0;
         const unsigned tn = a2 & 0x3FF, bank = a2 >> 12, ts = bpp8 ? 64 : 32;
         for (int r = 0; r < hh / 8; r++) for (int c = 0; c < w / 8; c++) {
@@ -374,7 +454,11 @@ static void drawOBJ(const u16 *oam, const u8 *ov, u32 dc, unsigned prio) {
             const int s = tile(1, bpp8, bank, ov + addr, addr);
             if (s < 0) continue;
             const int dcx = hf ? (w / 8 - 1 - c) : c, dry = vf ? (hh / 8 - 1 - r) : r;
-            quad(s, (float)(x + dcx * 8), (float)(y + dry * 8), hf, vf); } }
+            quad(s, (float)(x + dcx * 8), (float)(y + dry * 8), hf, vf);
+            if (gW && sst && sdx) { /* stretched: the edge column drawn back over the gap the shift left */
+                const int ox = x0 + 32;
+                if (sdx > 0 && dcx == 0) quadCol(s, (float)ox, (float)(ox + sdx), (float)(y + dry * 8), hf ? 7 : 0, vf);
+                if (sdx < 0 && dcx == w / 8 - 1) quadCol(s, (float)(x + w), (float)(ox + w), (float)(y + dry * 8), hf ? 0 : 7, vf); } } }
 }
 /* run 17: outside the overworld the 3D layer is often unchanged between frames (battle backdrop, menus: ~3 ms of conversion per eye in the 2026-10-26 log).
    Each eye (frame buffer pointer) gets its own texture; a content hash decides whether the converted texture can be reused. Overworld: never hashed. */
@@ -485,6 +569,7 @@ static u32 gcClearWord(const C3D_RenderTarget *tgt, u32 rgba) {
     }
     return rgba >> 8;
 }
+static int gSideFx;  /* wide_gpu: bit 0 = brighten/darken has BG0 as a first target this frame */
 static void gcDrawAll(C3D_RenderTarget *tgt, u32 bd, C3D_Tex *t3, unsigned q3, int b3, GV *vbuf, float width) {
     C3D_RenderTargetClear(tgt, C3D_CLEAR_ALL, gcClearWord(tgt, bd), 0);
     C3D_FrameDrawOn(tgt);
@@ -500,7 +585,14 @@ static void gcDrawAll(C3D_RenderTarget *tgt, u32 bd, C3D_Tex *t3, unsigned q3, i
     { C3D_TexEnv *env = C3D_GetTexEnv(0); C3D_TexEnvInit(env); C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, 0, 0); C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
       for (int k = 1; k < 6; k++) C3D_TexEnvInit(C3D_GetTexEnv(k)); }
     int curFx = 0;
+    const int sideNoFx = gW && blendY && (gSideFx & 1);
     for (unsigned b = 0; b < nb; b++) { if (!bat[b].is3d && !bat[b].count) continue;
+        if (sideNoFx && bat[b].fx >= 2) { const int f = bat[b].fx;  /* wide_gpu: the effect in the centre only */
+            for (int pass = 0; pass < 3; pass++) { const int fxp = pass ? 0 : f; if (fxp != curFx) { curFx = fxp; setFx(curFx); }
+                if (pass == 0) C3D_SetScissor(GPU_SCISSOR_NORMAL, 32, 0, 288, 256); else if (pass == 1) C3D_SetScissor(GPU_SCISSOR_NORMAL, 0, 0, 32, 256); else C3D_SetScissor(GPU_SCISSOR_NORMAL, 288, 0, 512, 256);
+                if (bat[b].is3d) { C3D_TexBind(0, t3); C3D_DrawArrays(GPU_TRIANGLES, q3 * 6, 6); }
+                else { C3D_TexBind(0, &atlas); C3D_DrawArrays(GPU_TRIANGLES, bat[b].first * 6, bat[b].count * 6); } }
+            C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0); continue; }
         if (bat[b].fx != curFx) { curFx = bat[b].fx; setFx(curFx); }
         if (bat[b].is3d) { C3D_TexBind(0, t3);
             if (b3) { C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA); C3D_DrawArrays(GPU_TRIANGLES, q3 * 6, 6); curFx = -1; }
@@ -568,7 +660,7 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     const u64 t0 = svcGetSystemTick();
     /* a picture left on the GPU by the last compose is replaced now (its CPU buffer is written by this compose or the CPU fallback) */
     if (!fpEye) dfPend[0] = dfPend[1] = 0; else dfPend[1] = 0;
-    if (P3DS_GcDeferOut && fpEye && rtROk < 0) {
+    if (!gW && P3DS_GcDeferOut && fpEye && rtROk < 0) {
         if (C3D_TexInitVRAM(&rtTexR, 256, 256, GPU_RGBA8)) {
             rtR = C3D_RenderTargetCreateFromTex(&rtTexR, GPU_TEXFACE_2D, 0, -1);
             if (!rtR) C3D_TexDelete(&rtTexR);
@@ -577,11 +669,11 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
         PSPNativeMemLog("[GPUC] direct screen: right-eye target %s",
                         rtROk ? "ready (VRAM)" : "failed, the right eye takes the CPU path");
     }
-    const int dfEye = P3DS_GcDeferOut && fpEye && rtROk == 1;   /* right eye into its own target */
-    if (gpuBusy && !fpOn()) gcIdle();   /* one vertex buffer: a still queued deferred draw must be done before it is rewritten */
+    const int dfEye = !gW && P3DS_GcDeferOut && fpEye && rtROk == 1;   /* right eye into its own target */
+    if (gpuBusy && (!fpOn() || gW)) gcIdle();   /* one vertex buffer: a still queued deferred draw must be done before it is rewritten */
     frameNo++; fail = 0; nq = 0; nb = 0; dirtyLo = ~0u; dirtyHi = 0; P3DS_GcDecoded = 0;
     P3DS_GcBeginUs = P3DS_GcEndUs = P3DS_GcSyncUs = 0;
-    const int ov = fpOn(); if (ov) vb = (fpSub & 1) ? vbB : vbA;  /* the other half may still be read by the queued draw */
+    const int ov = !gW && fpOn(); if (ov) vb = (fpSub & 1) ? vbB : vbA;  /* the other half may still be read by the queued draw */
     if (slotsUsed > SLOTS - 3000 || slotsUsed * 2 > HSIZE - 6000) { memset(tab, 0, HSIZE * sizeof(GE)); slotsUsed = 0; P3DS_GcResets++; }
 
     const u32 dc = rg(regs, 0);
@@ -594,6 +686,7 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     const u32 eva = rh(regs, 0x52) & 0x1F, evb = (rh(regs, 0x52) >> 8) & 0x1F, evy = rh(regs, 0x54) & 0x1F;
     blendA = eva > 16 ? 16 : eva; blendB = evb > 16 ? 16 : evb; blendY = evy > 16 ? 16 : evy;
     const int exactB=gcEngineB&&P3DS_GcBFadesCfg();gcTileFx=0;
+    gSideFx = (eff >= 2 && (firstM & 1)) ? 1 : 0;
     palPrep(bgpal,0,exactB?eff:0,blendY);palPrep(objpal,1,exactB?eff:0,blendY);
     u32 belowM = 0; int usedFx = 0;
     for (int p = 3; p >= 0; p--) {
@@ -618,8 +711,9 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     if (b3) P3DS_GcB3Frames++;
     unsigned q3 = nq; if (has3d) { GV *v = vb + nq * 6; nq++;
         const float vt = 0.0f, vbm = 192.0f / 256;
-        v[0] = (GV){ 0, 0, 0, vt }; v[1] = (GV){ 0, 192, 0, vbm }; v[2] = (GV){ 256, 0, 1, vt };
-        v[3] = (GV){ 256, 0, 1, vt }; v[4] = (GV){ 0, 192, 0, vbm }; v[5] = (GV){ 256, 192, 1, vbm };
+        const float ox = gW ? 32.0f + gP->dx3d : 0.0f;  /* wide_gpu: the 3D layer at its WIDE_3D shift (strips beyond it stay clear) */
+        v[0] = (GV){ ox, 0, 0, vt }; v[1] = (GV){ ox, 192, 0, vbm }; v[2] = (GV){ ox + 256, 0, 1, vt };
+        v[3] = (GV){ ox + 256, 0, 1, vt }; v[4] = (GV){ ox, 192, 0, vbm }; v[5] = (GV){ ox + 256, 192, 1, vbm };
         conv3d(f3d); }
     if (dirtyHi > dirtyLo) P3DS_DcFlush((u8 *)atlas.data + dirtyLo, dirtyHi - dirtyLo);
     P3DS_DcFlush(vb, nq * 6 * sizeof(GV));
@@ -633,7 +727,7 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
         bd = (c[0] << 24) | (c[1] << 16) | (c[2] << 8) | 0xFF; }
     if (fpEye && !dfEye && dfPend[0]) { dfPend[0] = 0; dfFetch(0, dfOut[0]); }   /* the left eye was left in rt, which this right eye reuses */
     const u16 mbr = rh(regs, 0x6C);
-    const int direct = P3DS_GcDeferOut && (!fpEye || dfEye) &&
+    const int direct = !gW && P3DS_GcDeferOut && (!fpEye || dfEye) &&
                        !(((mbr >> 14) == 1 || (mbr >> 14) == 2) && (mbr & 0x1F));
     C3D_RenderTarget *const midTarget = direct && has3d && !gcTitleWide &&
                                        !gcEngineB && mid3d && midOut ? gcMidTarget(dfEye) : NULL;
@@ -641,14 +735,29 @@ int P3DS_GcComposeA(const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bg
     { const u64 tb = svcGetSystemTick(); gcFrameBegin(); P3DS_GcBeginUs = (unsigned)((svcGetSystemTick() - tb) / 268); }
     gpuBusy = 0;
     G3G_DirectSynced();   /* FrameBegin waited for every queued draw, including g3gpu's direct 3D frame */
-    C3D_RenderTarget *const tgt = gcTitleWide ? titleTarget : (dfEye ? rtR : rt);
-    gcDrawAll(tgt, bd, t3cur, q3, b3, vb, gcTitleWide ? 512.0f : 256.0f);
+    if (gW && fpPend.out) { gcOut(fpPend.rbuf, fpPend.mbr, fpPend.out); fpPend.out = 0; }  /* a queued left eye: done (FrameBegin waited) */
+    C3D_RenderTarget *const tgt = gW ? rtW : gcTitleWide ? titleTarget : (dfEye ? rtR : rt);
+    gcDrawAll(tgt, bd, t3cur, q3, b3, vb, (gW || gcTitleWide) ? 512.0f : 256.0f);
     if (midTarget) {
         const u64 started = svcGetSystemTick();
         gcDrawAll(midTarget, bd, mid3d, q3, b3, vb, 256.0f);
         *midOut = &rtTexM[dfEye];
         if (midUs) *midUs += (unsigned)((svcGetSystemTick() - started) / CPU_TICKS_PER_USEC);
     }
+    if (gW) {  /* wide_gpu: read the 512x256 target back and wait; centre (with master brightness, as widecomp) + strips */
+        C3D_SyncDisplayTransfer((u32 *)rtWTex.data, GX_BUFFER_DIM(512, 256), rbW, GX_BUFFER_DIM(512, 256), RB_FLAGS);
+        { const u64 te = svcGetSystemTick(); P3DS_FrameEnd(); P3DS_GcEndUs = (unsigned)((svcGetSystemTick() - te) / 268); }
+        P3DS_Crumb("gc-wait", 0);
+        { const u64 ts = svcGetSystemTick(); C3D_FrameBegin(0); C3D_FrameEnd(GX_CMDLIST_FLUSH); P3DS_GcSyncUs = (unsigned)((svcGetSystemTick() - ts) / 268); }
+        gpuBusy = 0; fpEye = 0; fpDefer = 0;
+        const u64 t2 = svcGetSystemTick();
+        P3DS_DcInval(rbW, 512 * 192 * 4);  /* the strips start at column 0, before the centre's own invalidate */
+        gcOutStride(rbW + 32, mbr, out, 512);
+        if (gStrip) for (unsigned y = 0; y < 192; y++) { const u32 *r = rbW + y * 512; u32 *st = gStrip + y * 64;
+            for (unsigned x = 0; x < 32; x++) { st[x] = r[x] | 0xFF; st[x + 32] = r[x + 288] | 0xFF; } }
+        const u64 t3 = svcGetSystemTick(); P3DS_GcOutUs = (unsigned)((t3 - t2) / 268);
+        P3DS_GcCpuUs = (unsigned)((t1 - t0 + t3 - t2) / 268); P3DS_GcGpuUs = (unsigned)((t2 - t1) / 268);
+        return 1; }
     u32 *const rbuf = gcTitleWide ? titleReadback : (ov && fpEye ? rbR : rb);
     if (direct) {
         const u64 te = svcGetSystemTick(); P3DS_FrameEnd(); P3DS_GcEndUs = (unsigned)((svcGetSystemTick() - te) / 268);
@@ -723,8 +832,9 @@ int P3DS_GcComposeB(const u8*in,const u8*bg,const u8*obj,const u16*bp,const u16*
  *  - gpu_mbright (run 111), gpu_blend_3d (run 110): replaced by fps_tweaks 3 / 4 (master brightness and 3D
  *    translucency on the GPU), which the tuned defaults turn on.
  *  - gc_atlas16 (run 118, default off): dropped (16-bit atlas never became the default).
- *  - wide_gpu (run 111, GPU wide battle layout): not yet carried onto this compositor. P3DS_GcComposeWide returns 0,
- *    so wide frames take widecomp's CPU path (the pre-run-111 path, same picture). Logged once as [GPUC] wide_gpu. */
+ *  - wide_gpu (run 111-114, GPU wide battle layout): re-ported 2026-11-25 (P3DS_GcComposeWide below, gW in the walk). Wide
+ *    frames always wait for their own draw (no deferred output, no overlap, no in-between picture); a rotating/scaling sprite
+ *    or a plan line without a map sends the frame to widecomp's CPU path, as before. */
 int P3DS_GcNoLag;
 void P3DS_GcFrame(void) { }
 void P3DS_SetFramePacing(int v) { PSPNativeMemLog("[GPUC] frame_pacing=%d ignored: the SoulSilver overlap path does this now", v); }
@@ -735,9 +845,27 @@ int P3DS_GcBlendPredictOk(const u8 *regs) {
     u32 on = (dc >> 8) & 0x1F; if (dc & 8) on &= ~1u;
     return (bl & 0x1F & on) == 0;
 }
-int P3DS_GcComposeWide(const void *plan, const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bgpal, const u16 *objpal, const u16 *oam, const u32 *f3d, u32 *center, u32 *strip) {
-    (void)plan; (void)regs; (void)bgv; (void)objv; (void)bgpal; (void)objpal; (void)oam; (void)f3d; (void)center; (void)strip;
-    static int said; if (!said) { said = 1; PSPNativeMemLog("[GPUC] wide_gpu: GPU wide compose not on the new compositor yet, wide frames use the CPU widecomp path"); }
-    return 0;
+/* wide_gpu: the wide (320-column) battle/menu layout composed on the GPU from widecomp's plan. center = DS columns 0..255
+   (melonDS format), strip = 32 + 32 side columns (0xRRGGBBAA, as WC_Compose) or NULL. Returns 0 = not composed. */
+int P3DS_GcComposeWide(const WcPlan *plan, const u8 *regs, const u8 *bgv, const u8 *objv, const u16 *bgpal, const u16 *objpal, const u16 *oam, const u32 *f3d, u32 *center, u32 *strip) {
+    if (!init()) return 0;
+    /* the 512 KiB VRAM target is made when a wide frame needs it and freed again when the overworld wide view wants its
+       eye targets (P3DS_GcWideRelease). A failed allocation is retried 30 frames later, not given up (Platinum run 112). */
+    static unsigned wRetry;
+    if (wReady < 0 || (wReady == 0 && ++wRetry >= 30)) { wRetry = 0; wReady = 0; gcIdle(); if (!rbW) rbW = (u32 *)linearAlloc(512 * 256 * 4);
+        if (rbW && C3D_TexInitVRAM(&rtWTex, 512, 256, GPU_RGBA8)) { if ((rtW = C3D_RenderTargetCreateFromTex(&rtWTex, GPU_TEXFACE_2D, 0, -1))) wReady = 1; else C3D_TexDelete(&rtWTex); }
+        static unsigned nl; if (nl++ < 20) PSPNativeMemLog("[GPUC] wide_gpu target 512x256: %s (VRAM free %lu)", wReady == 1 ? "ready" : "not available now, retry later", (unsigned long)vramSpaceFree()); }
+    if (wReady != 1 || !plan || !plan->valid || gcEngineB) return 0;
+    gW = 1; gP = plan; gStrip = strip; cx0 = 0; cx1 = 320; cy0 = 0; cy1 = 192;
+    const int r = P3DS_GcComposeA(regs, bgv, objv, bgpal, objpal, oam, f3d, center, NULL, NULL, NULL);
+    gW = 0; gP = 0; gStrip = 0;
+    return r;
 }
-int P3DS_GcWideRelease(void) { return 0; }
+/* free the wide target (the overworld wide view needs the VRAM). Returns 1 if something was freed. */
+int P3DS_GcWideRelease(void) {
+    if (wReady != 1) { if (wReady == 0) wReady = -1; return 0; }
+    P3DS_GcFinish(); P3DS_GcResolve(); gcIdle();
+    C3D_RenderTargetDelete(rtW); rtW = 0; C3D_TexDelete(&rtWTex); memset(&rtWTex, 0, sizeof rtWTex); wReady = -1;
+    PSPNativeMemLog("[GPUC] wide_gpu target freed for the overworld wide view");
+    return 1;
+}

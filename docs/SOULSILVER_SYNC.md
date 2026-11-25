@@ -32,7 +32,7 @@ Platinum gameplay (cheats, visible wilds, shiny odds, HM-free, ...) keeps Platin
 ### Adapted, not copied
 
 * `p3ds_ssglue.c`: Platinum's answers to the hooks the shared layer expects (title/Pokewalker/intro state, list cursor, field weather ...). Zero means "that SoulSilver-only screen never happens here".
-* `gpucomp.c`: SoulSilver's compositor. Platinum's `wide_gpu` (GPU wide battle layout), `frame_pacing`, `gpu_mbright`, `gpu_blend_3d`, `gc_atlas16` are not on it. `frame_pacing` is replaced by the overlap path, `gpu_mbright`/`gpu_blend_3d` by fps_tweaks 3/4. **`wide_gpu` falls back to the CPU wide layout** (same picture, slower); porting it onto the new compositor is a follow-up.
+* `gpucomp.c`: SoulSilver's compositor. Platinum's `wide_gpu` (GPU wide battle layout), `frame_pacing`, `gpu_mbright`, `gpu_blend_3d`, `gc_atlas16` are not on it. `frame_pacing` is replaced by the overlap path, `gpu_mbright`/`gpu_blend_3d` by fps_tweaks 3/4. `wide_gpu` fell back to the CPU wide layout after phase 1; phase 2 puts it back on this compositor (see below).
 * `widecomp.c` is Platinum's (wide layouts, dirty lines, split). Added from SoulSilver: `WC_StripHash`, `WC_MapColumn` (sharp game text). `WC_ComposeObjStrips` (wide HP boxes) is a stub: Platinum has its own wide battle layout.
 * `render3ds.cpp`: SoulSilver's frame pipeline (H-blank lines, 60 fps in-between present, sharp text, overlay timing, `[PERF4]`) with Platinum's settings app, wide layout engine, lower menu, bottom strip and follower overlays kept.
 
@@ -54,8 +54,9 @@ All new options default OFF; none of them writes the save.
 `P3DS_InBattle` on Platinum was only set once a wild battle's command menu opened; `Battle_Main` now sets it for every
 battle from its first frame (the field coming back clears it, as before).
 
-Still to come: visible wilds improvements,
-Slot 2 GBA migrate (0294-0297), Black 2 sprites (0298-0300), `wide_gpu` on the new compositor.
+| `wide_gpu` on the SoulSilver compositor | (Platinum's own run 111-114 feature, dropped by phase 1) | `gpucomp.c`: Platinum's clip-rectangle quads, `drawBGWide` (plan column maps), WIDE_OBJS sprite shift / stretched edge, 3D layer at `32 + dx3d`, centre-only brighten/darken on BG0, 512x256 target freed for the field wide view (`P3DS_GcWideRelease`), all behind a `gW` flag inside SoulSilver's `P3DS_GcComposeA`. Wide frames always wait for their own draw: no deferred output, no overlap, no 60 fps in-between picture. A rotating/scaling sprite now sends a wide frame to widecomp's CPU path (Platinum's old compositor never drew them at all). FOE DEEPER's per-row shift is not applied on wide frames. `render3ds.cpp` reads `wide_gpu` again (default 1) | `wide_gpu`, `wide_gpu_precheck`, `wide_gpu_verify` (as before) |
+
+Still to come: visible wilds improvements, Slot 2 GBA migrate (0294-0297).
 
 Nothing in phase 2 has been run on a 3DS or an emulator yet: each group is checked by compiling the patched overlay
 object and linking `platinum3ds_full.elf` only.
