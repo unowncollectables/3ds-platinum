@@ -1634,7 +1634,7 @@ static void huntPanel(u32*bimg,u32 valC,u32 valSh){const int sp=huntShown();char
  gtxt(bimg,8,168,huntMsg[0]?huntMsg:"Left/Right species   X reset   A save CSV",huntMsg[0]?valC:gy,huntMsg[0]?valSh:gs);}
 static int tabBarOf(int t){if(t<T_PAGES)return t;if(kTabs[t].n==-1)return 2;return 4;} /* pages light up the tab whose row opens them */
 static int tabFind(int n){for(int t=0;t<(int)(sizeof kTabs/sizeof kTabs[0]);t++)if(kTabs[t].n==n)return t;return 0;}
-static void runApp(const u32*top,int mode,bool gpu){
+static void runAppPages(const u32*top,int mode,bool gpu){ /* the pre-2026-11-25 settings app: now only its pages (hunt stats, wild Pokemon here, quick menu) */
  const size_t PX=256*192;u32*base=(u32*)malloc(PX*4*3);if(!base){PSPNativeMemLog("[APP] no memory");return;}u32*img=base+PX,*bimg=img+PX;memcpy(base,top,PX*4);
  enum{N=MENU_N};int val[N];for(int i=0;i<N;i++)val[i]=menuGet(i);int old[N];memcpy(old,val,sizeof old);
  for(int i=0;i<256*192;i++){u32 c=base[i];base[i]=((c>>1)&0x007F7F7Fu)|(c&0xFF000000u);}
@@ -1755,6 +1755,164 @@ static void runApp(const u32*top,int mode,bool gpu){
  P3DS_MenuOpen=0;PSPNativeMemLog("[APP] settings closed after %u ms, %d change(s)",(unsigned)((svcGetSystemTick()-t0)/CPU_TICKS_PER_MSEC),ch);
  tPrevEnd=svcGetSystemTick();secStart=0;secFrames=secG3=secComp=secGpu=secGame=secTris=0;secG3G=0;
 }
+
+/* ---- 2026-11-25 settings app in SoulSilver's design (Nathan: "you can completely rewrite the setting menu"). L+R+Y or the corner
+   touch opens it; the game is paused. Tabs LOOK / BATTLE / PLAY / PALS / SYSTEM, SELECT shows DEBUG. Up/Down = row, Left/X and
+   Right/A = value, tap a value's left/right half, L/R = tab, B / START / L+R+Y close (changes are applied and saved then).
+   A row with id >= L_HUNT opens a page of the old app (runAppPages): hunt stats, wild Pokemon here, quick menu. ---- */
+struct PAppRow{int it;const char*nm,*tip;};
+enum{kPMaxRows=40};
+struct PAppTab{int n;PAppRow r[kPMaxRows];};
+enum{kPPlayerTabs=5,kPTotalTabs=6};
+static const char*const kPTabNm[kPTotalTabs]={"LOOK","BATTLE","PLAY","PALS","SYSTEM","DEBUG"};
+static const PAppTab kPTabs[kPTotalTabs]={
+ {16,{{9,"Camera zoom","Overworld camera distance. 0 is the original; minus is closer, plus is farther."},
+     {10,"3D strength","How deep the 3D slider looks: 1X is normal, 2X is stronger."},
+     {20,"Battle 3D depth","How far battle backgrounds sit behind the screen with the 3D slider up. FOE DEEPER: the foe sits further back."},
+     {124,"Sharp game text","Every text box drawn at the 3DS resolution instead of the stretched DS picture. Needs 1.25X or FILL."},
+     {127,"Black 2 sprites","Animated Black 2 / White 2 Pokemon in battle and on big pictures. Needs b2sprites.bin from the builder."},
+     {2,"Scale","How the DS picture fills the screen: 1:1, 1.25X, or FILL."},
+     {1,"Wide view","More of the overworld at the sides of the top screen."},
+     {71,"Wide menu layouts","Battle, menus and boxes spread over the whole wide screen."},
+     {42,"Weather in strips","Rain, snow and sand also fall in the wide side strips."},
+     {64,"Time-of-day tint","The overworld gets warmer in the evening and darker at night."},
+     {59,"Distortion 3D depth","3D depth in the Distortion World."},
+     {60,"Distortion debris","Drifting debris and dust over the Distortion World."},
+     {67,"Distortion camera roll","A slow camera roll in the Distortion World."},
+     {61,"Uneasy Pokemon","Your follower looks uneasy in the Distortion World."},
+     {62,"Distant cry","Giratina's cry now and then in the Distortion World."},
+     {0,"FPS counter","Shows the frame rate on screen."}}},
+ {22,{{58,"Faster battles","1: skips plain move animations. 2: HP bars also drain 3 times faster."},
+     {57,"Battle Y screen","Y at the command menu: catch info for wild Pokemon, the foe's moves and team in trainer battles."},
+     {122,"Damage check","Adds a rough damage and speed page to the battle Y screen (singles)."},
+     {116,"Move type hint","SUPER / RESIST / NO EFFECT tags on the FIGHT menu's move buttons."},
+     {108,"SELECT = reset","SELECT soft-resets the game in a wild battle (never on a shiny). Handy for hunting."},
+     {107,"Skip intro on reset","After a soft reset, skips the logos and title straight to the menu."},
+     {72,"Shiny hunt suite","Hunt tools: chain, Masuda and shiny counters on the hunt page, shiny chime."},
+     {103,"Shiny odds","Wild shiny chance: 1/8192 is the real game, lower numbers are easier."},
+     {63,"Encounter counter","Counts encounters per species for your hunts."},
+     {123,"Hunt stats (ZR)","ZR in the overworld opens the hunt stats screen. Needs the encounter counter."},
+     {L_HUNT,"Hunt stats page","Opens the hunt page: target, counts, odds, chains."},
+     {46,"Visible wild Pokemon","Wild Pokemon walk in the grass; walk into one to battle it."},
+     {47,"Visible at once","How many visible wild Pokemon can be out at the same time."},
+     {130,"Wild Pokemon behave","Visible ones have a pace, look around, come over when you stand still and go home at dusk."},
+     {131,"Wild Pokemon call","Visible ones nearby cry now and then, quieter further away."},
+     {105,"Visible shiny sparkle","A visible shiny twinkles, and the battle is shiny too."},
+     {48,"Only visible battle","No random encounters while visible Pokemon are on: only walked-into ones."},
+     {L_MAP,"Wild Pokemon here","Opens the list of this area's wild Pokemon with levels and chances."},
+     {102,"Swap catch into party","A caught Pokemon can go straight into your party."},
+     {100,"Exp. Share: party","The Exp. Share gives experience to the whole party."},
+     {106,"Low battery warning","Warns when the battery is low and saves the hunt file."},
+     {120,"Tracker","Roamer and breeding tracker on the hunt page."}}},
+ {28,{{23,"Reusable TMs","TMs are not used up when you teach a move."},
+     {50,"Field moves w/o HM","Field moves like Cut and Surf work without a Pokemon that knows them."},
+     {25,"Repel prompt","When a Repel runs out, asks if you want to use another."},
+     {26,"IV/EV on summary","Shows IVs and EVs on the summary screen."},
+     {117,"Ribbon checklist (X)","Press X on a summary screen to see which ribbons it has and is missing."},
+     {118,"Celebrations","Little celebrations for milestones (badges, shinies, the League)."},
+     {119,"Achievement toasts","Pop-up on the top screen when you unlock an achievement."},
+     {121,"Pokemon menu X/Y","In the Pokemon menu, X opens the Move Reminder and Y the Move Tutor."},
+     {22,"Fast text","Speeds up text boxes: 2X, 4X, or instant. Never skips a prompt."},
+     {69,"Hold B skips text","Holding B prints text instantly and moves on. Never picks a choice."},
+     {70,"Auto-advance text","Text boxes move on by themselves after a moment."},
+     {65,"Hidden item ping","A ping when you walk near a hidden item."},
+     {101,"Auto run","Run by default; B walks instead."},
+     {125,"Mobile PC","After the Hall of Fame, a Boxes tile in the Quick menu opens your PC boxes anywhere."},
+     {128,"GBA slot","A GBA game from sdmc:/3ds/platinum3ds/slot2/ in the GBA slot: Pal Park migrate. Next start."},
+     {129,"GBA pak","Which .gba in the slot2 folder (by name) is in the slot. Next start."},
+     {L_MENU,"Quick menu","Opens the Pokemon / Bag / Pokedex / Boxes quick menu."},
+     {24,"No wild battles","Cheat: random wild encounters never happen."},
+     {27,"Infinite money","Cheat: money never runs out."},
+     {28,"Always catch","Cheat: every Poke Ball catches."},
+     {29,"Shiny wild","Cheat: every wild Pokemon is shiny."},
+     {30,"Fast eggs","Cheat: eggs hatch quickly."},
+     {31,"EXP boost","Cheat: more experience from battles."},
+     {32,"Rare Candy 99","Cheat: 99 Rare Candies in the bag."},
+     {53,"Infinite PP","Cheat: your moves use no PP."},
+     {54,"Fast running (B)","Cheat: holding B runs at bike speed."},
+     {55,"Walls: hold R","Cheat: hold R to walk through walls."},
+     {56,"Time of day","Cheat: fixed time of day (the save clock is untouched)."}}},
+ {12,{{14,"Following Pokemon","A Pokemon from your party follows you."},
+     {16,"Follower slot","Which party slot follows (LEAD = the first one)."},
+     {17,"Follower talk","Press A to talk to your follower."},
+     {34,"Follower cry","Your follower cries when you talk to it."},
+     {35,"Finds items","Your follower sometimes finds items."},
+     {37,"Emote bubbles","Little mood bubbles over your follower."},
+     {36,"Ball pop-out","Your follower pops out of its ball."},
+     {33,"Area talk","Your follower comments on places."},
+     {38,"Friendship talk","Lines that depend on friendship."},
+     {39,"Idle look-around","Your follower looks around when you stand still."},
+     {40,"Follower gap","Your follower keeps a step's distance."},
+     {41,"Behind player","Your follower always walks behind you."}}},
+ {15,{{3,"C-stick","What the C-stick does."},
+     {4,"ZL run toggle","ZL switches running on and off."},
+     {5,"ZR = item (Y)","ZR uses your registered item (then ZR hunt stats is off)."},
+     {6,"Circle pad D-pad","The circle pad acts as the D-pad."},
+     {66,"Touch quick menu","Tap the bottom screen corner for the quick menu."},
+     {68,"Bottom button strip","Button strip on the bottom screen in the field."},
+     {77,"Bottom icon menu","Icon menu around the bottom screen in the field (GabeSud0)."},
+     {51,"Save backups","Keeps 8 rotating copies of your save: at launch, after each save, at exit."},
+     {115,"Export save","Press A, then close this menu: copies your save to the SD export folder."},
+     {18,"Menu music","The game's music keeps playing in this menu."},
+     {111,"Audio style","CLEAN, LIGHT or the raw DS mix."},
+     {113,"Audio gain","Overall loudness."},
+     {112,"Audio stall fade","Fades the sound instead of a buzz when the game stalls."},
+     {8,"Log detail","How much the log file records."},
+     {52,"Log size limit","How big the log file may grow."}}},
+ {38,{{11,"Fast upload","Debug."},{12,"Fast 3D convert","Debug."},{15,"GPU compose","Debug."},{19,"GPU compose 3D","Debug."},{13,"Split top (mono)","Debug."},
+     {7,"Wide view FX","Debug."},{21,"Wide haze","Debug."},{43,"Edge fill","Debug."},{44,"Side fill in menus","Debug."},{78,"Load-hitch profiler","Debug."},
+     {79,"Fast heap free","Debug."},{80,"Skip game cache flushes","Debug."},{82,"Hunt file bg save","Debug."},{73,"Wide layout early","Debug."},{81,"Wide 3D fade-in","Debug."},
+     {74,"Wide layout 3D depth","Debug."},{75,"Wide redraw changed lines","Debug."},{76,"Ignore timing registers","Debug."},{83,"Wide compose on 2 cores","Debug."},{85,"Battle frame log","Debug."},
+     {87,"3D convert on 2 cores","Debug."},{88,"Flat 3D when slow","Debug."},{89,"Wide view windows","Debug."},{91,"GPU blend by 3D","Debug."},{92,"GPU 3D direct","Debug."},
+     {93,"Wide on GPU","Debug: the wide battle and menu layout drawn on the GPU."},{94,"GPU fades","Debug."},{95,"Wide GPU blend check","Debug."},{96,"Wide Pokedex","Debug."},{97,"Copy eye when 3D empty","Debug."},
+     {104,"RNG info (hunt stats)","Debug."},{109,"Speed tweaks","Debug: 1-7, higher = more speed shortcuts."},{110,"Sharp 3D","Debug: SHARP, FAST 3D or FAST AUTO."},{114,"Stereo depth","Debug."},{126,"Mobile PC before League","Debug: Mobile PC before the Hall of Fame (runtime only)."},
+     {49,"Visible wild test","Debug: one test sprite in front of you."},{45,"Side fill","Debug."},{86,"Right eye split","Debug."}}},
+};
+static void runApp(const u32*top,int mode,bool gpu){
+ const size_t PX=256*192;u32*base=(u32*)malloc(PX*4*3);if(!base){PSPNativeMemLog("[APP] no memory");return;}u32*img=base+PX,*bimg=img+PX;memcpy(base,top,PX*4);
+ enum{N=MENU_N};int val[N];for(int i=0;i<N;i++)val[i]=menuGet(i);int old[N];memcpy(old,val,sizeof old);
+ for(int i=0;i<256*192;i++){u32 c=base[i];base[i]=((c>>1)&0x007F7F7Fu)|(c&0xFF000000u);}
+ P3DS_MenuOpen=1;P3DS_LowerMenuDraw=0;P3DS_Toast("");toastAt=0;
+ static int tab=0;static bool dbgOn=false;int NT=dbgOn?kPTotalTabs:kPPlayerTabs;if(tab>=NT)tab=0;int sel=0,ltop=0,openPage=-1;
+ PSPNativeMemLog("[APP] settings open (tab %s, font %d, frame %d)",kPTabNm[tab],P3DS_GameFontReady(),P3DS_GameBoxReady());
+ u32 held=hidKeysHeld();bool wasTouch=(held&KEY_TOUCH)!=0;u64 t0=svcGetSystemTick();
+ auto step=[&](int i,int dv){const int it=kPTabs[tab].r[i].it;if(it>=L_HUNT){if(dv>0)openPage=it;return;}const int nn=mItems[it].n;val[it]=(val[it]+nn+dv)%nn;PSPNativeMemLog("[APP] %s -> %s",kPTabs[tab].r[i].nm,mItems[it].lab[val[it]]);};
+ while(aptMainLoop()){
+  hidScanInput();u32 kh=hidKeysHeld(),kd=hidKeysDown()&~held;held&=kh;
+  if(kd&(KEY_B|KEY_START))break;if((kd&KEY_Y)&&(kh&KEY_L)&&(kh&KEY_R))break;
+  if(kd&KEY_SELECT){dbgOn=!dbgOn;NT=dbgOn?kPTotalTabs:kPPlayerTabs;if(tab>=NT)tab=0;sel=0;ltop=0;PSPNativeMemLog("[APP] debug tab %s",dbgOn?"shown":"hidden");}
+  if(kd&KEY_L){tab=(tab+NT-1)%NT;sel=0;ltop=0;}if(kd&KEY_R){tab=(tab+1)%NT;sel=0;ltop=0;}
+  const PAppTab&T=kPTabs[tab];const int cnt=T.n;
+  if(kd&KEY_DUP)sel=(sel+cnt-1)%cnt;if(kd&KEY_DDOWN)sel=(sel+1)%cnt;if(sel>=cnt)sel=cnt-1;
+  {const int dv=(kd&(KEY_A|KEY_DRIGHT))?1:(kd&(KEY_X|KEY_DLEFT))?-1:0;if(dv)step(sel,dv);}
+  bool tdown=(kh&KEY_TOUCH)!=0;if(tdown&&!wasTouch){touchPosition tp;hidTouchRead(&tp);int x,y;if(touchToDS(tp.px,tp.py,&x,&y)){
+    if(y<kSaTabH){int t=x*NT/256;if(t>=0&&t<NT&&t!=tab){tab=t;sel=0;ltop=0;}}
+    else{const int r=(y-kSaListY)/kSaRowPitch,i=ltop+r;if(y>=kSaListY&&y<kSaFootY&&r<kSaRows&&i<cnt&&x<246){const bool was=sel==i;sel=i;
+       const int dv=x>=kSaValX?(x<(kSaValX+240)/2?-1:1):was?1:0;if(dv)step(i,dv);}}}}
+  wasTouch=tdown;
+  if(openPage>=0)break;
+  memcpy(img,base,PX*4);
+  if(useGF()){static const SUiText kTopText={gtxt,gw,suiDrawS,gwS};suiAppTop(img,kTopText,kAppVer,__DATE__,kPTabNm[tab],T.r[sel].nm,T.r[sel].tip);}
+  else{menuBox(img,8,10,248,52,0x00703020u,0x00F0E0D0u);drawBig(img,16,18,"SETTINGS (PAUSED)",0x00F8F0E0u);}
+  static SBtxList*appTx;const bool txApp=mode&&gpu&&btxMode();if(txApp&&!appTx)appTx=(SBtxList*)calloc(1,sizeof(SBtxList));if(txApp&&appTx)btxBegin(*gBtx,bimg);
+  SUiCell cells[kPMaxRows];char labs[kPMaxRows][24];
+  for(int i=0;i<cnt;i++){const int it=T.r[i].it;if(it>=L_HUNT){snprintf(labs[i],sizeof labs[i],"Open");cells[i]={T.r[i].nm,labs[i],i==sel,false};continue;}
+   prettyLab(labs[i],mItems[it].lab[val[it]],sizeof labs[i]);cells[i]={T.r[i].nm,labs[i],i==sel,val[it]!=old[it]};}
+  if(sel<ltop)ltop=sel;if(sel>=ltop+kSaRows)ltop=sel-kSaRows+1;if(ltop>cnt-kSaRows)ltop=cnt>kSaRows?cnt-kSaRows:0;if(ltop<0)ltop=0;
+  suiAppBottom(bimg,kSuiText,kPTabNm,NT,tab,cells,cnt,ltop);
+  if(txApp&&appTx){btxEnd(*gBtx,*appTx);if(appTx->gen!=txShownGen||txShownL!=appTx)btxLog("settings",appTx);btxShow(appTx);}else{if(gBtx)gBtx->on=false;P3DS_TxOn=0;}
+  {extern int P3DS_GpuBotSame;P3DS_GpuBotSame=0;}
+  if(mode&&gpu)P3DS_GpuPresent(img,bimg,mode,true,nullptr);
+  else{P3DS_PresentDeferSettle();present(GFX_TOP,400,img,0);present(GFX_BOTTOM,320,bimg,0);gfxFlushBuffers();gfxSwapBuffers();}
+  gspWaitForVBlank();
+  if(menuAudioCfg()){static u64 mt;u64 nw=svcGetSystemTick();unsigned us=mt&&nw>mt?(unsigned)((nw-mt)/CPU_TICKS_PER_USEC):16667;mt=nw;if(us>66666)us=16667;PSPNativeSoundAdvance(us);}
+ }
+ for(int i=0;i<120&&aptMainLoop();i++){hidScanInput();if(!(hidKeysHeld()&(KEY_A|KEY_B|KEY_X|KEY_START|KEY_Y|KEY_L|KEY_R|KEY_TOUCH|KEY_DUP|KEY_DDOWN|KEY_DLEFT|KEY_DRIGHT)))break;gspWaitForVBlank();}
+ free(base);P3DS_TxOn=0;P3DS_GpuInvalidateBot();int ch=0;for(int i=0;i<N;i++)if(val[i]!=old[i]){menuSet(i,val[i]);ch++;PSPNativeMemLog("[APP] saved %s=%s",mItems[i].key,mItems[i].lab[val[i]]);}
+ P3DS_MenuOpen=0;PSPNativeMemLog("[APP] settings closed after %u ms, %d change(s)%s",(unsigned)((svcGetSystemTick()-t0)/CPU_TICKS_PER_MSEC),ch,openPage>=0?", opening a page":"");
+ if(openPage>=0){appStartTab=tabFind(openPage==L_HUNT?-3:openPage==L_MAP?-2:-1);runAppPages(top,mode,gpu);}
+}
+
 /* ss3ds 0030 catch info: Y at a wild battle's command menu (catch_overlay=1) shows what the game knows about the foe.
    The snapshot is P3DS_CatchInfo (battle_controller_player.c hook, read-only); [0] = valid, [19] = battle counter. */
 static void catchTick(){static int seen;volatile int*ci=P3DS_CatchInfo;

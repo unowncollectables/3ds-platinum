@@ -395,16 +395,47 @@ static const struct { const char *key; int def; } kCfgDefaults[] = {
     /* Platinum sync (2026-11-21): the SoulSilver table minus its game-feature rows. Only platform / speed / display defaults are
        carried (the tuned 60 fps setup, GPU compose, sharp text); anything that changes Platinum's gameplay keeps the default its
        own code passes (OFF), so an existing Platinum config.txt behaves as before. A key that IS in config.txt always wins. */
-    { "fps_counter", 0 },
+    { "fps_counter", 1 },
     { "g3_wmode", 2 }, { "gpu_direct3d", 1 }, { "fps_tweaks", 7 }, { "dc_flush_skip", 1 },
     { "g3_packets", 1 }, { "g3_fast_bounds", 1 }, { "gpu_compose_b", 1 }, { "gpu_obj_affine", 1 }, { "gpu_b_fades", 1 },
     { "g3_sharp", 3 }, { "g3_smooth_dbg", 0 },
     { "fps60", 1 }, { "g3_thread", 1 }, { "fps60_pipe", 1 }, { "fps60_hold", 1 }, { "fps60_strips", 1 }, { "fps60_vram", 1 }, { "g3_xfcache", 1 },
     { "g3_wake", 1 }, { "g3_fastxform", 1 }, { "g3_thr_texfence", 2 }, { "g3_thr_texsafe", 1 }, { "g3_stereo_share", 1 }, { "present_pace", 1 },
     { "g3_front_ov", 1 }, { "g3_stereo_gpu", 1 }, { "g3_front_bg", 1 },
-    { "sharp_text", 1 }, { "sharp_game_text", 0 }, { "wide_layouts", 1 },
+    { "sharp_text", 1 }, { "sharp_game_text", 1 }, { "wide_layouts", 1 },
     /* SoulSilver features that must stay OFF when the key is absent (mobile PC, Slot 2, Black 2 battle sprites) */
     { "mobile_pc", 0 }, { "mobile_pc_dev", 0 }, { "slot2", 0 }, { "b2_sprites", 0 },
+    { "shiny_suite", 1 }, /* SoulSilver default */
+    { "catch_overlay", 1 }, /* SoulSilver default */
+    { "wild_vis", 1 }, /* SoulSilver default */
+    { "wild_vis_alive", 1 }, /* SoulSilver default */
+    { "wild_vis_cries", 1 }, /* SoulSilver default */
+    { "wild_vis_shiny", 1 }, /* SoulSilver default */
+    { "wild_vis_max", 4 }, /* SoulSilver default */
+    { "ribbon_check", 1 }, /* SoulSilver default */
+    { "celebrations", 1 }, /* SoulSilver default */
+    { "summary_ivs", 1 }, /* SoulSilver default */
+    { "hm_free", 1 }, /* SoulSilver default */
+    { "repel_prompt", 1 }, /* SoulSilver default */
+    { "select_reset", 1 }, /* SoulSilver default */
+    { "fast_text", 2 }, /* SoulSilver default */
+    { "stereo_strength", 0 }, /* SoulSilver default */
+    { "zl_run", 1 }, /* SoulSilver default */
+    { "hunt_counter", 1 }, /* SoulSilver default */
+    { "hunt_stats", 1 }, /* SoulSilver default */
+    { "reset_skip_intro", 1 }, /* SoulSilver default */
+    { "wide_menus", 1 }, /* SoulSilver default */
+    { "battery_warn", 1 }, /* SoulSilver default */
+    { "tracker", 1 }, /* SoulSilver default */
+    { "type_hint", 1 }, /* SoulSilver default */
+    { "pm_shortcuts", 1 }, /* SoulSilver default */
+    { "zr_item", 0 }, /* SoulSilver default */
+    { "log_level", 1 }, /* SoulSilver default */
+    { "battle_anim_speed", 0 }, /* SoulSilver default */
+    { "dmg_check", 1 }, /* SoulSilver default */
+    { "reusable_tms", 1 }, /* SoulSilver default */
+    { "stereo_2d", 4 }, /* SoulSilver default */
+    { "menu_audio", 1 }, /* SoulSilver default */
 };
 /* The default a missing key gets: this table if it lists the key, else the caller's `def`. logring.c reports with it, so the two cannot drift. */
 int P3DS_CfgDefault(const char *key, int def) { for (unsigned i = 0; i < sizeof kCfgDefaults / sizeof kCfgDefaults[0]; i++) if (!strcmp(key, kCfgDefaults[i].key)) return kCfgDefaults[i].def; return def; }
