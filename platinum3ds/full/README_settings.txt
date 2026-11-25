@@ -280,6 +280,10 @@ hunt_stats=0         (1 = ZR in the field opens the hunt stats overlay; needs hu
 sharp_game_text=0    (1 = every game text window, both screens, drawn at the 3DS resolution instead of the stretched DS picture;
                       needs a scale mode (1.25X or FILL). SoulSilver's sharp text hook (0289) ported to bg_window.c. Off by default
                       on Platinum until it has been checked on hardware; toggling applies to text already on screen)
+mobile_pc=0          (1 = SoulSilver's Mobile PC: the settings Quick menu gets a "Boxes" tile that opens the game's own PC box
+                      app (Move Pokemon, like a Pokemon Center PC) from the field once you are in the Hall of Fame. Not in the
+                      Mystery Zone, Great Marsh, Pal Park or Distortion World. Reads the Hall of Fame flag only; writes nothing)
+mobile_pc_dev=0      (Debug: 1 = Mobile PC before the Hall of Fame, runtime only; never sets any flag)
 battle_anim_speed=0  (1 = skip plain move animations; Fly/Dig/Dive/Bounce/Shadow Force/Transform/Substitute/Minimize still play)
 Run 76
   battle_anim_speed=2  (also makes the HP bar drain 3x faster; damage and end values unchanged)

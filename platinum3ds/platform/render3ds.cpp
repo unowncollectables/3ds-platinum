@@ -1332,6 +1332,8 @@ static const MItem mItems[]={
  {"DMG_CHECK","dmg_check",2,{"OFF","ON"}},{"HUNT_STATS","hunt_stats",2,{"OFF","ON"}},
  /* 124: SoulSilver 0289 sharp game text (default OFF on Platinum until tested) */
  {"SHARP_GAME_TEXT","sharp_game_text",2,{"OFF","ON"}},
+ /* 125..126: SoulSilver 0293 Mobile PC (quick menu Boxes tile after the Hall of Fame; dev skips that gate at runtime only) */
+ {"MOBILE_PC","mobile_pc",2,{"OFF","ON"}},{"MOBILE_PC_DEV","mobile_pc_dev",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 extern "C" {int P3DS_B2Cfg(void);void P3DS_B2SetCfg(int);}
@@ -1406,7 +1408,7 @@ static int bmV=-1;static int bmCfg(){if(bmV<0){bmV=P3DS_CfgInt("bottom_menu",1)!
 static int menuBtnV=-1;static int menuBtnCfg(){if(menuBtnV<0){menuBtnV=P3DS_CfgInt("menu_button",1);if(menuBtnV<0||menuBtnV>2)menuBtnV=1;PSPNativeMemLog("[BTN] menu_button=%d",menuBtnV);}return menuBtnV;}
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0,0,0,0,0,0,0,0,0,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0,0,0,0,0,0,0,0,0,0,0,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(!strcmp(mItems[33+k].key,"fps_tweaks"))v=v<=0?0:v>=2&&v<=7?v-1:0;
    if(!strcmp(mItems[33+k].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};int b=6;for(int t=0;t<7;t++)if(abs(kG[t]-v)<abs(kG[b]-v))b=t;v=b;}
    if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
@@ -1416,6 +1418,8 @@ static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Chea
  case 16:return P3DS_FollowerSlotCfg();case 17:return P3DS_FollowerTalkCfg();case 18:return menuAudioCfg();case 19:return gcStereoCfg();case 20:return stereo2dCfg();case 21:return P3DS_WideHazeCfg();case 22:{int v=P3DS_FastTextCfg();return v<=1?0:v-1;}case 23:return P3DS_ReusableTMsCfg();case 24:return P3DS_CheatNoEncCfg();case 25:return P3DS_RepelPromptCfg();case 26:return sumIvCfg();}return 0;}
 static void menuSet(int i,int v){if(i>=33){genGet(0);genV[i-33]=v;static const int kLog[4]={0,512,1024,2048};P3DS_CfgWrite(mItems[i].key,!strcmp(mItems[i].key,"log_max_kb")?kLog[v&3]:v);if(!strcmp(mItems[i].key,"wide_layouts"))P3DS_SetWideLayouts(v);if(!strcmp(mItems[i].key,"shiny_suite"))P3DS_HuntSetOn(v);if(!strcmp(mItems[i].key,"shiny_rate"))P3DS_HuntSetRate(v);if(!strcmp(mItems[i].key,"frame_pacing"))P3DS_SetFramePacing(v);
   if(!strcmp(mItems[i].key,"fps_tweaks")){P3DS_SetFpsTweaks(v==0?0:v+1);P3DS_CfgWrite("fps_tweaks",v==0?0:v+1);return;}
+  if(!strcmp(mItems[i].key,"mobile_pc")){P3DS_MobilePcSetCfg(v);return;}
+  if(!strcmp(mItems[i].key,"mobile_pc_dev")){P3DS_MobilePcSetDev(v);return;}
   if(!strcmp(mItems[i].key,"sharp_game_text")){sharpGameV=v!=0;PSPNativeMemLog("[GTEXT] sharp_game_text -> %d",v);}
   if(!strcmp(mItems[i].key,"g3_sharp")){G3G_SetSharp(v);P3DS_CfgWrite("g3_sharp",v);return;}
   if(!strcmp(mItems[i].key,"audio_limiter")){P3DS_SetAudioLimiter(v);P3DS_CfgWrite("audio_limiter",v);return;}
@@ -1508,7 +1512,7 @@ static const char*settingHelp(const char*k){static const char*const H[][2]={
  {"cstick_mode","What the C-stick does."},{"zl_run","ZL toggles running."},{"zr_item","ZR uses your registered item."},{"cpad_dpad","Circle pad acts as D-pad."},
  {"touch_menu","Tap the bottom screen corner\nfor the quick menu."},{"bottom_strip","Button strip on the bottom\nscreen in the field."},
  {"lower_menu","Icon menu around the bottom\nscreen in the field (GabeSud0)."},{"follower","A Pok\xe9mon follows you."},
- {"sharp_game_text","All game text drawn at the 3DS\nresolution (needs a scale mode)."},{"hunt_counter","Counts encounters for hunts."},{"catch_overlay","Y in battle: catch info, or the\ntrainer's team in trainer battles."},{"dmg_check","Adds a damage and speed page\nto the battle Y screen."},{"hunt_stats","ZR in the field: hunt stats\n(needs the encounter counter)."},{"wild_vis","Wild Pok\xe9mon show in grass."},
+ {"mobile_pc","Quick menu Boxes tile: the PC\nboxes anywhere (after the League)."},{"mobile_pc_dev","Mobile PC before the League\n(testing; nothing is saved)."},{"sharp_game_text","All game text drawn at the 3DS\nresolution (needs a scale mode)."},{"hunt_counter","Counts encounters for hunts."},{"catch_overlay","Y in battle: catch info, or the\ntrainer's team in trainer battles."},{"dmg_check","Adds a damage and speed page\nto the battle Y screen."},{"hunt_stats","ZR in the field: hunt stats\n(needs the encounter counter)."},{"wild_vis","Wild Pok\xe9mon show in grass."},
  {"shiny_suite","Shiny hunting helpers."},{"wide_early","Faster wide layout in battle."},{"wide_stereo","3D depth for wide layouts."},
  {"wide_dirty","Redraws only changed lines."},{"summary_ivs","IVs/EVs on the summary screen."},{"menu_audio","Music in the settings app."},
  {"dw_depth","Distortion World 3D depth."},{"dw_roll","Distortion World camera roll."},{"follower_slot","Which party slot follows."},{"cheat_time","Fixed time of day."},{"heap_fast","Skips a slow table scan on every\nfree (same result). Faster loads."},{"dc_flush_skip","Skips the game's DS cache flushes\n(not needed here). Restart."},{"wide_windows","Wide view draws screens that use DS\nwindows (battle intro) itself."},{"stereo_gpu_battle","3D slider up in battles: 4:3 view on\nthe GPU (no wide panels). Default OFF."},{"gpu_blend_3d","GPU compose allows 2D blends\nnext to the 3D layer."},{"gpu_direct3d","3D stays on the GPU (no readback)\nwhen GPU compose draws the frame."},{"wide_gpu","Wide battles/menus drawn on the\nGPU (both eyes). SLIDER UP = 3D on."},{"gpu_mbright","GPU compose does screen fades\n(master brightness)."},{"exp_share_all","Party Pok\xe9mon that didn't fight\nget Exp. too (like Exp. Share\nfor the whole party)."},{"auto_run","Run without holding B.\nHold B to walk."},{"catch_swap","Party full: a caught Pok\xe9mon can\nswap with one in the party\n(that one goes to the PC)."},{"shiny_rate","Wild shiny odds. 1/8192 is the\noriginal game. Uses the game's\nown shiny code; save unchanged."},{"rng_info","Hunt stats: the game's RNG seed\nand advances (read only). Seeds\ndiffer from a real DS."},{"wild_vis_shiny","Visible wild Pok\xe9mon can be\nshiny and sparkle in the grass."},{"battery_warn","Low battery: a warning, and\nthe hunt counters are saved."},{"frame_pacing","GPU compose doesn't wait for the GPU.\nFIXED/ADAPTIVE: up to 1 frame of lag."},{"gc_atlas16","GPU compose 2D tiles in 16-bit colour\n(half the memory). Restart."},{"stereo_flat_fallback","Slider up: frames the wide view can't\ndraw (battle intro) show no depth\ninstead of rendering twice."},{"g3_conv_split","With the slider up, the right eye's\n3D readback converts on core 2."},{"hunt_async_save","Writes the shiny-hunt file in the\nbackground (no battle-start hitch)."},{"wireless","OFF / LOCAL (3DS-to-3DS UDS) / ONLINE\n(Poke Classic Network DNS; WIP GTS).\nBack up your save first."},{"wide_3d_alpha","Wide layouts draw 3D fade-ins\n(send-out) instead of the slow path."},{"field_prof","Logs the slowest game functions\nof frames over 70 ms. AUTO: only for\n8 s after battle start/end."},{"wide_dirty_regs","Ignore timing-only registers\nfor the line check."},{"wide_split","Battles at slider 0: the wide\ncompose uses two cores. Restart."},{"battle_log","Logs every battle/menu frame over\n40 ms with where the time went."},{"wide_split_r","Slider up: right-eye wide compose on\nboth cores. SHARED = whichever is free.\nRestart."}};
@@ -1516,8 +1520,8 @@ static const char*settingHelp(const char*k){static const char*const H[][2]={
 static const ATab kTabs[]={
  {"Video",15,{0,1,71,2,124,10,20,9,64,42,59,60,67,61,62},{"FPS counter","Wide view","Wide menu layouts","Scale","Sharp game text","3D strength","Battle 3D depth","Camera zoom","Time-of-day tint",
   "Weather in strips","Distortion 3D depth","Distortion debris","Distortion camera roll","Uneasy Pok\xe9mon","Distant cry"}},
- {"Game",15,{22,69,70,58,25,26,23,50,65,51,18,84,100,101,102},{"Fast text","Hold B: fast text","Auto-advance text","Battle anim speed","Repel prompt","IV/EV on summary","Reusable TMs","HMs without learning",
-  "Hidden item ping","Save backups (3)","Menu music","Local wireless (test)","Exp. Share: whole party","Auto-run","Swap catch into party"}},
+ {"Game",16,{22,69,70,58,25,26,23,50,65,51,18,84,100,101,102,125},{"Fast text","Hold B: fast text","Auto-advance text","Battle anim speed","Repel prompt","IV/EV on summary","Reusable TMs","HMs without learning",
+  "Hidden item ping","Save backups (3)","Menu music","Local wireless (test)","Exp. Share: whole party","Auto-run","Swap catch into party","Mobile PC (Boxes)"}},
  {"Keys",8,{3,4,5,6,66,68,77,L_MENU},{"C-stick","ZL run toggle","ZR = item (Y)","Circle pad D-pad","Touch quick menu","Bottom button strip","Bottom icon menu","Quick menu"}},
  {"Pal",12,{14,16,17,34,35,37,36,33,38,39,40,41},{"Following Pok\xe9mon","Follower slot","Follower talk","Follower cry","Finds items","Emote bubbles","Ball pop-out","Area talk",
   "Friendship talk","Idle look-around","Follower gap","Behind player"}},
@@ -1525,7 +1529,7 @@ static const ATab kTabs[]={
  {"Cheats",11,{24,27,28,29,30,31,32,53,54,55,56},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99","Infinite PP",
   "Fast running (B)","Walls: hold R","Time of day"}},
  /* run 67: the old Speed tab, hidden: only shown after SELECT is pressed in the settings app */
- {"Debug",35,{11,12,15,19,8,52,13,7,21,43,44,78,79,80,82,73,81,74,75,76,83,85,87,88,89,91,92,93,94,95,96,97,98,99,104},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail","Log size limit","Split top (mono)","Wide view FX","Wide haze","Edge fill","Side fill in menus","Load-hitch profiler","Fast heap free","Skip game cache flushes","Hunt file bg save","Wide layout early","Wide 3D fade-in","Wide layout 3D depth","Wide redraw changed lines","Ignore timing registers","Wide compose on 2 cores","Battle frame log","3D convert on 2 cores","Flat 3D when slow","Wide view windows","GPU blend by 3D","GPU 3D direct","Wide on GPU","GPU fades","Wide GPU blend check","Wide Pok\xe9""dex","Copy eye when 3D empty","Frame pacing","16-bit 2D tiles","RNG info (hunt stats)"}},
+ {"Debug",36,{11,12,15,19,8,52,13,7,21,43,44,78,79,80,82,73,81,74,75,76,83,85,87,88,89,91,92,93,94,95,96,97,98,99,104,126},{"Fast upload","Fast 3D convert","GPU compose","GPU compose 3D","Log detail","Log size limit","Split top (mono)","Wide view FX","Wide haze","Edge fill","Side fill in menus","Load-hitch profiler","Fast heap free","Skip game cache flushes","Hunt file bg save","Wide layout early","Wide 3D fade-in","Wide layout 3D depth","Wide redraw changed lines","Ignore timing registers","Wide compose on 2 cores","Battle frame log","3D convert on 2 cores","Flat 3D when slow","Wide view windows","GPU blend by 3D","GPU 3D direct","Wide on GPU","GPU fades","Wide GPU blend check","Wide Pok\xe9""dex","Copy eye when 3D empty","Frame pacing","16-bit 2D tiles","RNG info (hunt stats)","Mobile PC before League"}},
  /* pages (not in the tab bar) */
  {"Hunt stats",-3,{},{}},
  {"Wild Pok\xe9mon here",-2,{},{}},
@@ -1641,7 +1645,8 @@ static void runApp(const u32*top,int mode,bool gpu){
   if(kd&KEY_SELECT){dbgTabs=!dbgTabs;NT=T_BAR+(dbgTabs?1:0);if(tab==T_DEBUG&&!dbgTabs){tab=0;sel=0;}back=-1;PSPNativeMemLog("[APP] debug tab %s",dbgTabs?"shown":"hidden");}
   if(kd&(KEY_L|KEY_R)){const int b=tabBarOf(tab);tab=(kd&KEY_L)?(b+NT-1)%NT:(b+1)%NT;sel=0;back=-1;continue;}
   const ATab&T=kTabs[tab];const bool list=T.n>0,menuTab=T.n==-1;const int pages=list?(T.n+ROWS-1)/ROWS:1;int startReq=-1,open=-1;
-  static const char*const kMenuNm[6]={"Pok\xe9mon","Bag","Pok\xe9" "dex","Trainer card","Save","Options"};static const int kMenuOpt[6]={1,2,0,3,4,5};
+  static const char*const kMenuNm[8]={"Pok\xe9mon","Bag","Pok\xe9" "dex","Trainer card","Save","Options","Boxes","Close"};static const int kMenuOpt[8]={1,2,0,3,4,5,100,101};
+  const int MN=P3DS_MobilePcCfg()?8:6,MRH=MN>6?41:54; /* SoulSilver 0293 Mobile PC: Boxes (100) + Close (101) tiles while mobile_pc is on */
   if(T.n==-3&&huntPanelShown())huntKeys(kd);
   if(T.n==-2&&(kd&(KEY_A|KEY_RIGHT)))mapPage++;
   if(list){if(sel>=T.n)sel=T.n-1;if(kd&KEY_UP)sel=(sel+T.n-1)%T.n;if(kd&KEY_DOWN)sel=(sel+1)%T.n;
@@ -1651,14 +1656,16 @@ static void runApp(const u32*top,int mode,bool gpu){
   bool tdown=(kh&KEY_TOUCH)!=0;if(tdown&&!wasTouch){touchPosition tp;hidTouchRead(&tp);int x,y;if(touchToDS(tp.px,tp.py,&x,&y)){
     if(y<21){int t=x*NT/256;if(t>=0&&t<NT){tab=t;sel=0;back=-1;}}
     else if(T.n==-2)mapPage++;
-    else if(menuTab&&y>=22){int r=(y-22)/54,c=x>=128?1:0,i=r*2+c;if(r<3&&i<6)startReq=kMenuOpt[i];}
+    else if(menuTab&&y>=22){int r=(y-22)/MRH,c=x>=128?1:0,i=r*2+c;if(i<MN)startReq=kMenuOpt[i];}
     else if(list&&y>=ROW0&&y<ROW0+ROWS*RH){const int i=sel/ROWS*ROWS+(y-ROW0)/RH;if(i<T.n){sel=i;const int it=T.it[i];
       if(it>=L_HUNT)open=it;else{const int nn=mItems[it].n;if(x>=VX0&&x<VXC)val[it]=(val[it]+nn-1)%nn;else val[it]=(val[it]+1)%nn;}}}
     else if(list&&pages>1&&y>=ROW0+ROWS*RH)sel=(sel/ROWS+1)%pages*ROWS;}}
   wasTouch=tdown;
   if(open>=0){back=tab;backSel=sel;tab=tabFind(open==L_HUNT?-3:open==L_MAP?-2:-1);sel=0;PSPNativeMemLog("[APP] page %s",kTabs[tab].name);continue;}
-  if(menuTab&&(kd&KEY_A))startReq=kMenuOpt[sel<6?sel:0];
-  if(menuTab&&(kd&(KEY_UP|KEY_DOWN|KEY_LEFT|KEY_RIGHT))){if(kd&KEY_UP)sel=(sel+4)%6;if(kd&KEY_DOWN)sel=(sel+2)%6;if(kd&(KEY_LEFT|KEY_RIGHT))sel^=1;}
+  if(menuTab&&(kd&KEY_A))startReq=kMenuOpt[sel<MN?sel:0];
+  if(menuTab&&(kd&(KEY_UP|KEY_DOWN|KEY_LEFT|KEY_RIGHT))){if(sel>=MN)sel=0;if(kd&KEY_UP)sel=(sel+MN-2)%MN;if(kd&KEY_DOWN)sel=(sel+2)%MN;if(kd&(KEY_LEFT|KEY_RIGHT))sel^=1;}
+  if(startReq==101)break;
+  if(startReq==100){if(P3DS_InField)P3DS_MobilePcRequestOpen();else P3DS_Toast("Boxes: only in the field");PSPNativeMemLog("[APP] Boxes tile (field %d)",P3DS_InField);break;}
   if(startReq>=0){extern volatile int P3DS_StartReq;P3DS_StartReq=P3DS_InField?startReq:-1;PSPNativeMemLog("[APP] start menu request %d (field %d)",startReq,P3DS_InField);break;}
   /* top: dimmed game, title box (tab + version) and a one-line key hint */
   memcpy(img,base,PX*4);
@@ -1675,8 +1682,8 @@ static void runApp(const u32*top,int mode,bool gpu){
   for(int i=0;i<256*192;i++)bimg[i]=bg;
   {const int on=tabBarOf(tab);for(int t=0;t<NT;t++){int x0=t*256/NT+1,x1=(t+1)*256/NT-1;const bool s2=t==on;plate(bimg,x0,1,x1,20,s2?tabSel:cellF,cellE);
    gtxt(bimg,(x0+x1)/2-gw(kTabs[t].name)/2,2,kTabs[t].name,s2?0x00F8F8F8u:kMsgFg,s2?0x00387038u:kMsgSh);}}
-  if(menuTab)for(int i=0;i<6;i++){int r=i/2,c=i%2;int x0=c?130:4,y0=24+r*54,x1=x0+122,y1=y0+50;bool s2=i==sel;
-   plate(bimg,x0,y0,x1,y1,cellF,s2?selE:cellE);if(s2)plate(bimg,x0+1,y0+1,x1-1,y1-1,cellF,selE);gtxt(bimg,(x0+x1)/2-gw(kMenuNm[i])/2,y0+16,kMenuNm[i],kMenuFg(),kMsgSh);}
+  if(menuTab)for(int i=0;i<MN;i++){int r=i/2,c=i%2;int x0=c?130:4,y0=24+r*MRH,x1=x0+122,y1=y0+MRH-4;bool s2=i==sel;
+   plate(bimg,x0,y0,x1,y1,cellF,s2?selE:cellE);if(s2)plate(bimg,x0+1,y0+1,x1-1,y1-1,cellF,selE);gtxt(bimg,(x0+x1)/2-gw(kMenuNm[i])/2,y0+(MRH-4)/2-9,kMenuNm[i],kMenuFg(),kMsgSh);}
   if(T.n==-3){/* run 75 Catch tab: read-only snapshot of the wild foe (taken when the command menu opens) */
    plate(bimg,2,22,254,190,cellF,cellE);const volatile int*ci=P3DS_CatchInfo;
    if(huntPanelShown())huntPanel(bimg,valC,valSh);
