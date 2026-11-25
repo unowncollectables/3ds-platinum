@@ -215,8 +215,9 @@ extern "C" { unsigned long long P3DS_SpkGetTexTicks; }
 static unsigned g3FrameNo;static Tex*usedTex[96];static unsigned usedN,postFixes;
 static int postVblCfg(){static int v=-1;if(v<0){v=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"tex_postvblank=%d",&x)==1)v=x!=0;fclose(f);}PSPNativeMemLog("[G3] tex_postvblank=%d",v);}return v;}
 extern "C" int P3DS_CfgInt(const char*,int);
+static Tex b2Tex[4]; /* ss3ds 0298 Black 2 battle sprites, see b2Lookup */
 static Tex folTex[8*8]; /* run 73: slot 0 follower, slots 1..6 visible wild Pokemon (ss3ds 0110: 6 at once; 8 frames each), 7 = ambient flyer (0217) */
-static Tex*GetTexture(){u64 t=svcGetSystemTick();Tex*r=GetTextureImpl();if(r&&(r<folTex||r>=folTex+8*8)&&r->useF!=g3FrameNo+1){r->useF=g3FrameNo+1;if(usedN<96)usedTex[usedN++]=r;}u64 d=svcGetSystemTick()-t;prTex+=d;P3DS_SpkGetTexTicks+=d;return r;}
+static Tex*GetTexture(){u64 t=svcGetSystemTick();Tex*r=GetTextureImpl();if(r&&(r<folTex||r>=folTex+8*8)&&(r<b2Tex||r>=b2Tex+4)&&r->useF!=g3FrameNo+1){r->useF=g3FrameNo+1;if(usedN<96)usedTex[usedN++]=r;}u64 d=svcGetSystemTick()-t;prTex+=d;P3DS_SpkGetTexTicks+=d;return r;}
 /* Decode into an explicit pixel buffer. front_ov prep uses a side buffer so t->px is never rewritten while the
    worker may still CRC/sample the submit-time image (a61df82: 71 texCrc mismatches with in-place DecodeTex). */
 static bool DecodeTexTo(Tex*e,u32*o){if(!e||!o)return false;const unsigned fmt=e->fmt,w=e->w,h=e->h;
@@ -294,8 +295,18 @@ extern "C" void P3DS_WildFree(int sl){
  folCurS[sl]=-1;
 }
 static inline Tex*folLookup(const G3SIM_TexImageParam_t&p){if(p.textureOffset>0x7FFF8||p.textureOffset<0x7FFC0||p.textureFormat!=3||(s_texPlttBase&~0x70u)!=0x1FF00)return nullptr;Tex*t=&folTex[((0x7FFF8-p.textureOffset)/8)*8+((s_texPlttBase>>4)&7)];return t->px?t:nullptr;}
+/* ss3ds 0298 Black 2 battle sprites (b2sprites.c): one port-side texture per battler slot. The game hook draws them with
+   format 3, offset 0x7FF80 + 8 * slot and palette base 0x1FE80, a pair no real texture uses. */
+static inline Tex*b2Lookup(const G3SIM_TexImageParam_t&p){if(p.textureFormat!=3||s_texPlttBase!=0x1FE80u||p.textureOffset<0x7FF80||p.textureOffset>0x7FF98||(p.textureOffset&7))return nullptr;Tex*t=&b2Tex[(p.textureOffset-0x7FF80)/8];return t->px?t:nullptr;}
+extern "C" u32*P3DS_B2TexPixels(int slot,unsigned w,unsigned h){
+ if(slot<0||slot>3||w<8||h<8||w>256||h>256)return nullptr;
+ gtDrainIfBusy(3); /* the worker may still read last frame's pixels */
+ Tex&t=b2Tex[slot];if(!t.px||t.w!=w||t.h!=h){free(t.px);t.px=(u32*)malloc(w*h*4);if(!t.px)return nullptr;}
+ texFree(t.gt);t.gt=nullptr;t.off=0x7FF80+slot*8;t.pal=0x1FE80;t.fmt=3;t.w=w;t.h=h;t.c0=1;t.gen=0;t.raw=nullptr;t.rawN=0;return t.px;}
+extern "C" void P3DS_B2TexFree(int slot){if(slot<0||slot>3)return;gtDrainIfBusy(3);Tex&t=b2Tex[slot];texFree(t.gt);t.gt=nullptr;free(t.px);t.px=nullptr;}
 static Tex*GetTextureImpl(){
  const auto&p=s_texImageParam;unsigned fmt=p.textureFormat;if(!fmt)return nullptr;
+ if(p.textureOffset>=0x7FF80&&p.textureOffset<=0x7FF98){Tex*bt=b2Lookup(p);if(bt)return bt;}
  /* 2026-11-07: only a live follower/wild/flyer slot (format 3, its palette base, pixels loaded) takes this branch. #357 widened it to 0x7FFC0 and
     returned folLookup's nullptr for any other texture there: a real texture at the very top of texture VRAM (the battle grass / shiny sparkle
     8x8 at 0x7FFC0) then drew untextured, a big flat box in the wild battle intro and no shiny effect. Everything else uses the normal cache. */
@@ -914,7 +925,7 @@ static int gtCfgWant=-1,gtThreadOk=0;static unsigned gtAbN;   /* g3_thread 2 = A
 enum{GT_N=1024,GT_MASK=GT_N-1,GT_ARENA=96*1024};          /* 96K verts (~2.2 MB): fewer mid-frame arena drains that reset depth */
 static GJob gtRing[GT_N];static GuVertex*gtArena;static u8*gtCmArena;static unsigned gtArenaPos,gtCmPos;
 static volatile unsigned gtHead,gtTail,gtDone,gtKicked,gtSleep,gtExpandReq; /* gtDone: completed claims (g3_raw_split); gtExpandReq: worker expand */
-extern "C" {int G3T_Start(void(*)(void*));int G3T_Start2(void(*)(void*));void G3T_Stop2(void);void G3T_Wait(void);void G3T_Signal(void);void G3T_Wait2(void);void G3T_Signal2(void);void G3T_SleepNs(long long);int G3T_SplitOn(void);int G3T_Quiting(void);void G3T_RequestQuit(void);void G3T_Join(void);void*memalign(size_t,size_t);}
+extern "C" {int G3T_Start(void(*)(void*));int G3T_Start2(void(*)(void*));void G3T_Stop2(void);void G3T_Wait(void);void G3T_Signal(void);void G3T_Wait2(void);void G3T_Signal2(void);void G3T_SleepNs(long long);int G3T_SplitOn(void);int G3T_Quiting(void);void G3T_RequestQuit(void);int G3T_Join(void);void*memalign(size_t,size_t);}
 extern "C" {int P3DS_BigLockDropForWait(void);void P3DS_BigLockRestoreAfterWait(int);int P3DS_BigLockDepth(void);}
 static u64 gtBusyTicks,gtWaitTicks;static unsigned gtJobs,gtDrains[6],gtFrames;static const char*const gtWhy[6]={"screen","frame","listfree","texfree","ringfull","arena"};
 extern "C" void P3DS_ThreadGuard(const char*);
@@ -986,14 +997,15 @@ static void gtMain2(void*){P3DS_ThreadGuard("g3thread2");gtInWorker=true;
  gtInWorker=false;}
 static void gtDrain(int why); /* fwd for shutdown */
 /* Soft-reset / exit: drain leftover jobs, then quit+join workers before GPU/heap free. */
-extern "C" void P3DS_G3ThrShutdown(void){
- if(gtThreadOk<=0)return;
+extern "C" int P3DS_G3ThrShutdown(void){
+ if(gtThreadOk<=0)return 1;
  gtDrain(1);
  G3T_RequestQuit();
  gtWakeForce();
- G3T_Join();
+ if(!G3T_Join())return 0;
  gtCfg=0;gtThreadOk=0;
  PSPNativeMemLog("[3DS] exit: g3thr workers stopped");
+ return 1;
 }
 /* Midpoint pairing mutates md* tables: must run on the game thread after cull, before the arena copy. */
 static void gtFinishMid(GJob&J){
@@ -1051,16 +1063,19 @@ static void gtWaitPinned(void*gt){
   /* Timed out without abandoning the whole thread: force-unpin this gt so LRU can proceed. */
   while(gtPinGet(gt))gtPinRel(gt);
   PSPNativeMemLog("[G3THR] pin wait timeout gt=%p: force-unpinned",gt);}}
-extern "C" int P3DS_InTitle;
+extern "C" int P3DS_InTitle;extern "C" int P3DS_BattleRowExtra(int,int);
 /* issue #484: one depth per draw from where its vertices sit across the screen (x 80 = yours, 176 = the foe's; smooth in
    between, so a lunge or an intro slide-in glides between depths). raw = v still in object space (J.M = clip matrix). */
 static int parSideOf(const GJob&J,const GuVertex*v,unsigned n,bool raw){
- if(!parSideE||!n)return kParLock;const float*M=J.M;const unsigned step=n>48u?n/48u:1u;float sx=0;unsigned k=0;
- for(unsigned i=0;i<n;i+=step){const GuVertex&p=v[i];float x=p.x;
-  if(raw){const float w=p.x*M[3]+p.y*M[7]+p.z*M[11]+M[15];if(w<1e-3f)continue;x=128.0f+(p.x*M[0]+p.y*M[4]+p.z*M[8]+M[12])/w*128.0f;}
-  sx+=x;k++;}
- if(!k)return kParLock;float s=(sx/k-128.0f)*(1.0f/48.0f);if(s<-1)s=-1;if(s>1)s=1;
- const int e=(int)lrintf(s*parSideE);if(e>0)parFoeN++;else if(e<0)parMineN++;return kParLock+e;}
+ /* #589 FOE DEEPER ground plane: the draw takes the extra depth of the screen row its feet are on (lowest vertex), the same
+    per-row value render3ds gives the terrain background, so each Pokemon stands on the ground and sits in front of the backdrop.
+    Quads taller than 112 px (backdrop-sized effects) use their middle row instead. */
+ if(!parSideE||!n)return kParLock;const float*M=J.M;const unsigned step=n>48u?n/48u:1u;float ymax=-1e9f,ymin=1e9f,ys=0;unsigned k=0;
+ for(unsigned i=0;i<n;i+=step){const GuVertex&p=v[i];float y=p.y;
+  if(raw){const float w=p.x*M[3]+p.y*M[7]+p.z*M[11]+M[15];if(w<1e-3f)continue;y=96.0f-(p.x*M[1]+p.y*M[5]+p.z*M[9]+M[13])/w*96.0f;}
+  if(y>ymax)ymax=y;if(y<ymin)ymin=y;ys+=y;k++;}
+ if(!k)return kParLock;const float yy=(ymax-ymin>112.0f)?ys/k:ymax;
+ const int e=P3DS_BattleRowExtra((int)lrintf(yy),J.sd);if(e>0)parFoeN++;else if(e<0)parMineN++;return kParLock+e;}
 static void gtSnapshot(GJob&J,const GuVertex*v,unsigned n,bool raw){
  extern int P3DS_InField,P3DS_InBattle;
  J.v=v;J.n=n;J.replay=(v==replayV);J.xfKey=J.replay?v:nullptr;J.sd=stereoSd;J.parL=parLock;J.mid=G3G_MidRec!=0;J.wide=G3G_Wide!=0;
@@ -1396,7 +1411,7 @@ void PSPNativeRawMode(int v){if(rawMode!=(v!=0)){G3SIM_FlushArray();rawMode=v!=0
 extern "C" int P3DS_StereoShiftNow(void);
 void P3DS_G3BeginFrame(void){CRUMB("g3-begin");g3FrameNo++;usedN=0;frameTicks=svcGetSystemTick();idleAtBegin=P3DS_VblIdleTicks;(void)P3DS_G3ProfCfg();stereoSd=P3DS_StereoShiftNow();{extern int P3DS_InBattle;extern int P3DS_BattleDepthLock(void);static unsigned bf;static int wasB;
  parLock=(stereoSd&&P3DS_BattleDepthLock())?kParLock:0;{extern int P3DS_BattleSideExtra(int);parSideE=parLock?P3DS_BattleSideExtra(stereoSd):0;}parTrack=stereoSd&&P3DS_InBattle&&!parLock;
- if(P3DS_InBattle&&stereoSd){if(!wasB){wasB=1;bf=0;PSPNativeMemLog("[BATTLE] stereo 3D: shift %d px, battle depth lock %d (stereo_2d=3: all 3D at one depth; else per-vertex z), lock offsets L 0 / R +%d px (same integer as the BG), foe deeper %s (foe R +%d px, yours R +%d px)",stereoSd,parLock,(stereoSd+1)/2,parSideE?"ON":"off",(stereoSd+1)/2+parSideE,(stereoSd+1)/2-parSideE);if(parSideE){extern void P3DS_Use(const char*);P3DS_Use("battle_foe_deeper");}}
+ if(P3DS_InBattle&&stereoSd){if(!wasB){wasB=1;bf=0;PSPNativeMemLog("[BATTLE] stereo 3D: shift %d px, battle depth lock %d (stereo_2d=3: all 3D at one depth; else per-vertex z), lock offsets L 0 / R +%d px (same integer as the BG), foe deeper ground ramp %s (a Pokemon takes the depth of the terrain row its feet are on: backdrop y40 R +%d, foe feet y96 R +%d, your feet y160 R +%d px)",stereoSd,parLock,(stereoSd+1)/2,parSideE?"ON":"off",(stereoSd+1)/2+(parSideE?P3DS_BattleRowExtra(40,stereoSd):0),(stereoSd+1)/2+(parSideE?P3DS_BattleRowExtra(96,stereoSd):0),(stereoSd+1)/2+(parSideE?P3DS_BattleRowExtra(160,stereoSd):0));if(parSideE){extern void P3DS_Use(const char*);P3DS_Use("battle_foe_deeper");}}
   if(++bf%150==1&&bf>1){PSPNativeMemLog("[BATTLE] stereo 3D f%u: %u vertices, z range %.3f..%.3f, clamped tris so far %u, lock %d, foe deeper draws foe %u / yours %u",bf,parN,parZMin,parZMax,stereoClamped,parLock,parFoeN,parMineN);parN=0;parFoeN=parMineN=0;parZMin=1;parZMax=0;}}
  else wasB=0;}
  u32 cc=*(u32*)(PSPNative_GfxRegisters+0x350);u16 cd=*(u16*)(PSPNative_GfxRegisters+0x354);

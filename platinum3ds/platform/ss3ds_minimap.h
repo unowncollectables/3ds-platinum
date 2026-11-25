@@ -157,7 +157,7 @@ static inline int blHit(int x, int y) {
   if (x >= kBlPanX0 && x < kBlPanX1 && y >= kBlPanY0 && y < kBlPanY0 + 16) return 11; /* the tab bar (ss3ds_pgextra.h; ignored when pg_extras is off) */
   return x >= kBlPanX0 && x < kBlPanX1 && y >= kBlPanY0 + 16 && y < kBlPanY1 ? 10 : -1; }
 /* run 10: 12x12 icons, 1-px dark outline, solid fills ('#' ink, '+' accent, 'o' white), drawn 1:1 (no scaling in this code) */
-static const char *const kBlIcon[12][12] = {
+static const char *const kBlIcon[13][12] = {
   { ".##########.", "#++++++++++#", "#+oooooooo+#", "#+o######o+#", "#+o#oooo#o+#", "#+o######o+#", "#+oooooooo+#", "#+o##o##oo+#", "#+oooooooo+#", "#++++++++++#", ".##########.", "............" }, /* dex */
   { "....####....", "..##++++##..", ".#++++++++#.", ".#++++++++#.", "#####oo#####", "#ooo#..#ooo#", "#ooo####ooo#", ".#oooooooo#.", ".#oooooooo#.", "..##oooo##..", "....####....", "............" }, /* ball */
   { "....####....", "...#....#...", "..#......#..", ".##########.", "#++++++++++#", "#+########+#", "#+#oooooo#+#", "#+########+#", "#++++++++++#", "#++++++++++#", ".##########.", "............" }, /* bag */
@@ -170,6 +170,7 @@ static const char *const kBlIcon[12][12] = {
   { "............", "....####....", "...#++++#...", "...#++++#...", "...#+++##...", "...#++#oo#..", "..#+++#ooo#.", ".#++++#oooo#", "#+++++######", "############", "#oo#oo#oo#o#", "############" }, /* running shoe */
   { "........#...", ".......#....", "......#.....", "############", "#ooooooooo+#", "#o###oo##o+#", "#o#+#oo##o+#", "#o###oo##o+#", "#ooooooooo+#", "############", "............", "............" }, /* radio (panel tab, run 147) */
   { "....####....", "...#oooo#...", "..#ooooo+#..", "..#oooo++#..", ".#ooooo+++#.", ".#oooo++++#.", ".#ooo+++++#.", ".#oo++++++#.", "..#++++++#..", "..##++++##..", "....####....", "............" }, /* egg (panel tab, run 147) */
+  { ".##########.", "#oooooooooo#", "#o##o##o##o#", "#oooooooooo#", "#o##o##o##o#", "#oooooooooo#", "#o##o##o##o#", "#oooooooooo#", ".##########.", "..##++++##..", "...######...", "............" }, /* pc box (panel tab, mobile PC) */
 };
 /* run 151 (Nathan: one style everywhere): the native column's colours (ss3ds_blnative.h bnFrame): BTN / BTN_SHD buttons,
    NAVY outline, SEL green for the open / pressed state, grey frame behind */

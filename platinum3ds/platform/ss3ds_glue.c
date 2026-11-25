@@ -175,6 +175,13 @@ void *__wrap_OverlayManager_New(const void *template, void *parentWork, int heap
                                 (const void *)gOverlayTemplate_PokemonSummary);
             }
             lastNm = nm;
+            { extern volatile int P3DS_InPartyMenu;
+              const int inParty = nm && !strcmp(nm, "party");
+              if (inParty != P3DS_InPartyMenu) {
+                  P3DS_InPartyMenu = inParty;
+                  PSPNativeMemLog("[MPC] party menu overlay %s", inParty ? "open" : "closed");
+              }
+            }
             /* run 132 panel_party: keep the panel up across party/summary/bag handoffs. Hook 0201/0203 (party_menu.c) sets On from Want and no
                longer clears it; bag and summary are lifted code with no hook point, so they claim a pending Want here. The field or a battle
                starting ends the panel (the render also clears On once InField is set). */

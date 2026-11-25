@@ -302,9 +302,11 @@ static void batchEnd(void) { bat[nb - 1].count = nq - bat[nb - 1].first; }
 
 /* per-frame memo per BG: map entry -> tile result (most map entries repeat, e.g. the blank tile) */
 static struct { u32 stamp; u16 me; s16 slot; } memo[4][1024];
-/* 2026-11-18 issue #484 (stereo_2d=4 FOE DEEPER): set by render3ds only around the right-eye battle compose. BG rows whose
- * centre is at or below P3DS_GcRowSplit move left by P3DS_GcRowDx[i] px (your platform nearer than the foe's); -1 = off. */
-int P3DS_GcRowSplit = -1; int P3DS_GcRowDx[4];
+/* #589 (stereo_2d=4 FOE DEEPER): set by render3ds only around the right-eye battle compose. Layers with P3DS_GcRowOn[i] set get a
+ * per tile row shift P3DS_BattleRowExtra(row centre y, P3DS_GcRowSd) px to the right (ground plane: sky deepest, ground forward);
+ * P3DS_GcRowSd -1 = off. */
+int P3DS_GcRowSd = -1; int P3DS_GcRowOn[4];
+extern int P3DS_BattleRowExtra(int y, int sd);
 static void drawBG(const u8 *regs, const u8 *vram, u32 dc, int i) {
     gcTitleScale=gcTitleWide&&i==3;
     const u16 cnt = rh(regs, 8 + i * 2);
@@ -313,11 +315,11 @@ static void drawBG(const u8 *regs, const u8 *vram, u32 dc, int i) {
     const unsigned sz = cnt >> 14, w = (sz & 1) ? 64 : 32, h = (sz & 2) ? 64 : 32;
     const int bpp8 = (cnt & 0x80) != 0;
     const unsigned hofs = rh(regs, 0x10 + i * 4) & 0x1FF, vofs = rh(regs, 0x12 + i * 4) & 0x1FF;
-    const int rdx = (P3DS_GcRowSplit >= 0 && !gcEngineB) ? P3DS_GcRowDx[i] : 0;
+    const int rowOn = (P3DS_GcRowSd >= 0 && !gcEngineB && P3DS_GcRowOn[i]);
     for (unsigned r = 0; r < 25; r++) { const unsigned wy = (vofs >> 3) + r, ty = wy & (h - 1); const float sy = r * 8.0f - (vofs & 7);
         if (sy >= 192) break;
-        const int rowDx = (rdx && sy + 4.0f >= (float)P3DS_GcRowSplit) ? rdx : 0;  /* one row = one 8 px tile row */
-        for (unsigned k = 0; k < (rowDx ? 34u : 33u); k++) { const unsigned wx = (hofs >> 3) + k, tx = wx & (w - 1); const float sx = k * 8.0f - (hofs & 7) - rowDx;
+        const int rowDx = rowOn ? -P3DS_BattleRowExtra((int)(sy + 4.0f), P3DS_GcRowSd) : 0;  /* one row = one 8 px tile row; + moves left */
+        for (int k = rowOn ? -1 : 0; k < (rowOn ? 35 : 33); k++) { const unsigned wx = (hofs >> 3) + (unsigned)k, tx = wx & (w - 1); const float sx = k * 8.0f - (hofs & 7) - rowDx;
             const unsigned ma = (mapb + ((tx >> 5) + (ty >> 5) * (w >> 5)) * 0x800 + ((ty & 31) * 32 + (tx & 31)) * 2) & (gcEngineB ? 0x1FFFF : 0x7FFFF);
             const u16 me = *(const u16 *)(vram + ma);
             const unsigned mi = (me ^ (me >> 10)) & 1023; const u16 mk = me & 0xF3FF;

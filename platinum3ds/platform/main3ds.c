@@ -66,27 +66,44 @@ static void hold(const char *why) { P3DS_LogFlushSync();
 }
 
 static aptHookCookie hookCookie;
-extern void P3DS_ShutdownThreads(void); extern void P3DS_ShutdownSDL(void);
+static Thread wdTh;
+extern int P3DS_ShutdownThreads(int workersStopped);
+extern int P3DS_ShutdownSDL(void);
+extern int P3DS_RomCacheShutdown(void);
+extern void P3DS_AudioShutdown(int gameThreadsStopped);
+extern void P3DS_ThreadDiag(const char *);
+extern void P3DS_LogFinish(int clean);
 /* Clean exit: stop workers, join them, close files, gfxExit, then exit() normally (returns to HBL / HOME). */
 static void p3SaveBackup(const char *why); /* run 122 */
 static void hardExit(int code) {
     static int once; if (once++) exit(code);
     quitting = 1; PSPNativeMemLog("[3DS] exit: stopping threads");
-    { extern void P3DS_HuntFlush(void); extern void P3DS_HuntWait(void); P3DS_HuntFlush(); P3DS_HuntWait(); } /* shiny_suite: hunt time since the last write */
+    { extern void P3DS_HuntFlush(void); extern void P3DS_HuntWait(void); extern int P3DS_HuntStopWriter(void); P3DS_HuntFlush(); P3DS_HuntWait(); if (!P3DS_HuntStopWriter()) PSPNativeMemLog("[3DS] exit: hunt writer thread did not stop in 1 s"); } /* shiny_suite: hunt time since the last write */
     /* run 122 (SS 09f7427): save first: ShutdownThreads frees the game's partition blocks, which the backup close may still touch */
     extern BOOL PSPNative_CloseBackup(void); PSPNative_CloseBackup(); p3SaveBackup("exit");
     /* SoulSilver run 934 soft-reset crash: join every platform worker BEFORE freeing game heap / GPU state.
        Order: render (engine B / c1) → g3thr → par helper → SCE/game threads → SDL timers → gfxExit. */
-    { extern void PSPNativeRenderShutdown(void); PSPNativeRenderShutdown(); }
-    { extern void P3DS_G3ThrShutdown(void); P3DS_G3ThrShutdown(); }
-    { extern void P3DS_ParShutdown(void); P3DS_ParShutdown(); }
-    P3DS_ShutdownThreads(); P3DS_ShutdownSDL();
+    extern int P3DS_RenderShutdown(void), P3DS_G3ThrShutdown(void), P3DS_ParShutdown(void);
+    int stopped = P3DS_RomCacheShutdown();
+    stopped &= P3DS_RenderShutdown();
+    stopped &= P3DS_G3ThrShutdown();
+    stopped &= P3DS_ParShutdown();
+    stopped &= P3DS_ShutdownSDL();
+    const int gameThreadsStopped = P3DS_ShutdownThreads(stopped);
     { extern void P3U_ClearPending(void); P3U_ClearPending(); }
     { extern void P3DS_UseSummary(const char *); P3DS_UseSummary("clean exit"); }
     { extern void P3DS_FpsGuardClean(void); P3DS_FpsGuardClean(); }
-    { extern void P3DS_AudioShutdown(void); P3DS_AudioShutdown(); }
-    PSPNativeMemLog("[3DS] exit: clean");
-    { extern void P3U_ClearPending(void); P3U_ClearPending(); } P3DS_LogFlushSync(); aptUnhook(&hookCookie); gfxExit(); exit(code);
+    P3DS_AudioShutdown(gameThreadsStopped);
+    if (wdTh && threadGetCurrent() != wdTh) {
+        if (threadJoin(wdTh, 1000000000ULL) == 0) { threadFree(wdTh); wdTh = NULL; }
+        else PSPNativeMemLog("[3DS] exit: watchdog thread did not stop in 1 s");
+    }
+    extern int P3DS_LogStopWriter(void);
+    const int logStopped = P3DS_LogStopWriter();
+    aptUnhook(&hookCookie);
+    if (stopped && gameThreadsStopped) gfxExit();
+    if (logStopped) P3DS_LogFinish(code == 0);
+    exit(code);
 }
 static char lastMsg[200];
 static char missingName[96]; /* name from the last "[SS-MISSING] name" log line (a Missing() trap logs it, then abort()s) */
@@ -382,6 +399,14 @@ int P3DS_TouchRead(int *x, int *y) {
     if (edge && (++downs <= 200 || downs % 50 == 0))
         PSPNativeMemLog("[3DS] touch #%u raw=(%d,%d) ds=(%d,%d) scale=%d%s", downs, t.px, t.py, dx, dy, P3DS_ScaleMode(), (dx < 0 || dx > 255 || dy < 0 || dy > 191) ? " OUTSIDE DS area, ignored" : "");
     if (dx < 0 || dx > 255 || dy < 0 || dy > 191) return 0;
+    { /* Mobile PC BOXES chip: consume the tap so it does not hit CANCEL or the party prompt. */
+      extern int P3DS_MobilePcChipHitDS(int, int);
+      extern void P3DS_MobilePcOnChipTap(void);
+      extern int P3DS_MobilePcZoomFrame(void);
+      extern volatile int P3DS_MobilePcCloseThenLaunch;
+      if (P3DS_MobilePcZoomFrame() >= 0 || P3DS_MobilePcCloseThenLaunch) { touchPrev = 1; return 0; }
+      if (P3DS_MobilePcChipHitDS(dx, dy)) { P3DS_MobilePcOnChipTap(); touchPrev = 1; return 0; }
+    }
     { extern volatile int P3DS_PanelPartyOn, P3DS_PanelDest[4], P3DS_PanelSrcHeight;   /* run 130: party-in-panel: a tap inside the party picture is mapped back to the party's own 256x192 touch space; taps elsewhere are ignored (panel chrome handles them) */
       if (P3DS_PanelPartyOn) { const int x0 = P3DS_PanelDest[0], y0 = P3DS_PanelDest[1], x1 = P3DS_PanelDest[2], y1 = P3DS_PanelDest[3];
         if (x1 > x0 && y1 > y0 && dx >= x0 && dx < x1 && dy >= y0 && dy < y1) { *x = (dx - x0) * 256 / (x1 - x0); *y = (dy - y0) * P3DS_PanelSrcHeight / (y1 - y0); touchPrev = 1; return 1; }
@@ -394,19 +419,27 @@ int P3DS_TouchRead(int *x, int *y) {
 /* Watchdog: if no game frame is presented for ~3 s after the game started, log the breadcrumb and show the
    red box from this (higher-priority) thread so a stuck game thread cannot hard-lock the console. */
 extern unsigned PSPNativeRenderFrameCount(void);
-static volatile int gameStarted; static Thread wdTh;
+static volatile int gameStarted;
 static void watchdog(void *p) {
     P3DS_ThreadGuard("watchdog");
     unsigned last = 0; int still = 0;
     while (!quitting) {
         svcSleepThread(500000000LL);
+        if (quitting) break;
         if (!gameStarted) continue;
         { extern volatile int P3DS_MenuOpen; if (P3DS_MenuOpen) { still = 0; continue; } }  /* run 55: settings menu pauses on purpose */
         { extern volatile int P3DS_FolBuilding; if (P3DS_FolBuilding) { still = 0; continue; } }  /* run 41: one-time followers.bin build */
         unsigned f = PSPNativeRenderFrameCount();
         if (f != last) { last = f; still = 0; continue; }
         { extern volatile int P3DS_NetBusy; if (P3DS_NetBusy && still < 179) { still++; continue; } }  /* GTS login blocks the game thread on purpose (up to ~90 s here); only a real hang gets the red box */
-        if (++still >= 20) { P3DS_CrumbDump();
+        ++still;
+        if (still == 3) {
+            const unsigned pos = crumbPos[0];
+            const Crumb *c = &crumbs[0][(pos - 1) & 63];
+            PSPNativeMemLog("[STALL] no frame since f=%u | main last %s from %p", f,
+                pos && c->tag ? c->tag : "?", pos ? c->caller : NULL);
+        }
+        if (still >= 20) { P3DS_CrumbDump();
             char b[300]; snprintf(b, sizeof b, "game stalled: no frame for 10 s at frame %u (crumbs in log.txt). main last: %s %p. msg: %s", f, crumbs[0][(crumbPos[0]-1)&63].tag ? crumbs[0][(crumbPos[0]-1)&63].tag : "(none)", crumbs[0][(crumbPos[0]-1)&63].caller, lastMsg[0] ? lastMsg : "(none)");
             PSPNativeMemLog("[WATCHDOG] %s", b);
             { extern void P3DS_BigLockInfo(char *b, int n); char lb[400]; P3DS_BigLockInfo(lb, sizeof lb); PSPNativeMemLog("[WATCHDOG] %s", lb); { extern void P3DS_RomLockInfo(char *b, int n); P3DS_RomLockInfo(lb, sizeof lb); PSPNativeMemLog("[WATCHDOG] %s", lb); { extern void P3DS_RomCallerInfo(char *b, int n); char cb[800]; P3DS_RomCallerInfo(cb, sizeof cb); PSPNativeMemLog("[WATCHDOG] %s", cb); } } }
@@ -479,7 +512,11 @@ int main(void) {
     PSPNativeMemLog("Platinum 3DS " SS3DS_VERSION " (%s %s) New3DS=%d linear free=%lu app free=%lu", __DATE__, __TIME__, n3ds,
                     (unsigned long)linearSpaceFree(), (unsigned long)osGetMemRegionFree(MEMREGION_APPLICATION));
     { struct mallinfo mi = mallinfo(); extern char *fake_heap_start, *fake_heap_end; PSPNativeMemLog("[3DS] malloc heap %lu KiB (used %lu)", (unsigned long)((fake_heap_end - fake_heap_start) >> 10), (unsigned long)mi.uordblks); }
+    { extern u32 P3DS_HeapWaitMs, P3DS_HeapFreeFirst, P3DS_HeapFreeFinal; if (P3DS_HeapWaitMs) PSPNativeMemLog("[3DS] memory at start: %lu KiB free when loaded, %lu KiB after waiting %lu ms for the last run to give its memory back", (unsigned long)(P3DS_HeapFreeFirst >> 10), (unsigned long)(P3DS_HeapFreeFinal >> 10), (unsigned long)P3DS_HeapWaitMs); }
     bootMs = osGetTime(); { extern void P3DS_LogConfigHeader(const char *); P3DS_LogConfigHeader(SS3DS_VERSION); }
+    { extern u32 P3DS_HeapFreeFinal; if (P3DS_HeapFreeFinal < (64u << 20)) { /* heapwait3ds.c: the last run never gave its memory back within 30 s */
+        PSPNativeMemLog("[3DS] NOT ENOUGH MEMORY after the reset (%lu KiB, the game needs about 64 MiB): the previous run had not finished closing", (unsigned long)(P3DS_HeapFreeFinal >> 10));
+        hold("Not enough memory after the reset:\nthe last run had not finished closing.\nPress START, then open the game again\nfrom the HOME Menu. Your save is safe."); } }
     uiStep("System", 1);
     STEP("Overlays", PSPNativeOverlay_Init(), "overlay init failed");
     { FILE *rf = fopen("sdmc:/3ds/platinum3ds/platinum.nds", "rb"); char hd[16] = {0}; int ok = rf && fread(hd, 1, 12, rf) == 12; if (rf) fclose(rf); /* run 64: plain error when the ROM is missing */
@@ -503,7 +540,7 @@ int main(void) {
     { extern int P3DS_CfgInt(const char *, int); /* online trading (0137): 3DS sockets for the game's own Wi-Fi code; the game may never call WM init on that path, so start them here */
       { extern int P3DS_NetInit(void); PSPNativeMemLog("[NET] auto wireless at boot: sockets %s", P3DS_NetInit() ? "up" : "unavailable"); } }
     STEP("Starting game", 1, ""); PSPNativeMemLog("[3DS] entering NitroMain");
-    threadOnException(onCrash, excStack + sizeof excStack, WRITE_DATA_TO_HANDLER_STACK); gameStarted = 1; wdTh = threadCreate(watchdog, NULL, 0x4000, 0x20, -2, true);
+    threadOnException(onCrash, excStack + sizeof excStack, WRITE_DATA_TO_HANDLER_STACK); gameStarted = 1; wdTh = threadCreate(watchdog, NULL, 0x4000, 0x20, -2, false); /* joinable: hardExit joins it (it leaves its loop on quitting) */
     NitroMain(); 
     hold("NitroMain returned");
     return 0;

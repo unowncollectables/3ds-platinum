@@ -177,11 +177,15 @@ static void pfSave(void) {
     if (ok) { remove(PFPATH); ok = rename(PFTMP, PFPATH) == 0; } else remove(PFTMP);
     PSPNativeMemLog("[PREFETCH] persist %s (%u zones)", ok ? "ok" : "FAILED", cnt);
 }
+static Thread pfWorker;
+static int pfStop;
+
 static void pfThread(void *arg) {
     P3DS_ThreadGuard("prefetch");
     (void)arg; FILE *fp = NULL; u64 lastPersist = svcGetSystemTick(), lastLz = svcGetSystemTick(); int busy = 0;
-    for (;;) {
+    while (!__atomic_load_n(&pfStop, __ATOMIC_ACQUIRE)) {
         svcSleepThread(busy ? 2000000LL : 30000000LL); busy = 0;
+        if (__atomic_load_n(&pfStop, __ATOMIC_ACQUIRE)) break;
         if (state != 1 || !pfReady) continue;
         if (!idleOk()) continue;
         if (pfDirty && svcGetSystemTick() - lastPersist > msT(60000)) { pfDirty = 0; lastPersist = svcGetSystemTick(); pfSave(); continue; }
@@ -205,11 +209,35 @@ static void pfThread(void *arg) {
         stg[slot].len = len; pfFetched++; if (pfBudget) pfBudget--;
         __sync_synchronize(); stg[slot].st = 2; busy = 1;
     }
+    if (fp) fclose(fp);
 }
+
+int P3DS_RomCacheShutdown(void) {
+    __atomic_store_n(&pfStop, 1, __ATOMIC_RELEASE);
+    if (!pfWorker) return 1;
+    Result rc = threadJoin(pfWorker, 500000000ULL);
+    if (rc != 0) {
+        PSPNativeMemLog("[3DS] exit: prefetch worker did not stop (join %08lx)", (unsigned long)rc);
+        return 0;
+    }
+    threadFree(pfWorker);
+    pfWorker = NULL;
+    return 1;
+}
+
 void P3DS_RomCachePump(void) {   /* game thread, once per frame (render3ds Present) */
+    if (__atomic_load_n(&pfStop, __ATOMIC_ACQUIRE)) return;
     if (pfCfg < 0) { pfCfg = 1; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); char l[64]; int x; if (f) { while (fgets(l, sizeof l, f)) if (sscanf(l, "zone_prefetch=%d", &x) == 1) pfCfg = x != 0; fclose(f); }
         if (pfCfg) { zt = calloc(MAXZ, sizeof *zt); for (int i = 0; i < NSTG && zt; i++) if (!(stg[i].buf = malloc(BLK))) { free(zt); zt = NULL; }
-            Thread t = zt ? threadCreate(pfThread, NULL, 0x4000, 0x3F, 2, true) : NULL; if (!t) { pfCfg = 0; } }
+            if (zt) {
+                pfWorker = threadCreate(pfThread, NULL, 0x4000, 0x3F, 2, false);
+                if (!pfWorker) PSPNativeMemLog("[PREFETCH] thread start FAILED");
+            }
+            if (!pfWorker) {
+                for (int i = 0; i < NSTG; i++) { free(stg[i].buf); stg[i].buf = NULL; }
+                free(zt); zt = NULL; pfCfg = 0;
+            }
+        }
         PSPNativeMemLog("[PREFETCH] zone_prefetch=%d", pfCfg); }
     { extern int P3DS_InBattle; static int wasB; if (P3DS_InBattle && !wasB && pfCfg == 1) battleLearn(); wasB = P3DS_InBattle != 0; }
     if (pfCfg == 1 && state == 1) { static int loaded; if (!loaded) { loaded = 1; pfLoad();

@@ -100,7 +100,8 @@ static void bnButtonDetails(const SBnCanvas &c, int x0, int y0, int y1, int divi
 struct SBnTabDst { short dx, dy, w, h, sx, sy; };
 /* JOHTO top tabs at native resolution, same box and green pixel icons as the column (bnBox / bnIcon2x).
    ds* are the DS hit rects from pxChips. Drawn into atlas row y=180 (the frame windows stop at y=168). */
-static int bnTabStrip(uint32_t *atlas, int pane, int n, const int *dsX0, const int *dsX1, int dsY0, int dsY1, const int *icons, const char *const *labels, const char *const *shortLabels, SBnTabDst *dst, int maxDst) {
+/* iconOnly: no labels, centred icons. Default false keeps the labeled 5/6-tab strip. Unused by Mobile PC (the BOXES chip lives on the party screen, not the tab bar). */
+static int bnTabStrip(uint32_t *atlas, int pane, int n, const int *dsX0, const int *dsX1, int dsY0, int dsY1, const int *icons, const char *const *labels, const char *const *shortLabels, SBnTabDst *dst, int maxDst, bool iconOnly = false) {
   if (!atlas || n < 1) return 0;
   const uint32_t NAVY = bnRGB(7, 33, 54), BTN = bnRGB(244, 247, 254), BTN_TOP = bnRGB(252, 253, 255), BTN_SHD = bnRGB(189, 201, 222),
     SEL = bnRGB(46, 208, 155), SEL_SHD = bnRGB(24, 153, 115), BG = bnRGB(200, 208, 211),
@@ -116,7 +117,7 @@ static int bnTabStrip(uint32_t *atlas, int pane, int n, const int *dsX0, const i
     const int divider = 13, textLeft = divider + 2, textRight = w - 4, room = textRight - textLeft;
     const char *label = bnTextW(labels[i]) <= room ? labels[i] : shortLabels[i];
     const int tw = bnTextW(label);
-    const bool showLabel = tw <= room;
+    const bool showLabel = !iconOnly && tw <= room;
     bnButtonDetails(c, 0, 0, h - 1, showLabel ? divider : w - 5, w - 3, on);
     bnIcon2x(c, showLabel ? 1 : (w - 5 - 12) / 2, (h - 12) / 2,
              icons[i], on ? SEL_INK : INK, on ? WHITE : ACC);
@@ -167,4 +168,82 @@ static void bnFrame(uint32_t *atlas, const char *const *lb, const char *const *a
       }
     } else { iconX[i] = x0 + 1; iconY[i] = y0 + 1; }
   }
+}
+
+/* Official-party BOXES button (atlas slot kBnBoxesAX,kBnBoxesAY). Same rounded shape,
+   height, 1 px dark outline and outlined white font as the game's CANCEL, with a purple
+   fill (so it reads as its own button on the teal party screen) and a small box icon.
+   Returns dest size including pad in *dw,*dh. Glow / NEW use the pad around the button. */
+enum { kBnBoxesAX = 432, kBnBoxesAY = 180, kBnBoxesPad = 8, kBnBoxesW = 56, kBnBoxesH = 21, kBnBoxesR = 3, kBnZoomAX = 432, kBnZoomAY = 230 };
+static int bnInRound(int x, int y, int x0, int y0, int x1, int y1, int r) {
+  if (x < x0 || x > x1 || y < y0 || y > y1) return 0;
+  int cx, cy;
+  if (x <= x0 + r && y <= y0 + r) { cx = x0 + r; cy = y0 + r; }
+  else if (x >= x1 - r && y <= y0 + r) { cx = x1 - r; cy = y0 + r; }
+  else if (x <= x0 + r && y >= y1 - r) { cx = x0 + r; cy = y1 - r; }
+  else if (x >= x1 - r && y >= y1 - r) { cx = x1 - r; cy = y1 - r; }
+  else return 1;
+  const int dx = x - cx, dy = y - cy;
+  return dx * dx + dy * dy <= r * r + 1;
+}
+/* A small 9x8 storage-box icon (lid + two cells), drawn in the button's ink. */
+static const char *const kBnBoxIcon[8] = {
+  ".#######.", "#.......#", "#########", "#.##.##.#", "#.##.##.#", "#.##.##.#", "#########", "........."
+};
+static void bnBoxIcon(const SBnCanvas &c, int x, int y, uint32_t ink) {
+  for (int r = 0; r < 8; r++) for (int k = 0; k < 9; k++) if (kBnBoxIcon[r][k] == '#') bnPut(c, x + k, y + r, ink);
+}
+static uint32_t bnPartyPurpleBand(int rel, int h) {
+  const int hi = (h * 42) / 100;
+  if (rel <= 1) return bnRGB(186, 124, 236);
+  if (rel <= hi) return bnRGB(156, 92, 224);
+  if (rel == hi + 1) return bnRGB(128, 64, 204);
+  if (rel == hi + 2) return bnRGB(108, 44, 184);
+  if (rel == hi + 3) return bnRGB(92, 32, 168);
+  if (rel >= h - 2) return bnRGB(60, 18, 120);
+  return bnRGB(80, 24, 152);
+}
+static void bnBoxesChip(uint32_t *atlas, int anim, int *dw, int *dh) {
+  const uint32_t OUT = bnRGB(40, 16, 56), WHITE = bnRGB(255, 255, 255), INK_O = bnRGB(32, 8, 48),
+    GOLD = bnRGB(255, 220, 64), TAG = bnRGB(24, 10, 40);
+  const int pad = kBnBoxesPad, w = kBnBoxesW, h = kBnBoxesH, r0 = kBnBoxesR;
+  const int cw = w + pad * 2, ch = h + pad * 2;
+  const SBnCanvas c = { atlas, kBnBoxesAX, kBnBoxesAY, 0, 0, cw, ch };
+  for (int y = 0; y < ch; y++) for (int x = 0; x < cw; x++) bnPut(c, x, y, 0);
+  int x0 = pad, y0 = pad, x1 = pad + w - 1, y1 = pad + h - 1;
+  if (anim >= 12 && anim <= 20) {
+    int pop = anim <= 16 ? (anim - 12) : (20 - anim);
+    x0 -= pop; x1 += pop; y0 -= pop / 2; y1 += pop / 2;
+  }
+  const int rr = r0 + ((x1 - x0 + 1) > w ? 1 : 0);
+  if (anim >= 16 && anim <= 40) {
+    int glow = anim <= 28 ? (anim - 16) : (40 - anim); if (glow > 3) glow = 3;
+    for (int t = glow; t >= 1; t--) {
+      const int gx0 = x0 - t, gy0 = y0 - t, gx1 = x1 + t, gy1 = y1 + t, gr = rr + t;
+      for (int y = gy0; y <= gy1; y++) for (int x = gx0; x <= gx1; x++)
+        if (bnInRound(x, y, gx0, gy0, gx1, gy1, gr) && !bnInRound(x, y, gx0 + 1, gy0 + 1, gx1 - 1, gy1 - 1, gr > 0 ? gr - 1 : 0))
+          bnPut(c, x, y, GOLD);
+    }
+  }
+  const int bh = y1 - y0 + 1;
+  for (int y = y0; y <= y1; y++) {
+    const uint32_t fill = bnPartyPurpleBand(y - y0, bh);
+    for (int x = x0; x <= x1; x++) {
+      if (!bnInRound(x, y, x0, y0, x1, y1, rr)) continue;
+      bnPut(c, x, y, bnInRound(x, y, x0 + 1, y0 + 1, x1 - 1, y1 - 1, rr > 0 ? rr - 1 : 0) ? fill : OUT);
+    }
+  }
+  const char *label = "BOXES";
+  const int tw = bnTextW(label), iw = 9, gap = 3, total = iw + gap + tw;
+  const int tx0 = x0 + (x1 - x0 + 1 - total) / 2, iy = y0 + (y1 - y0 + 1 - 8) / 2, ty = y0 + (y1 - y0 + 1 - 9) / 2;
+  bnBoxIcon(c, tx0, iy, WHITE);
+  bnTextO(c, tx0 + iw + gap, ty, label, WHITE, INK_O);
+  if (anim >= 0 && anim <= 24) {
+    const char *tag = "NEW";
+    const int tw2 = bnTextW(tag) + 4, tx = x0 - 2, ty2 = y0 - 8;
+    for (int y = ty2; y <= ty2 + 9; y++) for (int x = tx; x <= tx + tw2 - 1; x++)
+      if (bnInRound(x, y, tx, ty2, tx + tw2 - 1, ty2 + 9, 2)) bnPut(c, x, y, GOLD);
+    bnText(c, tx + 2, ty2 + 1, tag, TAG);
+  }
+  *dw = cw; *dh = ch;
 }

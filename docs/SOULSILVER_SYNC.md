@@ -22,6 +22,7 @@ Carried over from SoulSilver, active as soon as the build runs:
 | Save | `platinum.sav` stays the raw 512 KiB image; one validated `.bak1` (older `.bak2-8` removed after the next good backup) | `save_backup` |
 | Wireless | automatic: local (UDS) or online (sockets) per session, decided by the game's own WM init; the Wireless setting is retired | automatic |
 | GTS | StarMe server picker, last-seen deposit preview, login/log fixes | `gts_picker`, `gts_server` |
+| Soft reset | (SoulSilver up to 08b73fd, 2026-11-25) wait for the old run's memory before carving heaps (`heapwait3ds.c`), stop leftover threads, DSP refcount fix, `[STALL]` lines | always |
 | Perf | cached config lookups, boot speed check, zone prefetch, `[SPIKE]`/`[PERF4]` diagnostics | always |
 
 Defaults: only platform / speed / display defaults came across (`kCfgDefaults` in `psp_ctru.c`). Anything that changes
@@ -36,5 +37,7 @@ Platinum gameplay (cheats, visible wilds, shiny odds, HM-free, ...) keeps Platin
 * `render3ds.cpp`: SoulSilver's frame pipeline (H-blank lines, 60 fps in-between present, sharp text, overlay timing, `[PERF4]`) with Platinum's settings app, wide layout engine, lower menu, bottom strip and follower overlays kept.
 
 ## Phase 2: game-side features (not in this change)
+
+Platform code for these is in place but inert until a Platinum hook feeds it: Mobile PC (`ss3ds_mobilepc.h`, SoulSilver hook 0293), virtual GBA Slot 2 migrate (`ss3ds_slot2.h`/`ss3ds_ctrdg.h`, hooks 0294-0297; Platinum's Pal Park would need its own C port), Black 2 animated battle sprites (`b2sprites.c`, hooks 0298-0300, not copied yet).
 
 These need hooks in Platinum's decomp (`work_patches/`), not just the platform layer. Tracked in the PR description.

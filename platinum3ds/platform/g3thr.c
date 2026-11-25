@@ -40,16 +40,16 @@ void G3T_RequestQuit(void) {
     LightSemaphore_Release(&sem, 1);
     if (splitStarted) LightSemaphore_Release(&sem2, 1);
 }
-void G3T_Join(void) {
+int G3T_Join(void) {
+    int stopped = 1;
     if (th1) {
-        if (R_SUCCEEDED(threadJoin(th1, 500000000ULL))) threadFree(th1);
-        else { extern void PSPNativeMemLog(const char *, ...); PSPNativeMemLog("[3DS] exit: g3thr worker 1 did not stop in 500 ms"); }
-        th1 = NULL;
+        if (threadJoin(th1, 500000000ULL) == 0) { threadFree(th1); th1 = NULL; }
+        else { extern void PSPNativeMemLog(const char *, ...); PSPNativeMemLog("[3DS] exit: g3thr worker 1 did not stop in 500 ms"); stopped = 0; }
     }
     if (th2) {
-        if (R_SUCCEEDED(threadJoin(th2, 500000000ULL))) threadFree(th2);
-        else { extern void PSPNativeMemLog(const char *, ...); PSPNativeMemLog("[3DS] exit: g3thr worker 2 did not stop in 500 ms"); }
-        th2 = NULL;
+        if (threadJoin(th2, 500000000ULL) == 0) { threadFree(th2); th2 = NULL; }
+        else { extern void PSPNativeMemLog(const char *, ...); PSPNativeMemLog("[3DS] exit: g3thr worker 2 did not stop in 500 ms"); stopped = 0; }
     }
-    splitOn = 0; splitStarted = 0;
+    if (stopped) { splitOn = 0; splitStarted = 0; }
+    return stopped;
 }

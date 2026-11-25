@@ -6,12 +6,33 @@
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
+#include <time.h>
 #define MAXT 32
+
 typedef struct { Thread th; SceKernelThreadEntry entry; void *arg; SceSize len; u8 argbuf[64]; LightSemaphore wake; int prio, stack, used, started, core; char name[24]; } PT;
 static PT pts[MAXT + 1]; /* slot 0 = main thread */
 static __thread int tlsId;
 volatile int p3ds_quit; /* set by P3DS_ShutdownThreads: every worker leaves at its next blocking point */
 static void quitCheck(void) { if (p3ds_quit && tlsId != 0) threadExit(0); }
+/* 2026-11-22 thread-limit diagnostics. Hardware boot 15/16 (sound dead after ~15 soft resets): no thread could be created at all,
+   not even on core 0 (speedcheck "-1 = no thread" on every core, g3thr "could not start"), so the sound thread (sas_out.c
+   native_sas_out) never started, sceAudioOutputPannedBlocking was never called and ndspInit never ran ("ndsp was unstarted").
+   The application resource-limit tally and the current process's live thread count are separate measurements. */
+void PSPNativeMemLog(const char *, ...);
+static void resLimitStr(char *b, int n) {
+    Handle rl = 0; static const ResourceLimitType ty[] = { RESLIMIT_THREAD, RESLIMIT_EVENT, RESLIMIT_MUTEX, RESLIMIT_SEMAPHORE, RESLIMIT_TIMER, RESLIMIT_SHAREDMEMORY, RESLIMIT_ADDRESSARBITER, RESLIMIT_CPUTIME };
+    static const char *nm[] = { "threads", "events", "mutexes", "semaphores", "timers", "sharedmem", "arbiters", "cputime" };
+    s64 cur[8], mx[8]; ResourceLimitType t[8]; for (int i = 0; i < 8; i++) { t[i] = ty[i]; cur[i] = mx[i] = -1; }
+    Result r = svcGetResourceLimit(&rl, CUR_PROCESS_HANDLE);
+    if (R_SUCCEEDED(r)) { if (R_FAILED(svcGetResourceLimitCurrentValues(cur, rl, t, 8))) for (int i = 0; i < 8; i++) cur[i] = -1; if (R_FAILED(svcGetResourceLimitLimitValues(mx, rl, t, 8))) for (int i = 0; i < 8; i++) mx[i] = -1; svcCloseHandle(rl); }
+    int w = snprintf(b, n, "reslimit%s", R_FAILED(r) ? " (unreadable)" : "");
+    for (int i = 0; i < 8 && w > 0 && w < n; i++) w += snprintf(b + w, n - w, " %s %lld/%lld", nm[i], (long long)cur[i], (long long)mx[i]);
+}
+static s64 procInfo(u32 type) { s64 v = -1; if (R_FAILED(svcGetProcessInfo(&v, CUR_PROCESS_HANDLE, type))) v = -1; return v; }
+void P3DS_ThreadDiag(const char *when) {
+    char b[300]; resLimitStr(b, sizeof b);
+    PSPNativeMemLog("[3DS] threads at %s: this process %lld threads, %lld handles | %s", when, (long long)procInfo(7), (long long)procInfo(4), b);
+}
 static RecursiveLock big; static int bigInit;
 static void initBig(void) { if (!bigInit) { RecursiveLock_Init(&big); bigInit = 1; LightSemaphore_Init(&pts[0].wake, 0, 0x7fff); pts[0].used = 1; } }
 /* ss3ds run 74: who holds the big "interrupts off" lock? Run 73 (GTS) deadlocked with main stuck in intrlock-wait and nothing said which
@@ -53,11 +74,24 @@ SceUID sceKernelCreateThread(const char *n, SceKernelThreadEntry e, int prio, in
 static void trampoline(void *p) { PT *t = p; P3DS_ThreadGuard(t->name); tlsId = (int)(t - pts); t->entry(t->len, t->len ? t->argbuf : NULL); }
 int sceKernelStartThread(SceUID id, SceSize len, void *argp) {
     PT *t = &pts[id - 1]; if (len > sizeof t->argbuf) return -1; t->len = len; if (len) memcpy(t->argbuf, argp, len);
-    t->th = threadCreate(trampoline, t, t->stack, toCtrPrio(t->prio), t->core, false); if (!t->th && t->core != -2) { t->th = threadCreate(trampoline, t, t->stack, toCtrPrio(t->prio), -2, false); } t->started = 1; return t->th ? 0 : -1;
+    t->th = threadCreate(trampoline, t, t->stack, toCtrPrio(t->prio), t->core, false); if (!t->th && t->core != -2) { t->th = threadCreate(trampoline, t, t->stack, toCtrPrio(t->prio), -2, false); } t->started = 1;
+    if (!t->th) { char b[300]; resLimitStr(b, sizeof b);
+        PSPNativeMemLog("[3DS] thread start FAILED: %s (core %d, prio 0x%x, stack %d) | this process %lld threads | %s", t->name, t->core, toCtrPrio(t->prio), t->stack, (long long)procInfo(7), b);
+        if (strstr(t->name, "sas") || strstr(t->name, "audio")) PSPNativeMemLog("[AUDIO] sound thread %s could not start: no sound this boot (ndspInit will never run)", t->name); }
+    return t->th ? 0 : -1;
 }
 int sceKernelExitThread(int s) { (void)s; threadExit(0); return 0; }
 int sceKernelWaitThreadEnd(SceUID id, SceUInt *to) { (void)to; PT *t = &pts[id - 1]; if (t->th) threadJoin(t->th, U64_MAX); return 0; }
-int sceKernelDeleteThread(SceUID id) { PT *t = &pts[id - 1]; if (t->th) threadFree(t->th); t->used = 0; return 0; }
+int sceKernelDeleteThread(SceUID id) {
+    PT *t = &pts[id - 1];
+    if (t->th) {
+        if (threadJoin(t->th, 0) != 0) return -1;
+        threadFree(t->th);
+        t->th = NULL;
+    }
+    t->used = 0;
+    return 0;
+}
 SceUID sceKernelGetThreadId(void) { return tlsId + 1; }
 int sceKernelSleepThread(void) { CRUMB("sleep"); initBig(); quitCheck(); LightSemaphore_Acquire(&pts[tlsId].wake, 1); quitCheck(); return 0; }
 int sceKernelWakeupThread(SceUID id) { LightSemaphore_Release(&pts[id - 1].wake, 1); return 0; }
@@ -204,26 +238,58 @@ static void ndspApplyClip(const char *why) {
     ndspSetClippingMode(m); if ((int)m != last) { last = (int)m; PSPNativeMemLog("[AUDIO] dsp clipping %s (%s, audio style %d)", m == NDSP_CLIP_NORMAL ? "NORMAL: plain clamp like the DS, no DSP limiter" : "SOFT: DSP output limiter (rides the whole mix)", why, st); } }
 /* 2026-11-20 (Nathan: sound gone after a soft reset on his other 3DS): the relaunched process can start while the old one still
    holds the DSP (or exited without ndspExit), so one failed ndspInit used to disable audio for the whole session. Now a failure is
-   retried about every 1.5 s (up to 20 tries) and every try is logged. ndspOk: -1 not started, 0 failed (retry later), 1 ready, 2 shut down. */
+   retried (0.25 s, 0.5 s, 0.75 s, then about every 1.5 s, up to 20 tries) and every try is logged. ndspOk: -1 not started, 0 failed
+   (retry later), 1 ready, 2 shut down.
+   2026-11-22 (sound still died after 7 starter soft resets with #577): #577's "reclaim" called ndspExit() after a FAILED ndspInit().
+   libctru's ndspInit already undoes its own reference on failure (ndsp.c _fail0: AtomicDecrement(&ndspRefCount)), so that ndspExit
+   drove ndspRefCount to -1 and the retry's ndspInit saw a non-zero count (AtomicPostIncrement) and returned 0 WITHOUT starting the
+   DSP: "ndsp ready" was logged, every buffer queued, nothing played, for the whole boot. Never call ndspExit unless OUR ndspInit
+   succeeded; a failed init is simply retried (libctru's dspInit force-unloads any component a dead process left behind). */
+static volatile u64 ndspInitT0; static volatile int ndspInitBusy; static u32 ndspFrames0; static u64 ndspReadyTick; static int ndspAlive = -1;
+static volatile int audioOutCalls; /* sceAudioOutputPannedBlocking calls (the sound thread is alive and feeding grains) */
+void P3DS_AudioDiag(const char *when);
 static void ndspSetup(void) {
     static int tries; static u64 nextTry;
     if (ndspOk == 1 || ndspOk == 2) return;
     if (ndspOk == 0) { if (tries >= 20 || svcGetSystemTick() < nextTry) return; }
+    ndspInitT0 = svcGetSystemTick(); ndspInitBusy = 1;
     Result r = ndspInit(); tries++;
-    if (R_FAILED(r)) { ndspOk = 0; nextTry = svcGetSystemTick() + (u64)SYSCLOCK_ARM11 * 3 / 2;
-        PSPNativeMemLog("[AUDIO] ndspInit failed %08lx (try %d/20%s): copy your console's DSP firmware to sdmc:/3ds/dspfirm.cdc (run 'DSP1' homebrew once) if this never succeeds.", r, tries, tries < 20 ? ", retrying" : ", giving up, audio disabled"); return; }
-    if (tries > 1) PSPNativeMemLog("[AUDIO] ndspInit ok on try %d (the DSP was still busy right after the reset)", tries);
+    ndspInitBusy = 0;
+    const unsigned initMs = (unsigned)((svcGetSystemTick() - ndspInitT0) / CPU_TICKS_PER_MSEC);
+    if (R_FAILED(r)) { ndspOk = 0; nextTry = svcGetSystemTick() + (tries <= 3 ? (u64)SYSCLOCK_ARM11 * tries / 4 : (u64)SYSCLOCK_ARM11 * 3 / 2);
+        PSPNativeMemLog("[AUDIO] ndspInit failed %08lx after %u ms (try %d/20%s): copy your console's DSP firmware to sdmc:/3ds/dspfirm.cdc (run 'DSP1' homebrew once) if this never succeeds.", r, initMs, tries, tries < 20 ? ", retrying" : ", giving up, audio disabled");
+        return; }
+    if (tries > 1) PSPNativeMemLog("[AUDIO] ndspInit ok on try %d in %u ms (the DSP was still busy right after the reset)", tries, initMs);
+    ndspFrames0 = ndspGetFrameCount(); ndspReadyTick = svcGetSystemTick(); ndspAlive = -1;
     ndspSetOutputMode(NDSP_OUTPUT_STEREO); sasRateInit(); ndspChnSetInterp(0, P3DS_SasRate == 32728 ? NDSP_INTERP_NONE : NDSP_INTERP_LINEAR); ndspChnSetRate(0, P3DS_SasRate == 32728 ? 32728.498f : (float)P3DS_SasRate); ndspChnSetFormat(0, NDSP_FORMAT_STEREO_PCM16);
     float mix[12] = {1.0f, 1.0f}; ndspChnSetMix(0, mix);
+    if (wbData) { linearFree(wbData); wbData = NULL; } /* defensive: never leak a prior linearAlloc if init is re-entered */
     wbData = linearAlloc(NWB * sasGrain * 4); memset(wb, 0, sizeof wb);
     for (int i = 0; i < NWB; i++) { wb[i].data_vaddr = wbData + i * sasGrain * 2; wb[i].nsamples = sasGrain; wb[i].status = NDSP_WBUF_DONE; }
     ndspOk = 1; wbNext = 0; ndspApplyClip("init"); PSPNativeMemLog("[AUDIO] ndsp ready: %d Hz stereo", P3DS_SasRate); PSPNativeMemLog("[AUDIO] buffers, %d x %d-sample buffers", NWB, sasGrain);
 }
 int sceAudioChReserve(int ch, int s, int f) { (void)s; (void)f; return ch < 0 ? 0 : ch; }
 int sceAudioChRelease(int ch) { (void)ch; return 0; }
+/* 2026-11-22: prove the DSP really runs after ndspInit. libctru's ndsp thread only counts a frame when the DSP raises its
+   interrupt, so a frame count that has not moved 2 s after a successful init means the DSP never started (sound dead for this
+   boot). Log only: nothing is restarted or reset. */
+static void ndspLiveCheck(void) {
+    if (ndspAlive >= 0 || P3DS_AudioAptPaused) return;
+    const u64 now = svcGetSystemTick(), age = now - ndspReadyTick; const u32 f = ndspGetFrameCount();
+    if (age < (u64)SYSCLOCK_ARM11 / 2) return;
+    if (f != ndspFrames0) { ndspAlive = 1; return; }
+    if (age > (u64)SYSCLOCK_ARM11 * 2) { ndspAlive = 0; PSPNativeMemLog("[AUDIO] DSP NOT RUNNING: 0 DSP frames %u ms after a successful ndspInit (no sound this boot)", (unsigned)(age / CPU_TICKS_PER_MSEC)); P3DS_AudioDiag("dsp dead"); }
+}
+static int audioOutImpl(void *b);
 int sceAudioOutputPannedBlocking(int ch, int l, int r, void *b) {
-    (void)ch; (void)l; (void)r; quitCheck(); ndspSetup();
+    (void)ch; (void)l; (void)r; quitCheck();
+    audioOutCalls++;
+    return audioOutImpl(b);
+}
+static int audioOutImpl(void *b) {
+    ndspSetup();
     if (ndspOk != 1) { svcSleepThread((s64)sasGrain * 1000000000LL / P3DS_SasRate); return 0; }
+    ndspLiveCheck();
     /* run 46 audio_lead=N (default 8 = 62 ms, was 16 = 125 ms of DSP lead): with the 83 ms snapshot latency the total
        sound delay drops from ~250 ms to ~145 ms (Poketch / menu taps felt late). 16 = old. */
     static int lead = -1; if (lead < 0) { lead = 8; FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); if (f) { char l[64]; int x; while (fgets(l, sizeof l, f)) if (sscanf(l, "audio_lead=%d", &x) == 1 && x >= 4 && x <= NWB) lead = x; fclose(f); } PSPNativeMemLog("[AUDIO] audio_lead=%d buffers (%d ms)", lead, lead * sasGrain * 1000 / P3DS_SasRate); }
@@ -239,22 +305,61 @@ int sceAudioOutputPannedBlocking(int ch, int l, int r, void *b) {
       while (w->status != NDSP_WBUF_DONE && w->status != NDSP_WBUF_FREE) { if (p3ds_quit) { quitCheck(); return 0; } svcSleepThread(1000000);
         u64 now = svcGetSystemTick(); u32 pos = ndspChnGetSamplePos(0); if (pos != lastPos || P3DS_AudioAptPaused) { lastPos = pos; tPos = now; }
         if (now - tPos > (u64)SYSCLOCK_ARM11) { P3DS_AudioDspStalls++;
-            PSPNativeMemLog("[AUDIO] dsp stall: buffer %d still queued after %u ms (sample pos %lu frozen), clearing the channel (stalls %u)", wbNext, (unsigned)((now - t0) / CPU_TICKS_PER_MSEC), (unsigned long)pos, P3DS_AudioDspStalls);
+            static u32 stallFrames; const u32 fc = ndspGetFrameCount();
+            PSPNativeMemLog("[AUDIO] dsp stall: buffer %d still queued after %u ms (sample pos %lu frozen), clearing the channel (stalls %u, DSP frames %lu, +%lu since the last stall)", wbNext, (unsigned)((now - t0) / CPU_TICKS_PER_MSEC), (unsigned long)pos, P3DS_AudioDspStalls, (unsigned long)fc, (unsigned long)(fc - stallFrames));
+            stallFrames = fc; ndspLiveCheck();
             ndspChnWaveBufClear(0); for (int i = 0; i < NWB; i++) wb[i].status = NDSP_WBUF_DONE; wbNext = 0; w = &wb[0]; break; } }
       unsigned ms = (unsigned)((svcGetSystemTick() - t0) / CPU_TICKS_PER_MSEC); if (ms > P3DS_AudioMaxWaitMs) P3DS_AudioMaxWaitMs = ms; }
     memcpy((void *)w->data_vaddr, b, sasGrain * 4); DSP_FlushDataCache(w->data_vaddr, sasGrain * 4);
     ndspChnWaveBufAdd(0, w); wbNext = (wbNext + 1) % lead; return 0;
 }
 volatile int P3DS_SumOpen; /* ribbons: summary screen open (needs glue hook; stays 0 until ported) */
-int P3DS_InBattle; /* Platinum: set by the battle overlay glue (p3ds_glue.c) */
+int P3DS_InBattle; /* Platinum: set from the catch snapshot in render3ds.cpp */
 
-/* Called by hardExit (soft reset or quit) after the workers are stopped: always hand the DSP back, even when a game thread did not
-   stop in time (the old code then skipped ndspExit and the relaunched process found the DSP busy = no sound). */
-void P3DS_AudioShutdown(void) {
-    if (ndspOk != 1) { ndspOk = 2; return; }
-    ndspOk = 2; /* the audio thread now just sleeps; ndspSetup will not start it again */
-    ndspChnWaveBufClear(0); ndspChnReset(0); ndspChnReset(1); ndspExit();
-    PSPNativeMemLog("[AUDIO] shutdown: DSP released before exit");
+/* Release DSP state only after the game workers have left their audio calls.
+   A failed ndspInit balances its own refcount in libctru. */
+void P3DS_AudioShutdown(int gameThreadsStopped) {
+    if (!gameThreadsStopped || ndspInitBusy) {
+        PSPNativeMemLog("[AUDIO] shutdown: game worker did not stop; keeping DSP state for process exit");
+        return;
+    }
+    const int was = ndspOk;
+    ndspOk = 2;
+    if (was == 1) {
+        ndspChnWaveBufClear(0);
+        ndspChnReset(0);
+        ndspChnReset(1);
+        ndspExit();
+    }
+    if (wbData) { linearFree(wbData); wbData = NULL; }
+    memset(wb, 0, sizeof wb); wbNext = 0;
+    if (was == 1) {
+        PSPNativeMemLog("[AUDIO] shutdown: DSP released before exit (buffers freed)");
+        svcSleepThread(100000000LL); /* allow DSP release before APT chainload */
+    }
+}
+/* 2026-11-22 audio diagnostics (one line per call, cheap): which boot this is since the console was powered on (counted in
+   resetchain.tmp: the console's power-on time = now - uptime, so a power cycle starts again at 1), uptime, memory left in each
+   region (BASE is where system modules such as dsp allocate, so a per-reset leak there shows up as a falling number), this
+   process's handle and thread counts, and the DSP frame / dropped-frame counters. */
+void P3DS_AudioDiag(const char *when) {
+    static int bootN = -1;
+    const u64 upS = svcGetSystemTick() / SYSCLOCK_ARM11;
+    if (bootN < 0) { bootN = 1; long long on = (long long)time(NULL) - (long long)upS, prevOn = 0; int prevN = 0;
+        FILE *f = fopen("sdmc:/3ds/platinum3ds/resetchain.tmp", "r"); if (f) { if (fscanf(f, "%lld %d", &prevOn, &prevN) != 2) prevN = 0; fclose(f); }
+        if (prevN > 0 && llabs(on - prevOn) <= 5) bootN = prevN + 1;
+        if ((f = fopen("sdmc:/3ds/platinum3ds/resetchain.tmp", "w"))) { fprintf(f, "%lld %d\n", bootN > 1 ? prevOn : on, bootN); fclose(f); } }
+    s64 hc = -1, hp = -1, tc = -1; if (R_FAILED(svcGetProcessInfo(&hc, CUR_PROCESS_HANDLE, 4))) hc = -1; if (R_FAILED(svcGetProcessInfo(&hp, CUR_PROCESS_HANDLE, 5))) hp = -1; if (R_FAILED(svcGetProcessInfo(&tc, CUR_PROCESS_HANDLE, 7))) tc = -1;
+    PSPNativeMemLog("[AUDIO] diag %s: boot %d since console power-on, uptime %llu s | linear free %u KiB | free KiB app %u sys %u base %u | handles %lld (peak %lld) threads %lld | ndsp ok %d, DSP frames %lu, dropped %lu",
+        when, bootN, (unsigned long long)upS, (unsigned)(linearSpaceFree() >> 10), (unsigned)(osGetMemRegionFree(MEMREGION_APPLICATION) >> 10), (unsigned)(osGetMemRegionFree(MEMREGION_SYSTEM) >> 10), (unsigned)(osGetMemRegionFree(MEMREGION_BASE) >> 10),
+        (long long)hc, (long long)hp, (long long)tc, ndspOk, (unsigned long)(ndspOk == 1 ? ndspGetFrameCount() : 0), (unsigned long)(ndspOk == 1 ? ndspGetDroppedFrames() : 0));
+}
+/* Game thread (input poll): log once if ndspInit has not returned after 4 s (DSP not answering). Log only: never resets. */
+void P3DS_AudioInitWatch(void) {
+    { static u64 t0; static int said; if (!t0) t0 = svcGetSystemTick();
+      if (!said && !audioOutCalls && svcGetSystemTick() - t0 > (u64)SYSCLOCK_ARM11 * 10) { said = 1;
+          PSPNativeMemLog("[AUDIO] no sound grain in 10 s: the sound thread never reached the audio output, so ndspInit was never tried"); P3DS_ThreadDiag("no sound grain"); P3DS_AudioDiag("no sound grain"); } }
+    if (ndspInitBusy && svcGetSystemTick() - ndspInitT0 > (u64)SYSCLOCK_ARM11 * 4) { static int said; if (!said) { said = 1; PSPNativeMemLog("[AUDIO] ndspInit has not returned after 4 s (the DSP is not answering)"); P3DS_AudioDiag("ndspInit hung"); } }
 }
 /* Pad, RTC, MAC, power callbacks, sysmem, file I/O. */
 #include <pspctrl.h>
@@ -298,6 +403,8 @@ static const struct { const char *key; int def; } kCfgDefaults[] = {
     { "g3_wake", 1 }, { "g3_fastxform", 1 }, { "g3_thr_texfence", 2 }, { "g3_thr_texsafe", 1 }, { "g3_stereo_share", 1 }, { "present_pace", 1 },
     { "g3_front_ov", 1 }, { "g3_stereo_gpu", 1 }, { "g3_front_bg", 1 },
     { "sharp_text", 1 }, { "sharp_game_text", 1 }, { "wide_layouts", 1 },
+    /* SoulSilver features that must stay OFF when the key is absent (mobile PC, Slot 2, Black 2 battle sprites) */
+    { "mobile_pc", 0 }, { "mobile_pc_dev", 0 }, { "slot2", 0 }, { "b2_sprites", 0 },
 };
 /* The default a missing key gets: this table if it lists the key, else the caller's `def`. logring.c reports with it, so the two cannot drift. */
 int P3DS_CfgDefault(const char *key, int def) { for (unsigned i = 0; i < sizeof kCfgDefaults / sizeof kCfgDefaults[0]; i++) if (!strcmp(key, kCfgDefaults[i].key)) return kCfgDefaults[i].def; return def; }
@@ -338,6 +445,155 @@ void P3DS_CfgWrite(const char *key, int val) {
     f = full ? NULL : fopen("sdmc:/3ds/platinum3ds/config.txt", "w"); int ok = f != NULL; if (f) { ok = fwrite(buf, 1, n, f) == n; if (fclose(f)) ok = 0; }
     P3DS_CfgInvalidate();
     if (ok) PSPNativeMemLog("[MENU] config.txt: %s=%d (saved)", key, val); else PSPNativeMemLog("[MENU] config.txt: %s=%d WRITE FAILED (setting lost on restart)", key, val); }
+/* SS3DS mobile PC: config (default OFF) and unlock sidecar. Never writes the .sav. */
+#include "ss3ds_mobilepc.h"
+volatile int P3DS_MobilePcReq, P3DS_MobilePcPreviewReq, P3DS_MobilePcUnlockPlay, P3DS_GameClear;
+static int sMpOn = -1, sMpDev = -1, sMpAnim = -1, sMpPending, sMpUnlockSeen, sMpZoom = -1;
+volatile int P3DS_InPartyMenu, P3DS_MobilePcCloseThenLaunch;
+int P3DS_MobilePcCfg(void) {
+    if (sMpOn < 0) { sMpOn = P3DS_CfgInt("mobile_pc", 0) != 0; PSPNativeMemLog("[MPC] mobile_pc=%d (party BOXES chip, hook 0293, default OFF)", sMpOn); }
+    return sMpOn;
+}
+int P3DS_MobilePcDevCfg(void) {
+    if (sMpDev < 0) { sMpDev = P3DS_CfgInt("mobile_pc_dev", 0) != 0; PSPNativeMemLog("[MPC] mobile_pc_dev=%d (DEBUG: skip HoF gate at runtime only, never writes flags)", sMpDev); }
+    return sMpDev;
+}
+void P3DS_MobilePcSetCfg(int on) { sMpOn = on != 0; P3DS_CfgWrite("mobile_pc", sMpOn); PSPNativeMemLog("[MPC] mobile_pc=%d from settings", sMpOn); }
+void P3DS_MobilePcSetDev(int on) { sMpDev = on != 0; P3DS_CfgWrite("mobile_pc_dev", sMpDev); PSPNativeMemLog("[MPC] mobile_pc_dev=%d from settings (runtime gate only)", sMpDev); }
+int P3DS_MobilePcOn(void) { return P3DS_MobilePcCfg() && (P3DS_GameClear || P3DS_MobilePcDevCfg()); }
+int P3DS_MobilePcChipOn(void) { return P3DS_MobilePcCfg() && (P3DS_MobilePcOn() || P3DS_MobilePcUnlockPlay || sMpAnim >= 0 || sMpPending); }
+#define MPC_SIDECAR "sdmc:/3ds/platinum3ds/mobile_pc.txt"
+#define MPC_SIDECAR_TMP "sdmc:/3ds/platinum3ds/mobile_pc.tmp"
+int P3DS_MobilePcUnlockShown(unsigned tid) {
+    FILE *f; char line[128]; unsigned v;
+    if (!tid) return 0;
+    f = fopen(MPC_SIDECAR, "r");
+    if (!f) return 0;
+    while (fgets(line, sizeof line, f)) {
+        if (sscanf(line, "shown_tid=%u", &v) == 1 && v == tid) { fclose(f); return 1; }
+    }
+    fclose(f);
+    return 0;
+}
+void P3DS_MobilePcUnlockMarkShown(unsigned tid) {
+    FILE *f; char buf[4096]; size_t n = 0; unsigned v; int have = 0; char line[128];
+    if (!tid) return;
+    f = fopen(MPC_SIDECAR, "r");
+    if (f) {
+        while (fgets(line, sizeof line, f)) {
+            if (sscanf(line, "shown_tid=%u", &v) == 1 && v == tid) have = 1;
+            size_t l = strlen(line);
+            if (n + l + 32 < sizeof buf) { memcpy(buf + n, line, l); n += l; if (l && line[l - 1] != '\n') buf[n++] = '\n'; }
+        }
+        fclose(f);
+    } else {
+        const char *hdr = "# soulsilver3ds mobile PC unlock (port file, never written to the .sav)\n";
+        size_t l = strlen(hdr); memcpy(buf, hdr, l); n = l;
+    }
+    if (!have) {
+        int w = snprintf(buf + n, sizeof buf - n, "shown_tid=%u\n", tid);
+        if (w > 0) n += (size_t)w;
+    }
+    f = fopen(MPC_SIDECAR_TMP, "w");
+    if (!f) { PSPNativeMemLog("[MPC] could not write %s", MPC_SIDECAR); return; }
+    if (fwrite(buf, 1, n, f) != n) { fclose(f); remove(MPC_SIDECAR_TMP); PSPNativeMemLog("[MPC] write failed for %s", MPC_SIDECAR); return; }
+    if (fclose(f)) { remove(MPC_SIDECAR_TMP); return; }
+    remove(MPC_SIDECAR);
+    if (rename(MPC_SIDECAR_TMP, MPC_SIDECAR) != 0) PSPNativeMemLog("[MPC] rename failed for %s", MPC_SIDECAR);
+    else PSPNativeMemLog("[MPC] marked unlock shown for tid %u (sidecar only)", tid);
+}
+void P3DS_MobilePcRequestOpen(void) {
+    if (!P3DS_MobilePcCfg()) return;
+    if (!P3DS_MobilePcOn()) { extern void P3DS_Toast(const char *); P3DS_Toast("NOT UNLOCKED YET"); return; }
+    if (P3DS_MobilePcReq) return;
+    P3DS_MobilePcReq = 1;
+    PSPNativeMemLog("[MPC] open requested");
+}
+void P3DS_MobilePcRequestPreview(void) {
+    P3DS_MobilePcPreviewReq = 1;
+    PSPNativeMemLog("[MPC] preview unlock requested (no sidecar write, no save flags)");
+}
+int P3DS_MobilePcAnimFrame(void) { return sMpAnim; }
+int P3DS_MobilePcZoomFrame(void) { return sMpZoom; }
+
+void P3DS_MobilePcNotePartyVisible(void) {
+    if (sMpPending && sMpAnim < 0) {
+        sMpPending = 0;
+        sMpAnim = 0;
+        PSPNativeMemLog("[MPC] BOXES chip pop-in (first party view after unlock)");
+    }
+}
+
+static void mpcMapChip(int *dx0, int *dy0, int *dx1, int *dy1, int *nx0, int *ny0, int *nx1, int *ny1) {
+    extern volatile int P3DS_PanelPartyOn, P3DS_PanelDest[4], P3DS_PanelSrcHeight;
+    const int sx0 = kMobilePcChipSX0, sy0 = kMobilePcChipSY0, sx1 = kMobilePcChipSX1, sy1 = kMobilePcChipSY1;
+    if (P3DS_PanelPartyOn && P3DS_PanelDest[2] > P3DS_PanelDest[0] && P3DS_PanelDest[3] > P3DS_PanelDest[1]) {
+        const int x0 = P3DS_PanelDest[0], y0 = P3DS_PanelDest[1], x1 = P3DS_PanelDest[2], y1 = P3DS_PanelDest[3];
+        const int sh = P3DS_PanelSrcHeight > 0 ? P3DS_PanelSrcHeight : 192;
+        *dx0 = x0 + sx0 * (x1 - x0) / 256;
+        *dx1 = x0 + sx1 * (x1 - x0) / 256;
+        *dy0 = y0 + sy0 * (y1 - y0) / sh;
+        *dy1 = y0 + sy1 * (y1 - y0) / sh;
+    } else {
+        *dx0 = sx0; *dy0 = sy0; *dx1 = sx1; *dy1 = sy1;
+    }
+    *nx0 = *dx0 * 5 / 4; *ny0 = *dy0 * 5 / 4;
+    *nx1 = (*dx1 * 5 + 3) / 4; *ny1 = (*dy1 * 5 + 3) / 4;
+}
+
+void P3DS_MobilePcChipRectDS(int *x0, int *y0, int *x1, int *y1) {
+    int nx0, ny0, nx1, ny1;
+    mpcMapChip(x0, y0, x1, y1, &nx0, &ny0, &nx1, &ny1);
+}
+
+void P3DS_MobilePcChipRectNative(int *x0, int *y0, int *x1, int *y1) {
+    int dx0, dy0, dx1, dy1;
+    mpcMapChip(&dx0, &dy0, &dx1, &dy1, x0, y0, x1, y1);
+}
+
+int P3DS_MobilePcChipFooterShown(void) {
+    extern int P3DS_InBattle;
+    return P3DS_MobilePcChipOn() && P3DS_InPartyMenu && !P3DS_InBattle;
+}
+
+int P3DS_MobilePcChipHitDS(int x, int y) {
+    int x0, y0, x1, y1;
+    if (!P3DS_MobilePcChipFooterShown()) return 0;
+    P3DS_MobilePcChipRectDS(&x0, &y0, &x1, &y1);
+    return x >= x0 && x < x1 && y >= y0 && y < y1;
+}
+
+void P3DS_MobilePcOnChipTap(void) {
+    if (sMpZoom >= 0 || P3DS_MobilePcCloseThenLaunch || P3DS_MobilePcReq) return;
+    if (!P3DS_MobilePcOn()) { extern void P3DS_Toast(const char *); P3DS_Toast("NOT UNLOCKED YET"); return; }
+    sMpZoom = 0;
+    PSPNativeMemLog("[MPC] BOXES chip tapped: open zoom");
+}
+
+void P3DS_MobilePcAnimTick(void) {
+    /* Fanfare + DialogBox still play in the overworld. The chip pop-in waits until the party is first viewed. */
+    if (P3DS_MobilePcUnlockPlay) {
+        if (!sMpUnlockSeen) { sMpUnlockSeen = 1; sMpPending = 1; PSPNativeMemLog("[MPC] unlock ceremony started; chip pop-in waits for the party screen"); }
+    } else sMpUnlockSeen = 0;
+    if (sMpAnim >= 0 && sMpAnim < kMobilePcAnimLast) sMpAnim++;
+    else if (sMpAnim >= kMobilePcAnimLast) sMpAnim = -1;
+    if (sMpZoom >= 0) {
+        if (sMpZoom < kMobilePcZoomLast) sMpZoom++;
+        else {
+            sMpZoom = -1;
+            extern int P3DS_InField;
+            extern volatile int P3DS_PanelPartyOn;
+            if (P3DS_InPartyMenu || P3DS_PanelPartyOn || !P3DS_InField) {
+                P3DS_MobilePcCloseThenLaunch = 1;
+                PSPNativeMemLog("[MPC] zoom done: closing the party, then launching boxes");
+            } else {
+                P3DS_MobilePcRequestOpen();
+                PSPNativeMemLog("[MPC] zoom done: already in the field, requesting launch");
+            }
+        }
+    }
+}
+
 int P3DS_CtlZr = -1, P3DS_CtlZl, P3DS_CtlCp;   /* run 55: file scope so the settings menu can change them live */
 int P3DS_CfgSoftReset(void) { static int v = -1; if (v < 0) v = P3DS_CfgInt("soft_reset", 1) != 0; return v; }
 volatile int P3DS_RunToggle;
@@ -363,7 +619,7 @@ typedef struct { unsigned short species; unsigned char lo, hi, pct, sec; } P3DSM
 P3DSMapEnt P3DS_MapEnt[48]; volatile int P3DS_MapEntN, P3DS_MapTod; unsigned *P3DS_MapIcons;
 int P3DS_MapIconMem[48], P3DS_MapIconPal[48], P3DS_MapIconPalFile; volatile int P3DS_MapGen; /* run 64 Map tab snapshot (game thread) */ /* run 64 summary_ivs (written by the summary screen) */   /* run 53 ZL: read by PlayerAvatar_IsRunButtonHeld (run = B XOR toggle) */
 int sceCtrlPeekBufferPositive(SceCtrlData *d, int n) {
-    hidScanInput(); { extern void P3DS_FrameHook(void); P3DS_FrameHook(); } u32 k = hidKeysHeld(); { extern int lmYPress; if (lmYPress > 0) { lmYPress--; k |= KEY_Y; } } /* run 100 lower_menu item squares */ unsigned b = 0;
+    hidScanInput(); { extern void P3DS_FrameHook(void); P3DS_FrameHook(); } { extern void P3DS_AudioInitWatch(void); P3DS_AudioInitWatch(); } u32 k = hidKeysHeld(); { extern int lmYPress; if (lmYPress > 0) { lmYPress--; k |= KEY_Y; } } /* run 100 lower_menu item squares */ unsigned b = 0;
     if (P3DS_PromptOpen == 1) { u32 dn = hidKeysDown(); if (dn & (KEY_DUP | KEY_DDOWN)) P3DS_PromptSel ^= 1;
         if (dn & KEY_A) { P3DS_PromptResult = P3DS_PromptSel == 0; P3DS_PromptOpen = 2; } else if (dn & KEY_B) { P3DS_PromptResult = 0; P3DS_PromptOpen = 2; }
         k = 0; }
@@ -415,20 +671,21 @@ int sceCtrlPeekBufferPositive(SceCtrlData *d, int n) {
 #undef cp
     /* run 95 reset_skip_intro (Platinum): after a soft reset the new process taps START (2 polls on, 4 off) until the game enters its
        Continue / New Game menu (MainMenu_Init sets P3DS_BootStage = 2) or the field, 3000 polls at most. Only START is sent. */
-    /* ss3ds 0070 select_reset (default off; platinum3ds runs 96/98): tap SELECT (held 6 polls, about 0.1 s) in a wild battle =
-       the same soft reset as L+R+START+SELECT, for shiny hunting without the four-button chord. Only while the battle's
-       catch snapshot is live (P3DS_CatchInfo[0], wild foe, set at the command menu), in the battle overlay and outside
-       the field, never with L/R/START held (that is the normal chord), and never when the wild foe is shiny, so a
-       habit tap can't throw a shiny away. Re-read twice a second at most, so a settings change applies at once. */
-    { static int sr = -1; static unsigned sh, sc; extern volatile int P3DS_CatchInfo[20]; extern int P3DS_InField, P3DS_InBattle; extern void P3DS_SoftReset(unsigned);
+    /* ss3ds 0070 select_reset: tap SELECT (held 6 polls, about 0.1 s) for the same soft reset as L+R+START+SELECT.
+       Wild battle: catch snapshot live (P3DS_CatchInfo[0]), in battle, outside the field. Starter screen (Elm's lab
+       ChooseStarter app): WideScreenName "starter" (run 996: was gated on inField/battle only). Never with L/R/START
+       held (normal chord), and never when the focused Pokemon is shiny. Re-read twice a second at most. */
+    { static int sr = -1; static unsigned sh, sc; extern volatile int P3DS_CatchInfo[20]; extern int P3DS_InField, P3DS_InBattle; extern const char *P3DS_WideScreenName; extern void P3DS_SoftReset(unsigned);
       if (!(sc++ % 120) || sr < 0) { const int was = sr; sr = P3DS_CfgInt("select_reset", 0) != 0; if (sr != was) PSPNativeMemLog("[BOOT] select_reset=%d", sr); }
       const u32 kh = hidKeysHeld();
       const int wild = P3DS_CatchInfo[0] && P3DS_InBattle && !P3DS_InField;
-      if (sr && wild && (kh & KEY_SELECT) && !(kh & (KEY_L | KEY_R | KEY_START))) {
-          if (++sh == 6) { if (P3DS_CatchInfo[18]) PSPNativeMemLog("[BOOT] select_reset: SELECT ignored, the wild Pokemon (species %d) is SHINY", (int)P3DS_CatchInfo[1]);
-              else { PSPNativeMemLog("[BOOT] select_reset: SELECT held in a wild battle (species %d) -> soft reset", (int)P3DS_CatchInfo[1]); P3DS_SoftReset(0); } } }
+      const int starter = P3DS_WideScreenName && P3DS_WideScreenName[0] && !strcmp(P3DS_WideScreenName, "starter");
+      if (sr && (wild || starter) && (kh & KEY_SELECT) && !(kh & (KEY_L | KEY_R | KEY_START))) {
+          if (++sh == 6) {
+              if (P3DS_CatchInfo[0] && P3DS_CatchInfo[18]) PSPNativeMemLog("[BOOT] select_reset: SELECT ignored, the %s Pokemon (species %d) is SHINY", starter ? "starter" : "wild", (int)P3DS_CatchInfo[1]);
+              else { PSPNativeMemLog("[BOOT] select_reset: SELECT held on %s (species %d) -> soft reset", starter ? "starter screen" : "wild battle", (int)P3DS_CatchInfo[1]); P3DS_SoftReset(0); } } }
       else sh = 0;
-      { static int lg; if ((hidKeysDown() & KEY_SELECT) && lg < 6) { lg++; PSPNativeMemLog("[BOOT] SELECT pressed: select_reset=%d catchInfo=%d inBattle=%d inField=%d shiny=%d", sr, (int)P3DS_CatchInfo[0], P3DS_InBattle, P3DS_InField, (int)P3DS_CatchInfo[18]); } } }
+      { static int lg; if ((hidKeysDown() & KEY_SELECT) && lg < 6) { lg++; PSPNativeMemLog("[BOOT] SELECT pressed: select_reset=%d catchInfo=%d inBattle=%d inField=%d starter=%d shiny=%d", sr, (int)P3DS_CatchInfo[0], P3DS_InBattle, P3DS_InField, starter, (int)P3DS_CatchInfo[18]); } } }
     { /* run 49 X tile cursor: while the Bottom menu tiles are up, X never reaches the game (it only steps the tile cursor, render3ds.cpp);
          with the cursor up A/B/D-pad are ours too. The presses are queued for the render thread. Not while L or R is held (port combos). */
       extern volatile int P3DS_TileOn, P3DS_TileCur; extern volatile unsigned P3DS_TileKeys; static u32 pk; const u32 h = hidKeysHeld(), dn = h & ~pk; pk = h;
@@ -472,7 +729,7 @@ int sceIoRead(SceUID fd, void *b, SceSize n) { return read(fd, b, n); }
 int sceIoClose(SceUID fd) { return close(fd); }
 
 /* Clean shutdown: wake every sleeper, let each worker exit at its next blocking point, join with timeout. */
-void P3DS_ShutdownThreads(void) {
+int P3DS_ShutdownThreads(int workersStopped) {
     p3ds_quit = 1;
     for (int r = 0; r < 3; r++) {
         for (int i = 1; i <= MAXT; i++) if (pts[i].used && pts[i].started) LightSemaphore_Release(&pts[i].wake, 1);
@@ -483,12 +740,28 @@ void P3DS_ShutdownThreads(void) {
        reached a quit point within the join timeout kept running while the loop below freed the game's partition blocks. The
        allocator then overwrote a callback pointer inside a freed block and the thread jumped through it. The process is about to
        exit and the kernel reclaims everything, so the blocks (and ndsp) are only released when EVERY thread has really ended. */
-    int alive = 0;
-    for (int i = 1; i <= MAXT; i++) if (pts[i].th) { if (R_SUCCEEDED(threadJoin(pts[i].th, 300000000ULL))) threadFree(pts[i].th); else { alive++; PSPNativeMemLog("[3DS] exit: thread slot %d (%s) did not stop in 300 ms", i, pts[i].name); } pts[i].th = NULL; }
-    if (alarmTh) { if (R_SUCCEEDED(threadJoin(alarmTh, 300000000ULL))) threadFree(alarmTh); else { alive++; PSPNativeMemLog("[3DS] exit: alarm thread did not stop in 300 ms"); } alarmTh = NULL; }
-    if (alive) { PSPNativeMemLog("[3DS] exit: %d thread(s) still running; keeping game memory and ndsp for the process exit", alive); return; }
-    for (int i = 0; i < P3DS_BLOCKS; i++) if (blocks[i]) { free(blocks[i]); blocks[i] = NULL; }
-    if (ndspOk == 1) { ndspExit(); ndspOk = 2; }
+    int stopped = 1;
+    for (int i = 1; i <= MAXT; i++) {
+        Thread thread = pts[i].th;
+        if (!thread) continue;
+        /* The kernel timeout result is positive, so only zero confirms a join. */
+        Result rc = thread == threadGetCurrent() ? -1 : threadJoin(thread, 300000000ULL);
+        if (rc != 0) {
+            stopped = 0;
+            PSPNativeMemLog("[3DS] exit: thread slot %d (%s) did not stop (join %08lx)", i, pts[i].name, (unsigned long)rc);
+            continue;
+        }
+        threadFree(thread);
+        pts[i].th = NULL;
+    }
+    if (alarmTh) {
+        if (threadJoin(alarmTh, 300000000ULL) == 0) { threadFree(alarmTh); alarmTh = NULL; }
+        else { stopped = 0; PSPNativeMemLog("[3DS] exit: alarm thread did not stop in 300 ms"); }
+    }
+    if (stopped && workersStopped) {
+        for (int i = 0; i < P3DS_BLOCKS; i++) if (blocks[i]) { free(blocks[i]); blocks[i] = NULL; }
+    }
+    return stopped;
 }
 volatile int P3DS_FoeInfo[40]; /* hook 0031 trainer foe snapshot (battle -> foe info screen), read-only */
 volatile int P3DS_DmgInfo[32]; /* hook 0208 damage/speed check snapshot (battle -> foe info screen), read-only */

@@ -2,10 +2,12 @@
 #include <3ds.h>
 #include <SDL2/SDL.h>
 #include "crumbs.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
 extern volatile int p3ds_quit;
+extern void PSPNativeMemLog(const char *, ...);
 struct SDL_mutex { RecursiveLock l; };
 struct SDL_semaphore { LightSemaphore s; };
 struct SDL_Thread { Thread t; SDL_ThreadFunction fn; void *arg; int result; };
@@ -38,10 +40,40 @@ Uint32 SDL_GetTicks(void) { return (Uint32)SDL_GetTicks64(); }
 /* Timers: one thread per timer (libntr uses at most a couple). */
 typedef struct { Thread t; volatile int live; Uint32 iv; SDL_TimerCallback cb; void *p; } Tm; static Tm timers[8];
 static void tloop(void *a) { Tm *t = a; P3DS_ThreadGuard("sdl-timer"); while (t->live && !p3ds_quit) { svcSleepThread((s64)t->iv * 1000000); if (!t->live) break; Uint32 n = t->cb(t->iv, t->p); if (!n) { t->live = 0; break; } t->iv = n; } }
-SDL_TimerID SDL_AddTimer(Uint32 iv, SDL_TimerCallback cb, void *p) { for (int i = 0; i < 8; i++) if (!timers[i].live) { timers[i] = (Tm){0, 1, iv, cb, p}; timers[i].t = threadCreate(tloop, &timers[i], 0x4000, 0x28, -2, false); return i + 1; } return 0; }
+SDL_TimerID SDL_AddTimer(Uint32 iv, SDL_TimerCallback cb, void *p) {
+    for (int i = 0; i < 8; i++) {
+        Tm *timer = &timers[i];
+        if (timer->live) continue;
+        if (timer->t) {
+            if (threadJoin(timer->t, 0) != 0) continue;
+            threadFree(timer->t);
+        }
+        *timer = (Tm){0, 1, iv, cb, p};
+        timer->t = threadCreate(tloop, timer, 0x4000, 0x28, -2, false);
+        if (timer->t) return i + 1;
+        timer->live = 0;
+        PSPNativeMemLog("[SDL] timer thread start FAILED");
+        return 0;
+    }
+    return 0;
+}
 SDL_bool SDL_RemoveTimer(SDL_TimerID id) { if (id < 1 || id > 8) return SDL_FALSE; timers[id - 1].live = 0; return SDL_TRUE; }
 int SDL_ShowSimpleMessageBox(Uint32 f, const char *t, const char *m, SDL_Window *w) { printf("[SDL] %s: %s\n", t, m); return 0; }
 int SDL_OpenAudio(SDL_AudioSpec *w, SDL_AudioSpec *h) { if (h) *h = *w; return 0; } /* step 2a: audio muted */
 void SDL_PauseAudio(int p) {} void SDL_CloseAudio(void) {} void SDL_LockAudio(void) {} void SDL_UnlockAudio(void) {}
 const char *SDL_GetError(void) { return "3DS SDL shim"; }
-void P3DS_ShutdownSDL(void) { for (int i = 0; i < 8; i++) { timers[i].live = 0; if (timers[i].t) { if (R_SUCCEEDED(threadJoin(timers[i].t, 300000000ULL))) threadFree(timers[i].t); timers[i].t = NULL; } } }
+int P3DS_ShutdownSDL(void) {
+    int stopped = 1;
+    for (int i = 0; i < 8; i++) timers[i].live = 0;
+    for (int i = 0; i < 8; i++) {
+        if (!timers[i].t) continue;
+        if (threadJoin(timers[i].t, 300000000ULL) == 0) {
+            threadFree(timers[i].t);
+            timers[i].t = NULL;
+        } else {
+            stopped = 0;
+            PSPNativeMemLog("[3DS] exit: SDL timer %d did not stop in 300 ms", i + 1);
+        }
+    }
+    return stopped;
+}

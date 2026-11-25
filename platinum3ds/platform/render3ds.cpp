@@ -36,9 +36,12 @@ extern "C" { extern volatile unsigned P3DS_TileKeys;extern volatile int P3DS_Til
 #include "ribbons.h"
 #include "tracker.h"
 #include "achievements.h"
+#include "ss3ds_mobilepc.h"
+#include "ss3ds_slot2.h"
 #include "celebrate.h"
 static int P3DS_HuntCount(int sp){return P3DS_HuntGet(sp)->enc;}
-extern "C" volatile int P3DS_CatchInfo[20];extern "C" int P3DS_InField;extern "C" volatile int P3DS_MenuOpen;extern "C" void P3DS_Toast(const char*);
+extern "C" volatile int P3DS_CatchInfo[20];extern "C" int P3DS_InField,P3DS_InBattle;/* InBattle: defined ss3ds_glue.c; needed by huntTick (above the wide_battle extern below) */
+extern "C" volatile int P3DS_MenuOpen;extern "C" void P3DS_Toast(const char*);
 extern "C" volatile int P3DS_ResetSeen; /* run 53 (main3ds.c) */
 #define PSPNativeMemLogC PSPNativeMemLog
 #include <cstring>
@@ -66,7 +69,8 @@ extern __thread u32*P3DS_3DSrc;
 static GPU2D::Unit engineA2(0);static GPU2D::SoftRenderer rendererR;
 /* issue #484 FOE DEEPER (stereo_2d=4, see P3DS_BattleSideExtra): the CPU right eye switches the back BG to bdLow from line bdSplit down */
 static const int kBattleSplitY=128; /* foe platform ends ~y120, yours starts ~y140 (HGSS singles and doubles) */
-static int bdMask,bdSplit;static u16 bdLow[4];
+extern "C" int P3DS_BattleRowExtra(int y,int sd);
+static int bdMask,bdSplit,bdSd;static u16 bdG[4],bdMine[4],bdD[4];
 /* run 50 split_top=1 (config, default 1 since run 57): MONO only. Engine A (top screen) lines 96..191 are composited on the core-2
    worker (own Unit copy + own renderer) while the main thread does lines 0..95. The copy is fast-forwarded through
    lines 0..95 without drawing (windows, affine BG reference points, BG/OBJ mosaic counters: same steps melonDS's
@@ -153,7 +157,7 @@ static void engineBFrameJob(){
   if(bWideM){wideMJob();bWideM=false;}
   if(bRightSrc){/* stereo: right-eye top screen = engine A again (snapshot copy) with the right-eye 3D layer */
    P3DS_3DSrc=bRightSrc;rendererR.SetFramebuffer(rawR,rawR);
-   for(unsigned line=0;line<192;line++){hbLine(engineA2,line);if(bdMask&&line==(unsigned)bdSplit)for(int i=1;i<4;i++)if(bdMask&(1<<i))engineA2.BGXPos[i]=bdLow[i];
+   for(unsigned line=0;line<192;line++){hbLine(engineA2,line);if(bdMask)for(int i=1;i<4;i++)if(bdMask&(1<<i)){const u16 cur=engineA2.BGXPos[i];if(cur!=bdMine[i])bdG[i]=cur;/* the game wrote a new scroll (HBlank effects): keep it, add our depth */ const u16 m=(u16)((bdG[i]-bdD[i]-P3DS_BattleRowExtra((int)line,bdSd))&0x1FF);engineA2.BGXPos[i]=m;bdMine[i]=m;}
     engineA2.CheckWindows(line);rendererR.DrawSprites(line,&engineA2);rendererR.DrawScanline(line,&engineA2);}
    P3DS_3DSrc=nullptr;}
   if(!bSkipB&&steal&&claimB()){stealWorker++;drawEngineB();}
@@ -431,9 +435,11 @@ static void drawShinyFlash(u32*img,u64 now){/* 0.9 s white pulses + twinkling sp
  for(int k=0;k<7;k++){const int on=((int)ms/90+k)%3;if(!on)continue;const int cx=188+sx[k],cy=62+sy[k],r=on==1?2:4;
   for(int d=-r;d<=r;d++){const int pts[2][2]={{cx+d,cy},{cx,cy+d}};for(auto&p:pts)if(p[0]>=0&&p[0]<256&&p[1]>=0&&p[1]<192)img[p[1]*256+p[0]]=(img[p[1]*256+p[0]]&0xFF000000u)|0x00A0F8FFu;}}}
 static void huntTick(){static bool armed=true;
+ /* Wild battles only: gift/starter path already counted via P3DS_HuntGift (0292). Without InBattle, leaving the
+    field for ChooseStarter re-fired HuntEncounter on whatever CatchInfo the last HuntGift wrote (Totodile 158 = 2x). */
  P3DS_HuntFrame(P3DS_MenuOpen);
  if(P3DS_InField){if(!armed){armed=true;P3DS_CatchInfo[0]=0;}return;}
- if(!armed||!P3DS_CatchInfo[0])return;armed=false;if(!P3DS_HuntCounting())return;int sp=P3DS_CatchInfo[1];if(sp<=0||sp>=494)return;
+ if(!armed||!P3DS_CatchInfo[0]||!P3DS_InBattle)return;armed=false;if(!P3DS_HuntCounting())return;int sp=P3DS_CatchInfo[1];if(sp<=0||sp>=494)return;
  const bool shiny=P3DS_CatchInfo[18]!=0;P3DS_HuntEncounter(sp,shiny);
  if(shiny)P3DS_AchUnlock(ACH_SHINY);/* achievements: first shiny encounter */
  if(shiny&&P3DS_HuntOn()){shinyAt=svcGetSystemTick();P3DS_HuntChime();if(!P3DS_CfgInt("catch_overlay",0))P3DS_Toast("SHINY POKEMON!");}}
@@ -1177,7 +1183,21 @@ extern "C" int P3DS_BattleDepthLock(void){return P3DS_InBattle&&stereo2dCfg()>=3
    back BG (priority 3) rows above kBattleSplitY (sky + foe's platform) get +e and the rows below (your platform) -e, so each Pokemon stays
    on its platform. e = (sd+1)/3: 2 px at full slider (foe 5 px, yours 1 px; GENTLE+LOCK has both at 3). */
 extern "C" int P3DS_BattleSideExtra(int sd){return (P3DS_InBattle&&stereo2dCfg()==4&&sd>0)?(sd+1)/3:0;}
-extern "C" {extern int P3DS_GcRowSplit;extern int P3DS_GcRowDx[4];}
+/* #589: FOE DEEPER as a ground plane, anchored on the HGSS battle layout (pret/pokeheartgold): after the intro the game bakes both
+   platforms into BG3 (BattleSystem_SetBackground), so backdrop + platforms are ONE layer and only a per-row depth can separate them.
+   Pokepic centres (ov07_022377F4 minus the 256 px slide-in): foe (176,50) -> feet ~y90-100, yours (80,112) -> feet ~y150-160;
+   platform OBJ centres (ov12_0226E100): foe (176,88), yours (80,136).
+   Total right-eye depth at the default strength (sd 6, full slider; scales with sd), + = into the screen:
+     backdrop y<=48: 8 | foe's feet y~96: 5 | your feet y~160: 1 | bottom: 0.  HUD/text BGs and OBJ (HP boxes) stay at 0.
+   So the backdrop sits 3 px behind the foe, the foe is 4 px deeper than yours (the #484 ask), and each Pokemon takes the depth of
+   the row its feet are on (g3soft parSideOf): it stands ON its platform while the ground behind its body is deeper (#589 1-3).
+   Returned as the extra over the GENTLE+LOCK base (sd+1)/2, per 8 px row block so CPU per-line and GPU per-tile-row BGs match. */
+extern "C" int P3DS_BattleRowExtra(int y,int sd){if(!(P3DS_InBattle&&stereo2dCfg()==4&&sd>0))return 0;
+ static const float ky[5]={0,48,96,160,192},kp[5]={8,8,5,1,0};
+ float yc=(float)((y&~7)+4);if(yc<0)yc=0;if(yc>192)yc=192;int k=0;while(k<3&&yc>ky[k+1])k++;
+ const float p=kp[k]+(kp[k+1]-kp[k])*(yc-ky[k])/(ky[k+1]-ky[k]);
+ return (int)lrintf(p*(float)sd*(1.0f/6.0f))-(sd+1)/2;}
+extern "C" {extern int P3DS_GcRowSd;extern int P3DS_GcRowOn[4];}
 static int gcStNfV=-1;static int gcStNfCfg(){if(gcStNfV<0){gcStNfV=P3DS_CfgInt("gpu_compose_stereo_nf",1)!=0;PSPNativeMemLog("[GPUC] gpu_compose_stereo_nf=%d (battles/menus with the 3D slider on: GPU-compose both eyes; 0 = CPU, ~14-22 ms)",gcStNfV);}return gcStNfV;}
 static int gcStereoV=-1;static int gcStereoCfg(){if(gcStereoV<0){gcStereoV=P3DS_CfgInt("gpu_compose_stereo",1)!=0;PSPNativeMemLog("[GPUC] gpu_compose_stereo=%d",gcStereoV);}return gcStereoV;}
 /* run 76 dw_depth (Video tab, default 2 = moderate): in the Distortion World the 3D separation ramps up over ~1.5 s
@@ -1310,9 +1330,10 @@ static const MItem mItems[]={
  {"ACH_TOASTS","ach_toasts",2,{"OFF","ON"}},{"TRACKER","tracker",2,{"OFF","ON"}},{"PM_SHORTCUTS","pm_shortcuts",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
+extern "C" {int P3DS_B2Cfg(void);void P3DS_B2SetCfg(int);}
 extern "C" {void P3DS_PresentDeferSettle(void);int G3G_GpuTimeCfg(void);void G3G_SetGpuTime(int);void G3G_AbComposeWait(unsigned);}
 extern "C" {int P3DS_GpuBlendCfg(void);void P3DS_SetGpuBlendCfg(int);}
-enum{kGtsPickerItem=MENU_N-23,kWideLayItem=MENU_N-22,kG3ThrItem=MENU_N-21,kFps60Item=MENU_N-20,kFps60PipeItem=MENU_N-19,kFps60HoldItem=MENU_N-18,kFps60StripsItem=MENU_N-17,kFps60VramItem=MENU_N-16,kFps60AreaItem=MENU_N-15,kG3XfItem=MENU_N-14,kG3ProfItem=MENU_N-13,kG3WakeItem=MENU_N-12,kG3FastXfItem=MENU_N-11,kG3TexFenceItem=MENU_N-10,kG3TexSafeItem=MENU_N-9,kG3StereoShareItem=MENU_N-8,kPresentPaceItem=MENU_N-7,kG3FrontOvItem=MENU_N-6,kG3StereoGpuItem=MENU_N-5,kG3FrontBgItem=MENU_N-4,kGpuTimeItem=MENU_N-3,kFastTabsItem=MENU_N-2,kSharpGameItem=MENU_N-1};
+enum{kGtsPickerItem=MENU_N-28,kWideLayItem=MENU_N-27,kG3ThrItem=MENU_N-26,kFps60Item=MENU_N-25,kFps60PipeItem=MENU_N-24,kFps60HoldItem=MENU_N-23,kFps60StripsItem=MENU_N-22,kFps60VramItem=MENU_N-21,kFps60AreaItem=MENU_N-20,kG3XfItem=MENU_N-19,kG3ProfItem=MENU_N-18,kG3WakeItem=MENU_N-17,kG3FastXfItem=MENU_N-16,kG3TexFenceItem=MENU_N-15,kG3TexSafeItem=MENU_N-14,kG3StereoShareItem=MENU_N-13,kPresentPaceItem=MENU_N-12,kG3FrontOvItem=MENU_N-11,kG3StereoGpuItem=MENU_N-10,kG3FrontBgItem=MENU_N-9,kGpuTimeItem=MENU_N-8,kFastTabsItem=MENU_N-7,kSharpGameItem=MENU_N-6,kMobilePcItem=MENU_N-5,kMobilePcDevItem=MENU_N-4,kMobilePcPreviewItem=MENU_N-3,kSlot2Item=MENU_N-2,kB2Item=MENU_N-1};
 extern "C" {int P3DS_G3ThreadCfg(void);void P3DS_SetG3Thread(int);int P3DS_G3XfCacheCfg(void);void P3DS_SetG3XfCache(int);int P3DS_G3ProfCfg(void);void P3DS_SetG3Prof(int);int P3DS_G3WakeCfg(void);void P3DS_SetG3Wake(int);int P3DS_G3ThrCheckCfg(void);void P3DS_SetG3ThrCheck(int);int P3DS_G3FastXformCfg(void);void P3DS_SetG3FastXform(int);int P3DS_G3TexFenceCfg(void);void P3DS_SetG3TexFence(int);int P3DS_G3TexSafeCfg(void);void P3DS_SetG3TexSafe(int);int P3DS_G3StereoShareCfg(void);void P3DS_SetG3StereoShare(int);int P3DS_PresentPaceCfg(void);void P3DS_SetPresentPace(int);int P3DS_G3FrontOvCfg(void);void P3DS_SetG3FrontOv(int);int P3DS_G3StereoGpuCfg(void);void P3DS_SetG3StereoGpu(int);int P3DS_G3FrontBgCfg(void);void P3DS_SetG3FrontBg(int);}
 /* fps60 (g3gpu.c, gpucomp.c, gpuscale.c): in-between pictures for the overworld */
 extern "C"{int P3DS_Fps60Cfg(void);void P3DS_SetFps60(int);int P3DS_Fps60Active(void);void P3DS_Fps60Tick(unsigned,unsigned,unsigned,int,int,unsigned,unsigned);int G3G_MidReady(void);void*G3G_MidTex(int);int G3G_MidStrip(int,u32*);void G3G_SetFps60Pipe(int);void G3G_SetFps60Hold(int);void G3G_SetFps60Strips(int);void P3DS_SetFps60Vram(int);void P3DS_SetFps60Area(int);void P3DS_Fps60Area(unsigned,int);int G3G_FpsHold(void);
@@ -2016,9 +2037,13 @@ static int PresentFrame(bool);
 static int Present(bool w){const int r=PresentFrame(w);P3DS_GtObjRestore();return r;}
 static int PresentFrame(bool){
  if(!openFrame)return -1;
+ const u64 presentStart=svcGetSystemTick();
  allocBufs();
+ const u64 textStart=svcGetSystemTick();
  P3DS_GtSync(gtOkPrev);P3DS_GtWidePlan=nullptr; /* sharp game text: text whose screen could not show it last present goes back into VRAM before this compose */
+ const u64 prefetchStart=svcGetSystemTick();
  P3DS_RomCachePumpC(); /* run 51 zone_prefetch: adopt staged blocks on the game thread */
+ const u64 prefetchEnd=svcGetSystemTick();
  if(earlyCfg<0){earlyCfg=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"early_b=%d",&x)==1)earlyCfg=x!=0;fclose(f);}PSPNativeMemLog("[2D] early_b=%d",earlyCfg);}
  P3DS_TitleWideRequested=P3DS_InTitle&&titleCleanCfg()==2;P3DS_GcTitleWideValid=0;
  // Use the DS scanline compositor for the Pokewalker screens to avoid GPU tile seams.
@@ -2028,7 +2053,9 @@ static int PresentFrame(bool){
  if(!gpuBModeFrame&&earlyCfg&&engineBAsync()&&stealCfg!=1&&c1Mode!=1){unsigned pw=reg16(0x304);
   mapMemory();engineB.Enabled=(pw&512)!=0;bindRegisters(engineB,0x1000);FrameStart(engineB);bPower=pw;bRightSrc=nullptr;
   bEarly=true;earlyB=true;earlyN++;bPost();}
+ const u64 flushStart=svcGetSystemTick();
  G3SIM_FlushDeferred();openFrame=false;
+ const u64 flushEnd=svcGetSystemTick();
  unsigned power=reg16(0x304),a=reg32(0);
  u64 t0=svcGetSystemTick();unsigned g3us=P3DS_G3LastUs();
  {u32 kd=hidKeysUp(),kh=hidKeysHeld();if((kd&KEY_START)&&(kh&KEY_L)&&(kh&KEY_R)&&!P3DS_ResetSeen){fpsOn=!fpsOn;/* run 53: on release, not after the soft-reset combo */P3DS_Toast(fpsOn?"FPS ON":"FPS OFF");}}
@@ -2109,8 +2136,8 @@ static int PresentFrame(bool){
  if(rightPar&&!P3DS_InField){const int cfg=stereo2dCfg();
   if(cfg){const int sd=stereoShiftF(P3DS_ScaleMode());const unsigned bgm=engineA2.DispCnt&7;const int bdE=P3DS_BattleSideExtra(sd);
    for(int i=1;i<4;i++){if(!(engineA2.DispCnt&(0x100<<i)))continue;const bool text=i<2||bgm==0||(i==2&&bgm==1);if(!text)continue;
-    const int pr=engineA2.BGCnt[i]&3,d=cfg==1?(pr==3?2*sd:pr==2?(3*sd)/2:0):(pr==3?(sd+1)/2:pr==2?(sd+2)/4:0);if(d)engineA2.BGXPos[i]=(u16)((engineA2.BGXPos[i]-d)&0x1FF);
-    if(d&&bdE&&pr==3){bdLow[i]=(u16)((engineA2.BGXPos[i]+bdE)&0x1FF);engineA2.BGXPos[i]=(u16)((engineA2.BGXPos[i]-bdE)&0x1FF);bdMask|=1<<i;}}}}
+    const int pr=engineA2.BGCnt[i]&3,d=cfg==1?(pr==3?2*sd:pr==2?(3*sd)/2:0):cfg==4?(pr>=2?(sd+1)/2:0):(pr==3?(sd+1)/2:pr==2?(sd+2)/4:0);
+    if(d&&bdE&&pr>=2){bdG[i]=engineA2.BGXPos[i];bdMine[i]=0xFFFF;bdD[i]=(u16)d;bdSd=sd;bdMask|=1<<i;}else if(d)engineA2.BGXPos[i]=(u16)((engineA2.BGXPos[i]-d)&0x1FF);}}}
  bRightSrc=rightPar?rightEye:nullptr;
  bPower=power;if(!async)P3DS_BottomReused=0;
  const bool onC1=rightPar&&!earlyB&&c1Ready();bSkipB=onC1||earlyB;
@@ -2173,13 +2200,13 @@ static int PresentFrame(bool){
    static u8 regsCopy[0x100] __attribute__((aligned(4)));if(!P3DS_InField&&stereo2dCfg()){memcpy(regsCopy,regsR,sizeof regsCopy);regsR=regsCopy;
     const int cfg=stereo2dCfg(),sd2=stereoShiftF(P3DS_ScaleMode());const unsigned dc2=reg32(0),bgm=dc2&7;
     for(int i=1;i<4;i++){if(!(dc2&(0x100u<<i)))continue;const bool text=i<2||bgm==0||(i==2&&bgm==1);if(!text)continue;
-     const int pr=reg16(8+i*2)&3,d=cfg==1?(pr==3?2*sd2:pr==2?(3*sd2)/2:0):(pr==3?(sd2+1)/2:pr==2?(sd2+2)/4:0);
-     const int bdE=(d&&pr==3)?P3DS_BattleSideExtra(sd2):0;
-     if(d)*(u16*)(regsCopy+0x10+i*4)=(u16)((reg16(0x10+i*4)-d-bdE)&0x1FF);
-     if(bdE){P3DS_GcRowSplit=kBattleSplitY;P3DS_GcRowDx[i]=2*bdE;}}}
+     const int pr=reg16(8+i*2)&3,d=cfg==1?(pr==3?2*sd2:pr==2?(3*sd2)/2:0):cfg==4?(pr>=2?(sd2+1)/2:0):(pr==3?(sd2+1)/2:pr==2?(sd2+2)/4:0);
+     const int bdE=(d&&pr>=2)?P3DS_BattleSideExtra(sd2):0;
+     if(d)*(u16*)(regsCopy+0x10+i*4)=(u16)((reg16(0x10+i*4)-d)&0x1FF);
+     if(bdE){P3DS_GcRowSd=sd2;P3DS_GcRowOn[i]=1;{static unsigned bdLg;if(bdLg++%300==0)PSPNativeMemLog("[BATTLE] foe deeper ground plane, BG layer %d prio %d: total right-eye px backdrop y20 %d / foe feet y96 %d / your feet y160 %d / bottom y188 %d",i,pr,d+P3DS_BattleRowExtra(20,sd2),d+P3DS_BattleRowExtra(96,sd2),d+P3DS_BattleRowExtra(160,sd2),d+P3DS_BattleRowExtra(188,sd2));}}}}
    {static unsigned nfN;if(!P3DS_InField&&++nfN%300==1)PSPNativeMemLog("[GPUC] stereo outside the overworld: both eyes GPU-composed (%u frames so far, battle %d)",nfN,P3DS_InBattle);}
    {const u64 tq=svcGetSystemTick();P3DS_GcEye(1,0);P3DS_GcDeferOut=gDfDec;gcStR=P3DS_GcComposeA(regsR,GPU::VRAMFlat_ABG,GPU::VRAMFlat_AOBJ,(const u16*)GPU::Palette,(const u16*)(GPU::Palette+512),(const u16*)GPU::OAM,rightEye,rawR,f60L?G3G_MidTex(1):nullptr,&f60R,&f60CompUs)!=0;P3DS_GcDeferOut=0;
-    P3DS_GcRowSplit=-1;memset(P3DS_GcRowDx,0,sizeof P3DS_GcRowDx);
+    P3DS_GcRowSd=-1;memset(P3DS_GcRowOn,0,sizeof P3DS_GcRowOn);
     pfT[PF_GCR]+=svcGetSystemTick()-tq;pfU[PU_RB]+=P3DS_GcBeginUs;pfU[PU_RE]+=P3DS_GcEndUs;pfU[PU_RS]+=P3DS_GcSyncUs;pfR++;
    }if(gcStR)gcStN++;}}
  P3DS_GcFinish();  /* fps_tweaks 6 overlap: a left eye still pending is converted before anything reads display[0] */
@@ -2425,10 +2452,14 @@ static int PresentFrame(bool){
   const u32*liveTop=(power&0x8000)?display[0]:display[1],*liveBot=(power&0x8000)?display[1]:display[0];
   const bool topOk=mode&&gpuOk==1&&top==liveTop&&(!stereo||eyeL!=nullptr);
   const bool botOk=mode&&gpuOk==1&&!P3DS_ConsoleOnBottom()&&bot==liveBot&&!P3DS_MenuOpen&&!P3DS_StripOn&&!P3DS_LowerMenuDraw;
-  P3DS_GtScreensNow=(topOk?1u:0u)|(botOk?2u:0u);if(!topOk)P3DS_GtWidePlan=nullptr;
-  if(P3DS_GtScreensNow!=gtOkPrev){static unsigned n;if(n++<60)PSPNativeMemLog("[GTEXT] screens: top %s, bottom %s",topOk?"live":top!=liveTop?"held/other picture":"not scaled",
+  const unsigned gtNow=(topOk?1u:0u)|(botOk?2u:0u);
+  /* P3DS_GtSync already ran this frame with gtOkPrev (VRAM in or out to match). Present the layer
+     with those same bits: using this frame's decision a frame early flashed missing text when a
+     tab or menu hid the layer, or doubled it when the layer came back. This decision is synced next frame. */
+  if(gtNow!=gtOkPrev){static unsigned n;if(n++<60)PSPNativeMemLog("[GTEXT] screens: top %s, bottom %s",topOk?"live":top!=liveTop?"held/other picture":"not scaled",
    botOk?"live":P3DS_ConsoleOnBottom()?"console":bot!=liveBot?"panel picture":P3DS_MenuOpen?"menu open":(P3DS_StripOn||P3DS_LowerMenuDraw)?"bottom menu":"not scaled");}
-  gtOkPrev=P3DS_GtScreensNow;}
+  P3DS_GtScreensNow=gtOkPrev;if(!(gtOkPrev&1u))P3DS_GtWidePlan=nullptr;
+  gtOkPrev=gtNow;}
  if(mode&&gpuOk==1){extern int P3DS_GpuBotSame;P3DS_GpuBotSame=(power&0x8000)&&P3DS_BottomReused;
   /* fps60: the in-between picture goes out first, top screen only; the present below then waits for the screen to take it, so the two
      land on two V-blanks in a row. Only while this tick's own picture is still on the GPU and is what gets shown. */
@@ -2457,6 +2488,12 @@ static int PresentFrame(bool){
   {const int fp=P3DS_CfgInt("field_prof",0);/* run 113: AUTO (2) was the default; profiling every load now only on request */static unsigned armed;if(fp==2){if(P3DS_InField!=lastFld)armed=240;lastFld=P3DS_InField;P3DS_ProfOn=armed?(armed--,1):0;}else P3DS_ProfOn=fp;P3DS_HeapFastStats();}
   {static u64 lp;const u64 n=svcGetSystemTick();P3DS_ProfFrame(lp?(unsigned)((n-lp)/CPU_TICKS_PER_MSEC):0);lp=n;}
 #endif
+  if (total >= 1000000) {
+   PSPNativeMemLog("[STALL] f=%u frame %u ms | before present %u | text sync %u | ROM cache pump %u | 3D flush %u | composite %u | present %u",
+       frames, total/1000, (unsigned)((presentStart-tPrevEnd)/CPU_TICKS_PER_MSEC),
+       (unsigned)((prefetchStart-textStart)/CPU_TICKS_PER_MSEC), (unsigned)((prefetchEnd-prefetchStart)/CPU_TICKS_PER_MSEC),
+       (unsigned)((flushEnd-flushStart)/CPU_TICKS_PER_MSEC), comp/1000, gpu/1000);
+  }
   {/* run 43 [SPIKE] diag: any frame > spike_ms (default 70, 0 = off) logs where the time went (max 60 lines / session).
      g3soft time includes the game's own CPU work between frame start and the 3D flush (loads, decompression). */
    static int spikeMs=-1;static unsigned spikeN;bool spkPr=false;if(spikeMs<0){spikeMs=70;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"spike_ms=%d",&x)==1)spikeMs=x;fclose(f);}PSPNativeMemLog("[SPIKE] spike_ms=%d",spikeMs);}
@@ -2543,17 +2580,20 @@ static int PresentFrame(bool){
 }
 /* Soft-reset / clean exit: stop engine B + core-1 workers and join them before any GPU/heap free
    (run 934: crumbs showed w-job still running after main stopped → jump through freed state). */
-extern "C" void PSPNativeRenderShutdown(){
+extern "C" int P3DS_RenderShutdown(){
  initialized=false;
  if(!bQuit){
   bQuit=true;
   if(bMode==1){__atomic_add_fetch(&bPend,1,__ATOMIC_SEQ_CST);LightEvent_Signal(&bStart);LightEvent_Signal(&bDone);LightEvent_Signal(&bEarlyDone);}
   if(c1Mode==1)LightEvent_Signal(&c1Start);
  }
- if(bThread){if(R_SUCCEEDED(threadJoin(bThread,500000000ULL)))threadFree(bThread);else PSPNativeMemLog("[3DS] exit: engine B worker did not stop in 500 ms");bThread=nullptr;bMode=0;}
- if(c1Thread){if(R_SUCCEEDED(threadJoin(c1Thread,500000000ULL)))threadFree(c1Thread);else PSPNativeMemLog("[3DS] exit: c1 worker did not stop in 500 ms");c1Thread=nullptr;c1Mode=0;}
- PSPNativeMemLog("[3DS] exit: render workers stopped");
+ bool stopped=true;
+ if(bThread){if(threadJoin(bThread,500000000ULL)==0){threadFree(bThread);bThread=nullptr;bMode=0;}else{stopped=false;PSPNativeMemLog("[3DS] exit: engine B worker did not stop in 500 ms");}}
+ if(c1Thread){if(threadJoin(c1Thread,500000000ULL)==0){threadFree(c1Thread);c1Thread=nullptr;c1Mode=0;}else{stopped=false;PSPNativeMemLog("[3DS] exit: c1 worker did not stop in 500 ms");}}
+ if(stopped)PSPNativeMemLog("[3DS] exit: render workers stopped");
+ return stopped;
 }
+extern "C" void PSPNativeRenderShutdown(){P3DS_RenderShutdown();}
 extern "C" unsigned PSPNativeRenderTestPixel(unsigned e,unsigned x,unsigned y){allocBufs();return raw[e&1][(y%192)*256+(x%256)];}
 extern "C" void PSPNativeRenderGetTimings(unsigned*r,unsigned*s){if(r)*r=lastReadbackUs;if(s)*s=last2DUs;}
 extern "C" unsigned RenderStage(unsigned stage){return stage==0?bindUs:stage==1?drawUs:convertUs;}

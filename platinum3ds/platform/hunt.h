@@ -14,6 +14,10 @@ const P3DS_HuntRec *P3DS_HuntGet(int sp);
 int P3DS_HuntTarget(void);             /* last species met = the current hunt */
 int P3DS_HuntNext(int sp, int dir);    /* next species with a record (dir +1/-1), 0 if none */
 void P3DS_HuntEncounter(int sp, int shiny);
+/* Gift / static / starter: fill P3DS_CatchInfo for the shiny check + select_reset, and count as an encounter.
+   Focus-only updates the snapshot when the player cycles the starter balls (no second encounter). */
+void P3DS_HuntGift(int sp, int shiny, int level);
+void P3DS_HuntGiftFocus(int sp, int shiny, int level);
 void P3DS_HuntSoftReset(void);
 void P3DS_HuntFrame(int paused);       /* every frame: time spent + periodic write */
 void P3DS_HuntFlush(void);

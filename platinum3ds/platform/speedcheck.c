@@ -84,26 +84,10 @@ void P3DS_SpeedCheck(void) {
     else
         PSPNativeMemLog("[perf] speed-up (804 MHz + L2): asked for and accepted");
 
-    /* Timing: integer job is 4M rounds of ~7 cycles: ~35 ms at 804 MHz, ~105 ms at 268 MHz.
-     * Core 0 first (the game's own core), then core 2 (workers), then core 1 (system's share; skipped if
-     * the program has no share of it yet, since a thread can only be created there after
-     * APT_SetAppCpuTimeLimit, which the renderer asks for itself). */
-    s32 prio = 0x2F;
-    double ms[3][3] = {{0}};
-    int used = 0;
-    char line[256];
-    static const int cores[3] = {0, 2, 1};
-    for (int i = 0; i < 3; i++) {
-        int core = cores[i];
-        TimeCore(core, prio, ms[i]);
-        used += snprintf(line + used, sizeof line - (size_t)used, "%score %d: %.1f / %.1f / %.1f", i ? "; " : "", core, ms[i][0], ms[i][1], ms[i][2]);
-        if (used >= (int)sizeof line) break;
-    }
-    PSPNativeMemLog("[perf] core speed, ms for the same jobs (integer / 64-bit mul / double div; integer ~35 ms at 804 MHz, ~105 at 268; -1 = no thread; core 1 is -1 here because its share is only requested later, by the renderer): %s", line);
-
-    /* One-line verdict from the game core's integer job. */
-    if (ms[0][0] > 0) {
-        const char *v = ms[0][0] < 55.0 ? "804 MHz (speed-up is ON)" : (ms[0][0] > 80.0 ? "~268 MHz (speed-up is NOT working)" : "in between (check the lines above)");
-        PSPNativeMemLog("[perf] verdict: core 0 runs at %s", v);
-    }
+    /* 2026-11-24: the core timing (3 short threads on core 0, 3 on core 2, before anything else starts) is no longer run.
+       Soft-reset hunting lost 3 of the 32 application thread slots on every reset until power-off (run 1007: 25 -> 28 -> 31
+       slots at boot, then the sound thread could not start), and a fresh power-on boot already showed 3 slots taken beyond
+       our live threads right after this check. It is only a diagnostic; the speed-up request above is unchanged.
+       TimeCore() is kept for a manual test build. */
+    (void)TimeCore;
 }

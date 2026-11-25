@@ -19,6 +19,9 @@
      when the layer can show it: toggling applies to text already on screen.
    - The native layer draws a text pixel only where the BG tile map still shows that window's tile, the BG is on, the DS window
      regions show it and no higher priority text BG covers it. Master brightness, BLDCNT fades and alpha are applied.
+   - If the tile map does not currently show this window's tiles (GTEXT cannot place the native glyphs), text is left in (or put
+     back into) the DS picture so it is never blank. The box app (OVY_14 / Mobile PC and the Center PC) hit this: char tiles were
+     taken out, then every bottom-screen glyph was hidden as "map" and nothing was drawn.
    - Wide layouts (widecomp.c): text on a moved panel is placed with the panel (WC_MapColumn).
    Log: [GTEXT]. */
 #include <3ds.h>
@@ -85,6 +88,7 @@ static inline unsigned tileBytes(const GtWin *w) { return w->bpp8 ? 64u : 32u; }
 typedef struct GtBg GtBg;
 static void readBg(int eng, int b, GtBg *o);
 static int bgDrawable(const GtWin *w);
+static int gtWinMapShows(const GtWin *w); /* tile map still has this window's tiles */
 static void dropGlyphs(int wi) { for (int i = 0; i < kGlyphs; i++) if (gGl[i].used && gGl[i].win == wi) gGl[i].used = 0; gGen++; }
 static void clearInk(GtWin *w) { if (w->und) memset(w->und, 0xFF, (size_t)w->wT * 8 * w->hT * 8 * 2); w->nInk = 0; dropGlyphs((int)(w - gWin)); }
 static void freeWin(GtWin *w) { dropGlyphs((int)(w - gWin)); free(w->und); free(w->val); memset(w, 0, sizeof *w); }
@@ -203,7 +207,7 @@ const void *P3DS_GtUpload(const P3DS_GtDesc *d, unsigned size) {
         w->pend = 0;
         if (w->und && !w->gave && w->nInk && size == w->wT * w->hT * tileBytes(w) && size <= kScratch) {
             const int wpx = w->wT * 8, hpx = w->hT * 8, W = w->wT; const u8 *b = (const u8 *)d->buf;
-            const int want = cfgOn() && screenOk(scrOf(engOf(w))) && bgDrawable(w);
+            const int want = cfgOn() && screenOk(scrOf(engOf(w))) && bgDrawable(w) && gtWinMapShows(w);
             if (want) memcpy(gScratch, b, size);
             unsigned n = 0, live = 0;
             for (int Y = 0; Y < hpx; Y++) for (int X = 0; X < wpx; X++) { const int i = Y * wpx + X; if (w->und[i] == kNoInk) continue;
@@ -344,7 +348,8 @@ void P3DS_GtSync(unsigned okBits) {
     lk();
     for (int k = 0; k < kWins; k++) { GtWin *w = &gWin[k];
         if (!w->used || !w->vValid || !w->vram || !w->buf || w->vSize != w->wT * w->hT * tileBytes(w)) continue;
-        const int want = on && !w->gave && w->und && w->nInk && screenOk(scrOf(engOf(w))) && bgDrawable(w);
+        const int drawable = on && !w->gave && w->und && w->nInk && screenOk(scrOf(engOf(w))) && bgDrawable(w);
+        const int want = drawable && gtWinMapShows(w);
         if (want == w->shown) continue;
         if (hashMem(w->vram, w->vSize) != w->vHash) { w->vValid = 0; w->shown = 0; gStale++; gGen++; continue; }   /* not ours any more */
         const int wpx = w->wT * 8, hpx = w->hT * 8, W = w->wT; const u8 *b = (const u8 *)w->buf; unsigned n = 0;
@@ -356,7 +361,7 @@ void P3DS_GtSync(unsigned okBits) {
         w->vHash = hashMem(w->vram, w->vSize); w->shown = want && n; gGen++;
         if (want) gSyncOn++; else gSyncOff++;
         static unsigned lg; if (lg < 40) { lg++; PSPNativeMemLog("[GTEXT] window bg%d %dx%d: text %s (%s)", w->bg, w->wT, w->hT, w->shown ? "taken out again, native layer draws it" : "put back into the DS picture",
-            !on ? "setting OFF" : !screenOk(scrOf(engOf(w))) ? "its screen cannot show the layer now" : !bgDrawable(w) ? "its BG is scaled, rotated or uses extended palettes" : "screen can show the layer"); }
+            !on ? "setting OFF" : !screenOk(scrOf(engOf(w))) ? "its screen cannot show the layer now" : !drawable ? "its BG cannot show native text" : !want ? "its tiles are not in the BG map (text stays in the DS picture)" : "screen can show the layer"); }
     }
     objStep(on);
     ulk();
@@ -402,6 +407,35 @@ static inline unsigned mapEntry(const u8 *V, unsigned vmask, const GtBg *g, unsi
     const unsigned blk = sz == 1 ? (tx >> 5) : sz == 2 ? (ty >> 5) : sz == 3 ? ((tx >> 5) + 2 * (ty >> 5)) : 0u;
     const unsigned a = (g->sbase + blk * 0x800 + ((ty & 31) * 32 + (tx & 31)) * 2) & vmask;
     return V[a] | (V[a + 1] << 8);
+}
+/* True when the live BG tile map still has enough of this window's sequential tiles (unflipped)
+   for the native layer to place them. Sharp text may only take glyphs out of VRAM when this holds;
+   otherwise the native layer would hide them as "map" and the screen goes blank (box app: PR on
+   cursor/mobile-pc-text). Start taking glyphs out only on a majority (same rule). Once they are
+   out, stay until fewer than a quarter of the tiles still match, so a tab or screen change that
+   briefly sits near the 50% line cannot flip sharpness on and off every frame. */
+static int gtWinMapShows(const GtWin *w) {
+    const int e = engOf(w), b = w->bg & 3;
+    const u8 *V = P3DS_GtVram(e); const unsigned vmask = e ? 0x1FFFFu : 0x7FFFFu; if (!V || w->wT < 1 || w->hT < 1) return 0;
+    GtBg g; readBg(e, b, &g); if (!g.on || !g.text) return 0;
+    const unsigned total = (unsigned)w->wT * w->hT;
+    const unsigned divisor = w->shown ? 4 : 2;
+    const unsigned needed = (total + divisor - 1) / divisor;
+    unsigned matches = 0, misses = 0;
+    for (int r = 0; r < w->hT; r++) {
+        const unsigned y = (unsigned)(w->top + r) * 8 & (g.H - 1);
+        for (int c = 0; c < w->wT; c++) {
+            const unsigned x = (unsigned)(w->left + c) * 8 & (g.W - 1);
+            const unsigned ent = mapEntry(V, vmask, &g, x, y);
+            const unsigned tile = (w->base + r * w->wT + c) & 0x3FFu;
+            if ((ent & 0xFFFu) == tile) {
+                if (++matches == needed) return 1;
+            } else if (++misses > total - needed) {
+                return 0;
+            }
+        }
+    }
+    return 0;
 }
 /* is this BG's pixel at screen sx,sy opaque (colour index != 0)? */
 static int bgOpaque(const u8 *V, unsigned vmask, const GtBg *g, int sx, int sy) {

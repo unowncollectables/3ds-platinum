@@ -76,12 +76,16 @@ void P3DS_ParFor(P3DSParFn fn, void *ctx, unsigned n) {
     }
 }
 /* Soft-reset / exit: wake the helper off Wait and join before GPU/heap free. */
-void P3DS_ParShutdown(void) {
-    if (state <= 0 || !th) return;
+int P3DS_ParShutdown(void) {
+    if (state <= 0 || !th) return 1;
     parQuit = 1;
     LightEvent_Signal(&ev);
-    if (R_SUCCEEDED(threadJoin(th, 500000000ULL))) threadFree(th);
-    else PSPNativeMemLog("[3DS] exit: par helper did not stop in 500 ms");
+    if (threadJoin(th, 500000000ULL) != 0) {
+        PSPNativeMemLog("[3DS] exit: par helper did not stop in 500 ms");
+        return 0;
+    }
+    threadFree(th);
     th = NULL; state = -1;
     PSPNativeMemLog("[3DS] exit: par helper stopped");
+    return 1;
 }
