@@ -73,3 +73,13 @@ Defaults now follow SoulSilver's for every key the two ports share (`psp_ctru.c`
 type hint, hunt counter + ZR stats, visible wild Pokemon with behave + calls, SELECT reset, skip intro, IV/EV on summary,
 reusable TMs, field moves without HMs, repel prompt, fast text 2X, FPS counter, sharp game text, FOE DEEPER ...). A line in
 config.txt still wins, so anything already set in the settings app keeps its value.
+
+## Ambient weather and seasonal trees (2026-11-25)
+
+SoulSilver's weekly seasons (0248/0261/0268/0280, inside its 0110 hook), rebuilt for Sinnoh in `p3ds_follower.h`:
+`ambient_weather` gives outdoor towns and routes whose own weather is clear showers (snow in winter, more often on Route 210
+north, Route 211 east and Celestic Town) from one roll per area name and three-hour window. Only the picture changes
+(`ov5_021D5F7C` / the three weather calls in `fieldmap.c`); the saved weather is never written, so battles and scripts see the
+game's own weather. `seasonal_trees` tints the leaves of Platinum's tree palettes (`tree01`, `tree2_*`, `tree3_*`,
+`conttree*`, `g1_tree*`, found in the ROM's map_tex_set.narc) when an area loads (`area_data.c`). Both default ON, like
+SoulSilver. Not ported: the Johto weather radar and seasonal particles (petals, leaves).

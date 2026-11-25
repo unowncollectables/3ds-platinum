@@ -437,6 +437,8 @@ static const struct { const char *key; int def; } kCfgDefaults[] = {
     { "stereo_2d", 4 }, /* SoulSilver default */
     { "menu_audio", 1 }, /* SoulSilver default */
     { "gts_picker", 1 }, /* SoulSilver default */
+    { "ambient_weather", 1 }, /* SoulSilver default */
+    { "seasonal_trees", 1 }, /* SoulSilver default */
 };
 /* The default a missing key gets: this table if it lists the key, else the caller's `def`. logring.c reports with it, so the two cannot drift. */
 int P3DS_CfgDefault(const char *key, int def) { for (unsigned i = 0; i < sizeof kCfgDefaults / sizeof kCfgDefaults[0]; i++) if (!strcmp(key, kCfgDefaults[i].key)) return kCfgDefaults[i].def; return def; }

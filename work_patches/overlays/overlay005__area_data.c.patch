@@ -1,0 +1,10 @@
+--- a/overlay005__area_data.c
++++ b/overlay005__area_data.c
+@@ -70,6 +70,7 @@
+     areaDataManager->mapTextureFile = NARC_AllocAndReadWholeMemberByIndexPair(NARC_INDEX_FIELDDATA__AREADATA__AREA_MAP_TEX__MAP_TEX_SET, areaDataManager->areaData.mapTextureArchiveID, HEAP_ID_FIELD1);
+     areaDataManager->mapPropTextureFile = NARC_AllocAndReadWholeMemberByIndexPair(NARC_INDEX_FIELDDATA__AREADATA__AREA_BUILD_MODEL__AREABM_TEXSET, areaDataManager->areaData.mapPropArchivesID, HEAP_ID_FIELD1);
+     areaDataManager->mapTexture = NNS_G3dGetTex((NNSG3dResFileHeader *)areaDataManager->mapTextureFile);
++    { extern void P3DS_SeasonTreePalette(NNSG3dResTex *tex); P3DS_SeasonTreePalette(areaDataManager->mapTexture); } /* SoulSilver 0268 seasonal trees */
+ 
+     if (loadData->mapPropModelIDsCount != 0) {
+         areaDataManager->mapPropTexture = NNS_G3dGetTex((NNSG3dResFileHeader *)areaDataManager->mapPropTextureFile);

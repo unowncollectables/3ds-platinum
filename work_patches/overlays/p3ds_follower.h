@@ -295,8 +295,99 @@ static void P3DS_HuntGameFrame(FieldSystem *fieldSystem)
         dcs = Daycare_AreParentLanguagesDifferent(dc) ? 2 : 1;
     P3DS_HuntGame[1] = sh; P3DS_HuntGame[2] = n; P3DS_HuntGame[3] = fieldSystem->chain ? GetChainCount(fieldSystem) : 0; P3DS_HuntGame[4] = dcs; P3DS_HuntGame[0] = 1;
 }
+/* ---- SoulSilver ambient weather + seasonal trees (0248/0261/0268/0280), Platinum version (2026-11-25) ----
+   Seasons change every real week (spring, summer, autumn, winter, then again). ambient_weather=1: outdoor towns and routes
+   whose own weather is clear get showers (and snow in winter, more often in the northern highlands) from one roll per area
+   and three-hour window, so neighbouring maps share a front. Only the picture: the saved weather is never written, so
+   battles, moves and scripts see the game's own weather. seasonal_trees=1: the common outdoor tree canopies are tinted
+   for the season when an area loads (blossom in spring, orange in autumn, frost in winter). */
+#include "overlay005/ov5_021D5EB8.h"
+#include "field_overworld_state.h"
+#include "constants/overworld_weather.h"
+static int p3dsSeasonDay(int *hour)
+{
+    RTCDate date; RTCTime time; GetCurrentDateTime(&date, &time);
+    static const u16 cum[12] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+    const int y = (int)date.year, m = date.month >= 1 && date.month <= 12 ? (int)date.month : 1;
+    int d = y * 365 + (y + 3) / 4 + cum[m - 1] + (int)date.day - 1 + (m > 2 && (y % 4) == 0 ? 1 : 0);
+    if (hour) *hour = (int)time.hour;
+    return d < 0 ? 0 : d;
+}
+static int p3dsSeason(int day) { return (day / 7) % 4; } /* 0 spring, 1 summer, 2 autumn, 3 winter */
+static int p3dsSeasonHighland(int map)
+{
+    return map == MAP_HEADER_ROUTE_210_NORTH || map == MAP_HEADER_ROUTE_211_EAST || map == MAP_HEADER_CELESTIC_TOWN;
+}
+static int p3dsAmbientOutdoor(int map)
+{
+    return MapHeader_IsOnMainMatrix(map) && !MapHeader_IsCave(map) && !MapHeader_IsBuilding(map);
+}
+static int p3dsAmbientForecast(int map)
+{
+    int hour; const int day = p3dsSeasonDay(&hour);
+    if (!p3dsAmbientOutdoor(map)) return OVERWORLD_WEATHER_CLEAR;
+    u32 roll = (u32)(day * 8 + hour / 3) ^ ((u32)MapHeader_GetMapLabelTextID(map) * 0x9e3779b9u);
+    roll ^= roll >> 16; roll *= 0x7feb352du; roll ^= roll >> 15; roll *= 0x846ca68bu; roll ^= roll >> 16; roll %= 100;
+    switch (p3dsSeason(day)) {
+    case 0: return roll < 25 ? OVERWORLD_WEATHER_RAINING : OVERWORLD_WEATHER_CLEAR;
+    case 1: return roll < 12 ? OVERWORLD_WEATHER_RAINING : OVERWORLD_WEATHER_CLEAR;
+    case 2: return roll >= 12 && roll < 20 ? OVERWORLD_WEATHER_RAINING : OVERWORLD_WEATHER_CLEAR;
+    default: if (roll < (u32)(p3dsSeasonHighland(map) ? 26 : 8)) return OVERWORLD_WEATHER_SNOWING;
+        return roll < 18 ? OVERWORLD_WEATHER_RAINING : OVERWORLD_WEATHER_CLEAR;
+    }
+}
+/* the weather the field shows: the saved one, or the forecast when the saved one is clear (fieldmap.c weather calls) */
+int P3DS_AmbientRenderWeather(FieldSystem *fieldSystem, int native)
+{
+    if (native != OVERWORLD_WEATHER_CLEAR || !P3DS_CfgInt("ambient_weather", 0) || !fieldSystem || !fieldSystem->location) return native;
+    const int w = p3dsAmbientForecast(fieldSystem->location->mapHeaderID);
+    if (w != OVERWORLD_WEATHER_CLEAR) PSPNativeMemLog("[WEATHER] map %d shows ambient %d", fieldSystem->location->mapHeaderID, w);
+    return w;
+}
+/* every second in the field: a new three-hour window or the setting changing updates the picture */
+static void P3DS_AmbientWeatherFrame(FieldSystem *fieldSystem)
+{
+    static int t, shown = -1, lastMap = -1, lastSeason = -1;
+    if (!fieldSystem || !fieldSystem->location || !fieldSystem->unk_04 || !fieldSystem->unk_04->unk_0C || FieldSystem_IsRunningTask(fieldSystem)) return;
+    if (++t % 60) return;
+    const int map = fieldSystem->location->mapHeaderID;
+    const int native = FieldOverworldState_GetWeather(SaveData_GetFieldOverworldState(fieldSystem->saveData));
+    if (map != lastMap) { lastMap = map; shown = -1; }
+    { const int s = p3dsSeason(p3dsSeasonDay(NULL)); if (s != lastSeason) { static const char *const nm[4] = { "spring", "summer", "autumn", "winter" }; PSPNativeMemLog("[WEATHER] season %s", nm[s]); lastSeason = s; } }
+    if (native != OVERWORLD_WEATHER_CLEAR) { shown = -1; return; }
+    const int want = P3DS_CfgInt("ambient_weather", 0) ? p3dsAmbientForecast(map) : OVERWORLD_WEATHER_CLEAR;
+    if (shown < 0) { shown = (int)ov5_021D5FE0(fieldSystem->unk_04->unk_0C); }
+    if (want != shown) { ov5_021D5F7C(fieldSystem->unk_04->unk_0C, want); PSPNativeMemLog("[WEATHER] map %d ambient %d -> %d", map, shown, want); shown = want; }
+}
+/* seasonal_trees: called by AreaDataManager_Load before the area's map textures go to VRAM */
+void P3DS_SeasonTreePalette(NNSG3dResTex *tex)
+{
+    if (!tex || !tex->plttInfo.ofsDict || !P3DS_CfgInt("seasonal_trees", 0)) return;
+    const int season = p3dsSeason(p3dsSeasonDay(NULL));
+    if (season == 1) return; /* summer: the game's own colours */
+    const NNSG3dResDict *dict = (const NNSG3dResDict *)((const u8 *)tex + tex->plttInfo.ofsDict);
+    int done = 0;
+    for (u32 i = 0; i < dict->numEntry; i++) {
+        const NNSG3dResName *name = NNS_G3dGetPlttNameByIdx(tex, i);
+        const char *n = name->name;
+        if (strncmp(n, "tree01", 6) && strncmp(n, "tree2_", 6) && strncmp(n, "tree3_", 6) && strncmp(n, "conttree", 8) && strncmp(n, "g1_tree", 7)) continue;
+        const NNSG3dResDictPlttData *e = NNS_G3dGetPlttDataByIdx(tex, i);
+        GXRgb *c = (GXRgb *)((u8 *)tex + tex->plttInfo.ofsPlttData + ((u32)e->offset << 3));
+        for (int k = 1; k < 16; k++) { /* leaves only: clearly green colours (trunks and outlines are brown or grey) */
+            const int r = c[k] & 31, g = (c[k] >> 5) & 31, b = (c[k] >> 10) & 31;
+            if (g < r + 2 || g < b + 2) continue;
+            if (season == 0) c[k] = GX_RGB((3 * r + 31) / 4, (4 * g + 31) / 5, 3 * b / 4);
+            else if (season == 2) c[k] = GX_RGB((4 * g + 31) / 5, 2 * g / 3, b / 3);
+            else c[k] = GX_RGB((r + 31) / 2, (g + 31) / 2, (b + 31) / 2);
+        }
+        done++;
+    }
+    if (done) PSPNativeMemLog("[WEATHER] %d tree palette(s) tinted for season %d", done, season);
+}
+
 static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
 {
+    P3DS_AmbientWeatherFrame(fieldSystem); /* SoulSilver ambient weather */
     if (fieldSystem) p3dsMapSnap(fieldSystem);
     P3DS_HuntGameFrame(fieldSystem);
     { extern int P3DS_MapOutdoor; if (fieldSystem && fieldSystem->location) P3DS_MapOutdoor = MapHeader_IsOutdoors(fieldSystem->location->mapHeaderID) != 0; } /* run 73 wide_edgefill */
