@@ -61,3 +61,15 @@ battle from its first frame (the field coming back clears it, as before).
 
 Nothing in phase 2 has been run on a 3DS or an emulator yet: each group is checked by compiling the patched overlay
 object and linking `platinum3ds_full.elf` only.
+
+## Settings app (2026-11-25)
+
+The settings app (L+R+Y, or hold the top-left corner of the touch screen) is now SoulSilver's design (`ss3ds_settings_ui.h`):
+tabs LOOK / BATTLE / PLAY / PALS / SYSTEM, SELECT shows DEBUG, a scrolling list with the selected row's explanation on the top
+screen. Every row is still the same config.txt key. The hunt stats page, the "Wild Pokemon here" list and the quick menu are
+rows that open those pages of the old app.
+
+Defaults now follow SoulSilver's for every key the two ports share (`psp_ctru.c` kCfgDefaults: battle Y screen, damage check,
+type hint, hunt counter + ZR stats, visible wild Pokemon with behave + calls, SELECT reset, skip intro, IV/EV on summary,
+reusable TMs, field moves without HMs, repel prompt, fast text 2X, FPS counter, sharp game text, FOE DEEPER ...). A line in
+config.txt still wins, so anything already set in the settings app keeps its value.
