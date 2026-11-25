@@ -66,7 +66,7 @@ wide view, stereo 3D and an in-game settings app. New 3DS / New 3DS XL / New 2DS
 | ✨ **Shiny hunt tools** | Encounter counters, odds, shiny alert and hunt export. |
 | 📱 **Lower menu** | Optional bottom-screen icon menu. |
 | 🐾 **Extras** | HGSS-style following Pokémon (needs your own SoulSilver dump) and an animated 3D HOME Menu banner for the `.cia`. |
-| 🔁 **From the SoulSilver port** | Battle Y screen (catch info, trainer foe info, damage check), ZR hunt stats, sharp game text, Mobile PC (PC boxes from the Quick menu after the League), Black 2 animated sprites (needs a `b2sprites.bin` made from your own Black 2 / White 2 dump). All off by default; see [`docs/SOULSILVER_SYNC.md`](docs/SOULSILVER_SYNC.md). |
+| 🔁 **From the SoulSilver port** | Battle Y screen (catch info, trainer foe info, damage check), ZR hunt stats, sharp game text, Mobile PC (PC boxes from the Quick menu after the League), Black 2 animated sprites (needs a `b2sprites.bin` made from your own Black 2 / White 2 dump), a virtual GBA slot for Pal Park, livelier visible wild Pokémon. All off by default; see [`docs/SOULSILVER_SYNC.md`](docs/SOULSILVER_SYNC.md). |
 
 > [!TIP]
 > Most new features are **toggles in the settings app and are off by default**. Every option is listed in

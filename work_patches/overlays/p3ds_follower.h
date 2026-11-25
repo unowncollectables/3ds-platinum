@@ -524,7 +524,14 @@ static void P3DS_FollowerFrame(FieldSystem *fieldSystem)
    one grass tile every 40..90 frames, despawn > 12 tiles away / map change / warp / task / not walking. The player
    stepping onto one (or it onto the player) starts the normal wild battle for that species and level, then it is
    removed. wild_vis_test=1: one wild_vis_species standing 2 tiles in front of the player (drawing test, no battle). */
-typedef struct { int on, sp, lv, x, z, fx, fz, t, timer, dir, w, shiny; } P3DSWild;
+/* SoulSilver phase 2 (0281-0283, ported 2026-11-25): wilds never walk onto an NPC or another wild (a moving one keeps
+   its old tile until the step ends); an NPC walking onto one makes it step aside, or slip away if boxed in; spawn
+   randomness is mixed with the console clock at boot and on every map entry. wild_vis_alive=1 (default 0): each spawn
+   gets a pace (calm, lazy, lively), unbothered ones often just turn and look around, curious ones (one in three) come over
+   when the player stands still for 3 s and stop next to them, lively ones step away from a player 2 tiles off, and when
+   the time of day changes the old ones go home one by one. wild_vis_cries=1 (default 0): one within 7 tiles calls now
+   and then (panned and quieter with distance, never over another cry). */
+typedef struct { int on, sp, lv, x, z, fx, fz, t, timer, dir, w, shiny, quirk, curious, cryT; } P3DSWild;
 static P3DSWild p3dsWild[4];
 extern int P3DS_WildLoad(int, int, int); extern void P3DS_WildFree(int);
 extern int P3DS_WildGrassTile(FieldSystem *, int, int); extern int P3DS_WildPick(FieldSystem *, unsigned, int *, int *); extern int P3DS_WildBattle(FieldSystem *, int, int);
@@ -561,20 +568,56 @@ static void p3dsWildDraw(P3DSWild *w, int slot, fx32 py, unsigned anim)
     }
     G3_PopMtx(1);
 }
+extern unsigned long long svcGetSystemTick(void); /* libctru (svc.h is not included here) */
+static int p3dsNpcAt(FieldSystem *fieldSystem, MapObject *pl, int x, int z)
+{
+    MapObject *o; int idx = 0;
+    while (MapObjectMan_FindObjectWithStatus(fieldSystem->mapObjMan, &o, &idx, MAP_OBJ_STATUS_0)) {
+        if (o == pl || MapObject_IsHidden(o)) continue;
+        if (MapObject_GetX(o) == x && MapObject_GetZ(o) == z) return 1; }
+    return 0;
+}
+/* another wild stands on (or is still stepping off) x,z */
+static int p3dsWildAt(int self, int x, int z)
+{
+    for (int i = 0; i < 4; i++) { const P3DSWild *o = &p3dsWild[i]; if (i == self || !o->on) continue;
+        if ((o->x == x && o->z == z) || (o->t < 16 && o->fx == x && o->fz == z)) return 1; }
+    return 0;
+}
+static int p3dsWildFree(FieldSystem *fieldSystem, MapObject *pl, int self, int x, int z)
+{
+    return P3DS_WildGrassTile(fieldSystem, x, z) && !p3dsWildAt(self, x, z) && !p3dsNpcAt(fieldSystem, pl, x, z);
+}
+static void p3dsWildStep(P3DSWild *w, int d)
+{
+    w->fx = w->x; w->fz = w->z; w->x += d == 2 ? -1 : d == 3 ? 1 : 0; w->z += d == 0 ? -1 : d == 1 ? 1 : 0; w->t = 0; w->dir = d;
+}
+/* direction from a to b along the longer axis (0 up, 1 down, 2 left, 3 right) */
+static int p3dsDirTo(int ax, int az, int bx, int bz)
+{
+    const int dx = bx - ax, dz = bz - az;
+    if ((dx < 0 ? -dx : dx) >= (dz < 0 ? -dz : dz)) return dx < 0 ? 2 : 3;
+    return dz < 0 ? 0 : 1;
+}
 static void P3DS_WildFrame(FieldSystem *fieldSystem)
 {
-    static int cfg = -1, mx, test, tsp; static int lastMap = -1, lpx, lpz, spawnT; static unsigned rng = 0x9E3779B9u, anim;
+    static int cfg = -1, mx, test, tsp, alive, cries; static int lastMap = -1, lpx, lpz, spawnT, still, lastTod = -1, homeT, homeN; static unsigned rng = 0x9E3779B9u, anim, cfgT;
     if (cfg < 0) { cfg = P3DS_CfgInt("wild_vis", 0) != 0; mx = P3DS_CfgInt("wild_vis_max", 2); if (mx < 0) mx = 0; if (mx > 4) mx = 4; test = P3DS_CfgInt("wild_vis_test", 0) != 0; tsp = P3DS_CfgInt("wild_vis_species", 25);
+        rng ^= (unsigned)svcGetSystemTick(); if (!rng) rng = 0x9E3779B9u;
         PSPNativeMemLog("[WILD] wild_vis=%d max=%d test=%d species=%d replace=%d", cfg, mx, test, tsp, P3DS_CfgInt("wild_vis_replace", 0)); }
     if (!cfg && !test) return;
+    if (cfgT++ % 60 == 0) { const int a = P3DS_CfgInt("wild_vis_alive", 0) != 0, c = P3DS_CfgInt("wild_vis_cries", 0) != 0;
+        if (a != alive || c != cries) PSPNativeMemLog("[WILD] wild_vis_alive=%d wild_vis_cries=%d", a, c); alive = a; cries = c; }
     if (!fieldSystem || !fieldSystem->playerAvatar || !fieldSystem->location || !fieldSystem->saveData || !P3DS_FollowerOpen()) return;
     MapObject *pl = PlayerAvatar_GetMapObject(fieldSystem->playerAvatar); if (!pl) return;
     int map = fieldSystem->location->mapHeaderID, x = MapObject_GetX(pl), z = MapObject_GetZ(pl), task = FieldSystem_IsRunningTask(fieldSystem);
     VecFx32 pos; MapObject_GetPosPtr(pl, &pos);
     int hide = PlayerAvatar_GetPlayerState(fieldSystem->playerAvatar) != PLAYER_AVATAR_WALKING || FieldMap_InDistortionWorld(fieldSystem) == TRUE || MapObject_IsHidden(pl);
-    int jump = (x - lpx) * (x - lpx) + (z - lpz) * (z - lpz) > 8; lpx = x; lpz = z;
-    if (map != lastMap || hide || jump || (task && !test)) { for (int i = 0; i < 4; i++) p3dsWildKill(i); lastMap = map; spawnT = 120; if (hide || task) return; }
+    int jump = (x - lpx) * (x - lpx) + (z - lpz) * (z - lpz) > 8; const int moved = x != lpx || z != lpz; lpx = x; lpz = z;
+    if (map != lastMap) { rng ^= (unsigned)svcGetSystemTick() * 2654435761u; if (!rng) rng = 0x9E3779B9u; } /* 0283: the same walk after a Continue no longer replays the same spawns */
+    if (map != lastMap || hide || jump || (task && !test)) { for (int i = 0; i < 4; i++) p3dsWildKill(i); lastMap = map; spawnT = 120; still = 0; if (hide || task) return; }
     anim++; rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+    still = moved ? 0 : still + 1;
     if (test) { P3DSWild *w = &p3dsWild[0];
         int d = PlayerAvatar_GetFacingDir(fieldSystem->playerAvatar), tx = x + (d == 2 ? -2 : d == 3 ? 2 : 0), tz = z + (d == 0 ? -2 : d == 1 ? 2 : 0);
         if (!w->on) { int spr = P3DS_FollowerSprite(tsp, 0, 0); w->w = spr >= 0 ? P3DS_WildLoad(1, spr, 0) : 0; if (!w->w) return; w->on = 1; w->sp = tsp; w->lv = 5; w->dir = 1; w->t = 16;
@@ -583,27 +626,52 @@ static void P3DS_WildFrame(FieldSystem *fieldSystem)
         if (w->t < 16) w->t++;
         NNS_G3dGeFlushBuffer(); p3dsWildDraw(w, 1, pos.y, anim); return; }
     NNS_G3dGeFlushBuffer();
+    /* alive: the time of day changing sends the ones out now home, one a second (new ones come from the new table) */
+    { const int tod = GetTimeOfDay(); if (lastTod >= 0 && tod != lastTod && alive) { homeN = 0; for (int i = 0; i < 4; i++) homeN += p3dsWild[i].on; homeT = 60;
+          if (homeN) PSPNativeMemLog("[WILD] time of day changed (%d -> %d): %d go home", lastTod, tod, homeN); } lastTod = tod; }
+    if (homeN > 0 && --homeT <= 0) { homeT = 60; for (int i = 0; i < 4; i++) if (p3dsWild[i].on) { PSPNativeMemLog("[WILD] slot %d species %d went home", i + 1, p3dsWild[i].sp); p3dsWildKill(i); break; } homeN--; }
     int n = 0; for (int i = 0; i < 4; i++) n += p3dsWild[i].on;
     if (spawnT > 0) spawnT--;
-    if (!spawnT && n < mx) { spawnT = 90 + (int)(rng >> 25);
+    if (!spawnT && n < mx && homeN <= 0) { spawnT = 90 + (int)(rng >> 25);
         for (int tries = 0; tries < 6; tries++) { int dx = (int)((rng >> (tries * 4)) % 17) - 8, dz = (int)((rng >> (tries * 4 + 2)) % 13) - 6;
             if ((dx < 0 ? -dx : dx) + (dz < 0 ? -dz : dz) < 4) continue;
-            int tx = x + dx, tz = z + dz; if (!P3DS_WildGrassTile(fieldSystem, tx, tz)) continue;
-            int busy = 0; for (int i = 0; i < 4; i++) if (p3dsWild[i].on && p3dsWild[i].x == tx && p3dsWild[i].z == tz) busy = 1; if (busy) break;
+            int tx = x + dx, tz = z + dz; if (!p3dsWildFree(fieldSystem, pl, -1, tx, tz)) continue;
             int sp, lv; if (!P3DS_WildPick(fieldSystem, rng >> 7, &sp, &lv)) break;
             for (int i = 0; i < 4; i++) if (!p3dsWild[i].on) { P3DSWild *w = &p3dsWild[i]; u64 t0 = svcGetSystemTick();
                 int spr = P3DS_FollowerSprite(sp, 0, 0); w->w = spr >= 0 ? P3DS_WildLoad(i + 1, spr, 0) : 0; if (!w->w) break;
                 w->on = 1; w->sp = sp; w->lv = lv; w->x = w->fx = tx; w->z = w->fz = tz; w->t = 16; w->timer = 40 + (int)(rng % 50); w->dir = 1;
+                w->quirk = (int)((rng >> 19) % 3); w->curious = ((rng >> 23) % 3) == 0; w->cryT = 300 + (int)((rng >> 9) % 900);
                 { extern int P3DS_WildShinyRoll(int), P3DS_Cheat(int); extern void P3DS_HuntChime(void), P3DS_Toast(const char *);
                   w->shiny = P3DS_WildShinyRoll(P3DS_Cheat(2)); /* run 119 wild_vis_shiny (default 0 -> always 0) */
                   if (w->shiny && !P3DS_Cheat(2)) { P3DS_HuntChime(); P3DS_Toast("SHINY NEARBY!"); } }
-                PSPNativeMemLog("[WILD] slot %d load species %d lv %d at %d,%d%s (%u us)", i + 1, sp, lv, tx, tz, w->shiny ? " SHINY" : "", (unsigned)((svcGetSystemTick() - t0) / 268)); break; }
+                PSPNativeMemLog("[WILD] slot %d load species %d lv %d at %d,%d%s pace %s%s (%u us)", i + 1, sp, lv, tx, tz, w->shiny ? " SHINY" : "",
+                    w->quirk == 1 ? "lazy" : w->quirk == 2 ? "lively" : "calm", w->curious ? " curious" : "", (unsigned)((svcGetSystemTick() - t0) / 268)); break; }
             break; } }
     for (int i = 0; i < 4; i++) { P3DSWild *w = &p3dsWild[i]; if (!w->on) continue;
-        int ddx = w->x - x, ddz = w->z - z; if (ddx * ddx + ddz * ddz > 144) { p3dsWildKill(i); continue; }
+        int ddx = w->x - x, ddz = w->z - z; const int dist2 = ddx * ddx + ddz * ddz; if (dist2 > 144) { p3dsWildKill(i); continue; }
         if (w->t < 16) w->t++;
-        else if (--w->timer <= 0) { w->timer = 40 + (int)((rng >> 3) % 51); int d = (int)((rng >> 11) & 3), nx = w->x + (d == 2 ? -1 : d == 3 ? 1 : 0), nz = w->z + (d == 0 ? -1 : d == 1 ? 1 : 0);
-            if (P3DS_WildGrassTile(fieldSystem, nx, nz)) { w->fx = w->x; w->fz = w->z; w->x = nx; w->z = nz; w->t = 0; w->dir = d; } else w->dir = d; }
+        else if ((anim + i) % 8 == 0 && p3dsNpcAt(fieldSystem, pl, w->x, w->z)) { /* 0281: an NPC walked onto it: step aside, or slip away */
+            int d0 = (int)((rng >> 5) & 3), k; for (k = 0; k < 4; k++) { const int d = (d0 + k) & 3, nx = w->x + (d == 2 ? -1 : d == 3 ? 1 : 0), nz = w->z + (d == 0 ? -1 : d == 1 ? 1 : 0);
+                if ((nx != x || nz != z) && p3dsWildFree(fieldSystem, pl, i, nx, nz)) { p3dsWildStep(w, d); PSPNativeMemLog("[WILD] slot %d species %d steps aside for an NPC", i + 1, w->sp); break; } }
+            if (k == 4) { PSPNativeMemLog("[WILD] slot %d species %d slips away (an NPC boxed it in)", i + 1, w->sp); p3dsWildKill(i); continue; } }
+        else if (alive && w->quirk == 2 && moved && dist2 <= 4 && !(ddx == 0 && ddz == 0)) { /* lively: steps away from a player coming close */
+            const int d = p3dsDirTo(x, z, w->x, w->z), nx = w->x + (d == 2 ? -1 : d == 3 ? 1 : 0), nz = w->z + (d == 0 ? -1 : d == 1 ? 1 : 0);
+            if (p3dsWildFree(fieldSystem, pl, i, nx, nz)) { p3dsWildStep(w, d); w->timer = 30; } else w->dir = p3dsDirTo(w->x, w->z, x, z); }
+        else if (--w->timer <= 0) { w->timer = 40 + (int)((rng >> 3) % 51);
+            if (alive) w->timer = w->quirk == 1 ? w->timer * 3 / 2 : w->quirk == 2 ? w->timer * 2 / 3 : w->timer;
+            int d = (int)((rng >> 11) & 3);
+            const int curiousNow = alive && w->curious && still >= 180 && dist2 <= 36;
+            if (curiousNow) d = p3dsDirTo(w->x, w->z, x, z);
+            if (curiousNow && dist2 <= 1) w->dir = d; /* already next to the player: faces them */
+            else if (alive && !curiousNow && ((rng >> 15) % 3) == 0) w->dir = d; /* looks around */
+            else { const int nx = w->x + (d == 2 ? -1 : d == 3 ? 1 : 0), nz = w->z + (d == 0 ? -1 : d == 1 ? 1 : 0);
+                if (curiousNow && nx == x && nz == z) w->dir = d; /* curious ones stop next to the player */
+                else if (p3dsWildFree(fieldSystem, pl, i, nx, nz) || (nx == x && nz == z && !curiousNow && P3DS_WildGrassTile(fieldSystem, nx, nz))) p3dsWildStep(w, d);
+                else w->dir = d; } }
+        if (cries && --w->cryT <= 0) { w->cryT = 600 + (int)((rng >> 7) % 900);
+            if (dist2 <= 49 && w->t >= 16 && !Sound_IsPokemonCryPlaying()) { int pan = ddx * 18; if (pan < -100) pan = -100; if (pan > 100) pan = 100;
+                int vol = 110 - (int)(dist2 * 9 / 5); if (vol < 35) vol = 35;
+                Sound_PlayPokemonCryEx(POKECRY_NORMAL, (u16)w->sp, pan, vol, HEAP_ID_FIELD2, 0); PSPNativeMemLog("[WILD] slot %d species %d calls (pan %d vol %d)", i + 1, w->sp, pan, vol); } }
         if (!task && ((w->x == x && w->z == z) || (w->t >= 8 && w->x == x && w->z == z))) {
             PSPNativeMemLog("[WILD] contact slot %d species %d lv %d -> battle", i + 1, w->sp, w->lv);
             int sp = w->sp, lv = w->lv, sh = w->shiny; p3dsWildKill(i);

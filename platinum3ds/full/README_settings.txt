@@ -284,6 +284,11 @@ mobile_pc=0          (1 = SoulSilver's Mobile PC: the settings Quick menu gets a
                       app (Move Pokemon, like a Pokemon Center PC) from the field once you are in the Hall of Fame. Not in the
                       Mystery Zone, Great Marsh, Pal Park or Distortion World. Reads the Hall of Fame flag only; writes nothing)
 mobile_pc_dev=0      (Debug: 1 = Mobile PC before the Hall of Fame, runtime only; never sets any flag)
+wild_vis_alive=0     (1 = visible wild Pokemon behave (SoulSilver): each has a pace, they look around, curious ones come over when
+                      you stand still and stop next to you, lively ones step away when you come close, and they go home when the
+                      time of day changes. Always on with wild_vis now: they never walk onto people, step aside when someone
+                      walks onto them, and spawns differ after a Continue)
+wild_vis_cries=0     (1 = visible wild Pokemon within 7 tiles call now and then, panned and quieter further away)
 slot2=0              (1 = a virtual GBA game pak in the DS GBA slot, as on a DS Lite: put your own GBA ROM dump and its save
                       in sdmc:/3ds/platinum3ds/slot2/ as <name>.gba + <name>.sav. The first time, the save is copied to
                       slot2-work/<name>.sav and the game only ever reads and writes that copy (Migrate from / Pal Park takes the
