@@ -284,6 +284,13 @@ mobile_pc=0          (1 = SoulSilver's Mobile PC: the settings Quick menu gets a
                       app (Move Pokemon, like a Pokemon Center PC) from the field once you are in the Hall of Fame. Not in the
                       Mystery Zone, Great Marsh, Pal Park or Distortion World. Reads the Hall of Fame flag only; writes nothing)
 mobile_pc_dev=0      (Debug: 1 = Mobile PC before the Hall of Fame, runtime only; never sets any flag)
+slot2=0              (1 = a virtual GBA game pak in the DS GBA slot, as on a DS Lite: put your own GBA ROM dump and its save
+                      in sdmc:/3ds/platinum3ds/slot2/ as <name>.gba + <name>.sav. The first time, the save is copied to
+                      slot2-work/<name>.sav and the game only ever reads and writes that copy (Migrate from / Pal Park takes the
+                      six Pokemon out of the copy; your original .sav is never written). Gives the "Migrate from" row on the main
+                      menu (after the National Pokedex, same language) and Platinum's GBA-slot wild Pokemon. Applies at the next
+                      start / soft reset)
+slot2_pak=0          (which .gba in slot2/ is in the slot: 0 = first by name, 1 = second, ...)
 b2_sprites=0         (1 = SoulSilver's Black 2 / White 2 animated Pokemon sprites, in battle (full size, slower at yellow/red HP,
                       still while asleep or frozen) and in every other Pokemon picture (fitted into the game's 80x80 box).
                       Needs sdmc:/3ds/platinum3ds/b2sprites.bin, made from your own Black 2 / White 2 ROM by SoulSilver's
