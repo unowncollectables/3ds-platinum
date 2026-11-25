@@ -18,8 +18,8 @@ Carried over from SoulSilver, active as soon as the build runs:
 | Text | sharp game text layer (`ss3ds_gametext.c`), sharp panel text | `sharp_game_text`, `sharp_text` |
 | H-blank | line-scroll waves (water battle intro etc.) drawn by the renderer instead of crashing on a DS address | always |
 | Audio | bit-exact DS mixer timing, even loudness, DSP watchdog, DSP released on exit, bounded fader | `audio_*` |
-| Stability | soft-reset teardown order (workers joined first), safer save backup chain (one `.bak1`), log fsync, crash screen, watchdog for slow network | always |
-| Save | `platinum.sav` stays the raw 512 KiB image; one validated `.bak1` (older `.bak2-8` removed after the next good backup) | `save_backup` |
+| Stability | soft-reset teardown order (workers joined first), log fsync, crash screen, watchdog for slow network | always |
+| Save | unchanged on purpose: Platinum keeps its own validated 8-deep `.bak1-8` chain (SoulSilver's chain validates HGSS save footers and deletes `.bak2-8`, so it is not used) | `save_backup` |
 | Wireless | automatic: local (UDS) or online (sockets) per session, decided by the game's own WM init; the Wireless setting is retired | automatic |
 | GTS | StarMe server picker, last-seen deposit preview, login/log fixes | `gts_picker`, `gts_server` |
 | Soft reset | (SoulSilver up to 08b73fd, 2026-11-25) wait for the old run's memory before carving heaps (`heapwait3ds.c`), stop leftover threads, DSP refcount fix, `[STALL]` lines | always |
