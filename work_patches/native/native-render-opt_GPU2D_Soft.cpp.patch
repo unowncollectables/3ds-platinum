@@ -1,0 +1,44 @@
+--- a/native-render-opt/GPU2D_Soft.cpp
++++ b/native-render-opt/GPU2D_Soft.cpp
+@@ -1861,14 +1861,25 @@
+         64, 32, 64, 8
+     };
+ 
+-    for (int bgnum = 0x0C00; bgnum >= 0x0000; bgnum -= 0x0400)
++    // Walk OAM once for this scanline. Drawing still visits descending
++    // priorities and descending OAM indices within each priority.
++    u8 sprites[4][128];
++    unsigned counts[4] = {};
++    for (int sprnum = 127; sprnum >= 0; sprnum--)
+     {
+-        for (int sprnum = 127; sprnum >= 0; sprnum--)
+-        {
+-            u16* attrib = &oam[sprnum*4];
++        const u16* attrib = &oam[sprnum * 4];
++        if ((attrib[0] & 0x0300) == 0x0200)
++            continue;
++        const unsigned priority = (attrib[2] >> 10) & 3;
++        sprites[priority][counts[priority]++] = sprnum;
++    }
+ 
+-            if ((attrib[2] & 0x0C00) != bgnum)
+-                continue;
++    for (int priority = 3; priority >= 0; priority--)
++    {
++        for (unsigned i = 0; i < counts[priority]; i++)
++        {
++            const int sprnum = sprites[priority][i];
++            u16* attrib = &oam[sprnum * 4];
+ 
+             bool iswin = (((attrib[0] >> 10) & 0x3) == 2);
+ 
+@@ -1912,9 +1923,6 @@
+             }
+             else
+             {
+-                if (attrib[0] & 0x0200)
+-                    continue;
+-
+                 u32 sizeparam = (attrib[0] >> 14) | ((attrib[1] & 0xC000) >> 12);
+                 s32 width = spritewidth[sizeparam];
+                 s32 height = spriteheight[sizeparam];
