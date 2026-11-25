@@ -273,6 +273,10 @@ cheat_speed=0        (1 = holding B runs at bike speed; runtime only)
 cheat_walk_walls=0   (1 = hold R while walking to pass through walls/objects; warps and ledges still work)
 cheat_time=0         (0 off, 1 morning, 2 day, 3 evening, 4 night: overrides time-of-day only; the save clock is untouched)
 catch_overlay=0      (1 = in a wild battle, press Y at the command menu for the Ball tab: species, nature, ability, IVs, Pokerus, HP/status, catch odds)
+  SoulSilver sync: Y now opens the SoulSilver battle screen as an overlay (the battle keeps running): wild info, catch odds,
+  hunt page; in a trainer battle the foe's moves/PP/ability/item and its team's HP.
+dmg_check=0          (1 = adds a rough damage / speed page to the battle Y screen, singles only)
+hunt_stats=0         (1 = ZR in the field opens the hunt stats overlay; needs hunt_counter; ZR stays the item button while zr_item=1)
 battle_anim_speed=0  (1 = skip plain move animations; Fly/Dig/Dive/Bounce/Shadow Force/Transform/Substitute/Minimize still play)
 Run 76
   battle_anim_speed=2  (also makes the HP bar drain 3x faster; damage and end values unchanged)

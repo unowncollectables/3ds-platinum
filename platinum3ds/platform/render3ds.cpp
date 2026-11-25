@@ -1328,6 +1328,8 @@ static const MItem mItems[]={
  /* run 123 Batch 3: type hint, ribbons, celebrate, achievements toasts, tracker, pm shortcuts (risky/default OFF) */
  {"TYPE_HINT","type_hint",2,{"OFF","ON"}},{"RIBBON_CHECK","ribbon_check",2,{"OFF","ON"}},{"CELEBRATIONS","celebrations",2,{"OFF","ON"}},
  {"ACH_TOASTS","ach_toasts",2,{"OFF","ON"}},{"TRACKER","tracker",2,{"OFF","ON"}},{"PM_SHORTCUTS","pm_shortcuts",2,{"OFF","ON"}},
+ /* SoulSilver phase 2 122..123: battle Y damage check page, ZR hunt stats overlay (default OFF) */
+ {"DMG_CHECK","dmg_check",2,{"OFF","ON"}},{"HUNT_STATS","hunt_stats",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 extern "C" {int P3DS_B2Cfg(void);void P3DS_B2SetCfg(int);}
@@ -1402,7 +1404,7 @@ static int bmV=-1;static int bmCfg(){if(bmV<0){bmV=P3DS_CfgInt("bottom_menu",1)!
 static int menuBtnV=-1;static int menuBtnCfg(){if(menuBtnV<0){menuBtnV=P3DS_CfgInt("menu_button",1);if(menuBtnV<0||menuBtnV>2)menuBtnV=1;PSPNativeMemLog("[BTN] menu_button=%d",menuBtnV);}return menuBtnV;}
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0,0,0,0,0,0,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0,0,0,0,0,0,0,0,0};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(!strcmp(mItems[33+k].key,"fps_tweaks"))v=v<=0?0:v>=2&&v<=7?v-1:0;
    if(!strcmp(mItems[33+k].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};int b=6;for(int t=0;t<7;t++)if(abs(kG[t]-v)<abs(kG[b]-v))b=t;v=b;}
    if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
@@ -1503,7 +1505,7 @@ static const char*settingHelp(const char*k){static const char*const H[][2]={
  {"cstick_mode","What the C-stick does."},{"zl_run","ZL toggles running."},{"zr_item","ZR uses your registered item."},{"cpad_dpad","Circle pad acts as D-pad."},
  {"touch_menu","Tap the bottom screen corner\nfor the quick menu."},{"bottom_strip","Button strip on the bottom\nscreen in the field."},
  {"lower_menu","Icon menu around the bottom\nscreen in the field (GabeSud0)."},{"follower","A Pok\xe9mon follows you."},
- {"hunt_counter","Counts encounters for hunts."},{"catch_overlay","Y in wild battles: catch info."},{"wild_vis","Wild Pok\xe9mon show in grass."},
+ {"hunt_counter","Counts encounters for hunts."},{"catch_overlay","Y in battle: catch info, or the\ntrainer's team in trainer battles."},{"dmg_check","Adds a damage and speed page\nto the battle Y screen."},{"hunt_stats","ZR in the field: hunt stats\n(needs the encounter counter)."},{"wild_vis","Wild Pok\xe9mon show in grass."},
  {"shiny_suite","Shiny hunting helpers."},{"wide_early","Faster wide layout in battle."},{"wide_stereo","3D depth for wide layouts."},
  {"wide_dirty","Redraws only changed lines."},{"summary_ivs","IVs/EVs on the summary screen."},{"menu_audio","Music in the settings app."},
  {"dw_depth","Distortion World 3D depth."},{"dw_roll","Distortion World camera roll."},{"follower_slot","Which party slot follows."},{"cheat_time","Fixed time of day."},{"heap_fast","Skips a slow table scan on every\nfree (same result). Faster loads."},{"dc_flush_skip","Skips the game's DS cache flushes\n(not needed here). Restart."},{"wide_windows","Wide view draws screens that use DS\nwindows (battle intro) itself."},{"stereo_gpu_battle","3D slider up in battles: 4:3 view on\nthe GPU (no wide panels). Default OFF."},{"gpu_blend_3d","GPU compose allows 2D blends\nnext to the 3D layer."},{"gpu_direct3d","3D stays on the GPU (no readback)\nwhen GPU compose draws the frame."},{"wide_gpu","Wide battles/menus drawn on the\nGPU (both eyes). SLIDER UP = 3D on."},{"gpu_mbright","GPU compose does screen fades\n(master brightness)."},{"exp_share_all","Party Pok\xe9mon that didn't fight\nget Exp. too (like Exp. Share\nfor the whole party)."},{"auto_run","Run without holding B.\nHold B to walk."},{"catch_swap","Party full: a caught Pok\xe9mon can\nswap with one in the party\n(that one goes to the PC)."},{"shiny_rate","Wild shiny odds. 1/8192 is the\noriginal game. Uses the game's\nown shiny code; save unchanged."},{"rng_info","Hunt stats: the game's RNG seed\nand advances (read only). Seeds\ndiffer from a real DS."},{"wild_vis_shiny","Visible wild Pok\xe9mon can be\nshiny and sparkle in the grass."},{"battery_warn","Low battery: a warning, and\nthe hunt counters are saved."},{"frame_pacing","GPU compose doesn't wait for the GPU.\nFIXED/ADAPTIVE: up to 1 frame of lag."},{"gc_atlas16","GPU compose 2D tiles in 16-bit colour\n(half the memory). Restart."},{"stereo_flat_fallback","Slider up: frames the wide view can't\ndraw (battle intro) show no depth\ninstead of rendering twice."},{"g3_conv_split","With the slider up, the right eye's\n3D readback converts on core 2."},{"hunt_async_save","Writes the shiny-hunt file in the\nbackground (no battle-start hitch)."},{"wireless","OFF / LOCAL (3DS-to-3DS UDS) / ONLINE\n(Poke Classic Network DNS; WIP GTS).\nBack up your save first."},{"wide_3d_alpha","Wide layouts draw 3D fade-ins\n(send-out) instead of the slow path."},{"field_prof","Logs the slowest game functions\nof frames over 70 ms. AUTO: only for\n8 s after battle start/end."},{"wide_dirty_regs","Ignore timing-only registers\nfor the line check."},{"wide_split","Battles at slider 0: the wide\ncompose uses two cores. Restart."},{"battle_log","Logs every battle/menu frame over\n40 ms with where the time went."},{"wide_split_r","Slider up: right-eye wide compose on\nboth cores. SHARED = whichever is free.\nRestart."}};
@@ -1516,7 +1518,7 @@ static const ATab kTabs[]={
  {"Keys",8,{3,4,5,6,66,68,77,L_MENU},{"C-stick","ZL run toggle","ZR = item (Y)","Circle pad D-pad","Touch quick menu","Bottom button strip","Bottom icon menu","Quick menu"}},
  {"Pal",12,{14,16,17,34,35,37,36,33,38,39,40,41},{"Following Pok\xe9mon","Follower slot","Follower talk","Follower cry","Finds items","Emote bubbles","Ball pop-out","Area talk",
   "Friendship talk","Idle look-around","Follower gap","Behind player"}},
- {"Hunt",13,{L_HUNT,L_MAP,72,107,108,63,57,46,47,48,103,105,106},{"Hunt stats","Wild Pok\xe9mon here","Shiny hunt suite","Skip intro on reset","Hold SELECT = reset (battle)","Encounter counter","Catch info (Y)","Visible wild Pok\xe9mon","Visible wild max","Only visible battle","Shiny odds","Visible shiny sparkle","Low battery warning"}},
+ {"Hunt",15,{L_HUNT,L_MAP,72,107,108,63,57,122,123,46,47,48,103,105,106},{"Hunt stats","Wild Pok\xe9mon here","Shiny hunt suite","Skip intro on reset","Hold SELECT = reset (battle)","Encounter counter","Catch info (Y)","Damage check (Y)","Hunt stats on ZR","Visible wild Pok\xe9mon","Visible wild max","Only visible battle","Shiny odds","Visible shiny sparkle","Low battery warning"}},
  {"Cheats",11,{24,27,28,29,30,31,32,53,54,55,56},{"No wild encounters","Infinite money","Always catch","Shiny wild","Fast eggs","EXP boost","Rare Candy 99","Infinite PP",
   "Fast running (B)","Walls: hold R","Time of day"}},
  /* run 67: the old Speed tab, hidden: only shown after SELECT is pressed in the settings app */
@@ -2402,14 +2404,14 @@ static int PresentFrame(bool){
     lower screen. Shown only in the field; a button press opens that start-menu entry through the same request path as the
     settings Menu tab (P3DS_StartReq); the item squares press Y (registered item). The touch inside the panel goes to the
     game unchanged (main3ds). Off: nothing changes. */
- {const bool lmWant=P3DS_CfgInt("lower_menu",0)&&P3DS_InField&&!P3DS_ConsoleOnBottom();
+ {const bool lmWant=P3DS_CfgInt("lower_menu",0)&&P3DS_InField&&!P3DS_ConsoleOnBottom()&&!cy.open; /* hidden while the ZR hunt stats overlay is up */
   if(lmWant&&!NitroPort_LowerMenuOn()){const int fe=p3dsFemale();if(fe>=0)NitroPort_LowerMenuSetFemale(fe);}if(lmWant!=(NitroPort_LowerMenuOn()!=0))NitroPort_LowerMenuShow(lmWant);P3DS_LowerMenuDraw=lmWant&&NitroPort_LowerMenuOn();
   if(P3DS_LowerMenuDraw){const int b=NitroPort_LowerMenuTakePress();
    if(b>=0){static const int opt[NITRO_LOWERMENU_COUNT]={-1,1,2,3,0,-1,4,5,-2,-2};extern volatile int P3DS_StartReq;const int o=opt[b];
     if(o>=0)P3DS_StartReq=o;else if(o==-2)lmYPress=3;
     else if(b==NITRO_LOWERMENU_POKETCH){lmTouchInj=4;} /* run 102: the Pokétch's upper side button (next app) */
     else if(b==NITRO_LOWERMENU_MAP){if(p3dsHasTownMap()){P3DS_BagPocketReq=7;P3DS_StartReq=2;P3DS_Toast("Town Map is in Key Items");}else P3DS_Toast("No Town Map yet");}PSPNativeMemLog("[LMENU] button %d -> %s %d",b,o>=0?"start menu option":o==-2?"Y (item)":"none",o);}}}
- {P3DS_StripOn=P3DS_CfgInt("bottom_strip",0)&&P3DS_InField&&appCfg()&&!P3DS_ConsoleOnBottom()&&!P3DS_LowerMenuDraw;
+ {P3DS_StripOn=P3DS_CfgInt("bottom_strip",0)&&P3DS_InField&&appCfg()&&!P3DS_ConsoleOnBottom()&&!P3DS_LowerMenuDraw&&!cy.open;
   if(P3DS_StripOn&&bot){static const char*const nm[4]={"Menu","Wide","Ball","Set"};u32*bb=(u32*)bot;
    for(int i=0;i<4;i++){const int x0=8+i*50;plate(bb,x0,177,x0+48,191,0x00F8F8F8u,0x00585858u);gtxt(bb,x0+24-gw(nm[i])/2,176,nm[i],kMsgFg,kMsgSh);}
    if(hidKeysDown()&KEY_TOUCH){touchPosition tp;hidTouchRead(&tp);int x,y;if(touchToDS(tp.px,tp.py,&x,&y)&&y>=176&&x>=8&&x<208){const int b=(x-8)/50;if(b>=0&&b<4){stripReq=b+1;PSPNativeMemLog("[STRIP] %s",nm[b]);}}}}}
@@ -2447,6 +2449,8 @@ static int PresentFrame(bool){
      whole read + bind + init in one task step (ROM is cached; ~100-200 KiB). */
   static int landCfg=-1;if(landCfg<0){landCfg=1;FILE*f=fopen("sdmc:/3ds/platinum3ds/config.txt","r");char l[64];int x;if(f){while(fgets(l,sizeof l,f))if(sscanf(l,"land_fastload=%d",&x)==1)landCfg=x;fclose(f);}PSPNativeMemLog("[WIDE] land_fastload=%d",landCfg);}
   P3DS_LandFast=landCfg==2||(landCfg==1&&act);} P3DS_St[8]=svcGetSystemTick();
+ {/* SoulSilver battle Y screen / ZR hunt stats overlay: the bottom picture is ours while it is up; the game underneath keeps running */
+  const bool txOk=mode&&gpuOk==1&&btxMode();const u32*cyImg=cyFrame(txOk);if(cyImg){bot=cyImg;{extern int P3DS_BotFade;P3DS_BotFade=0;}{extern volatile int P3DS_PnOn;P3DS_PnOn=0;}}}
  unsigned presentFenceIdleUs=0;
  {/* sharp game text: the screens whose picture this present is the live engine picture (not a held, black, panel or menu picture) */
   const u32*liveTop=(power&0x8000)?display[0]:display[1],*liveBot=(power&0x8000)?display[1]:display[0];
@@ -2574,8 +2578,17 @@ static int PresentFrame(bool){
    if(tDown){cZone=z;cT=svcGetSystemTick();}else if(z!=cZone)cZone=0;
    if(cZone&&svcGetSystemTick()-cT>CPU_TICKS_PER_MSEC*300){cZone=0;cornerOpen=true;PSPNativeMemLog("[APP] opened by corner touch");}}
   else cZone=0;}
- {u32 kd=hidKeysDown(),kh=hidKeysHeld();bool catchY=(kd&KEY_Y)&&!(kh&(KEY_L|KEY_R|KEY_X))&&P3DS_CatchInfo[0]&&!P3DS_InField&&appCfg()&&(P3DS_CfgInt("catch_overlay",0)||P3DS_HuntOn());if(catchY){for(int t=0;t<(int)(sizeof kTabs/sizeof kTabs[0]);t++)if(kTabs[t].n==-3)appStartTab=t;PSPNativeMemLog("[CATCH] Y: catch info opened");}else if(kd&KEY_Y&&!(kh&(KEY_L|KEY_R|KEY_X))){static int ly;if(++ly<=5)PSPNativeMemLog("[CATCH] Y ignored: catchInfo %d inField %d appCfg %d overlay %d hunt %d",(int)P3DS_CatchInfo[0],P3DS_InField,(int)appCfg(),P3DS_CfgInt("catch_overlay",0),P3DS_HuntOn());}
-  if(catchY||cornerOpen||((kd&KEY_Y)&&(kh&KEY_L)&&(kh&KEY_R)&&!(kh&KEY_X)&&menuCfg())){if(appCfg()&&!P3DS_ConsoleOnBottom())runApp(stereo?eyeL:top,mode,mode&&gpuOk==1);else runMenu(stereo?eyeL:top,bot,mode,mode&&gpuOk==1,!P3DS_ConsoleOnBottom());}}
+ /* SoulSilver battle Y companion + ZR hunt stats: both are overlays on the bottom picture (cyFrame in the present above), the game keeps
+    running underneath. Y in battle (catch_overlay or the hunt counter on): wild catch info, trainer foe info, damage check (dmg_check).
+    ZR in the field (hunt_stats, needs the hunt counter): hunt stats. ZR stays the item button when zr_item is on. */
+ {u32 kd=hidKeysDown(),kh=hidKeysHeld();catchTick();
+  static bool zrHeldPrev=true;const bool zrDown=(kh&KEY_ZR)&&!zrHeldPrev;zrHeldPrev=(kh&KEY_ZR)!=0; /* ZR edge from our own held history: hidKeysDown() can miss ZR (see psp_ctru.c) */
+  cyTick(kh);
+  if(cy.open)cyInput(kd,kh);
+  else if((kd&KEY_Y)&&!cy.release&&!(kh&(KEY_L|KEY_R|KEY_X))&&(P3DS_CatchInfo[0]||P3DS_FoeInfo[0])&&!P3DS_InField&&!P3DS_SumOpen&&!P3DS_ConsoleOnBottom()&&(P3DS_CfgInt("catch_overlay",0)||P3DS_HuntOn()))cyOpen();
+  else if(zrDown&&!cy.release&&!(kh&(KEY_L|KEY_R|KEY_X|KEY_Y))&&P3DS_InField&&!P3DS_MenuOpen&&!P3DS_BmBlock&&!P3DS_PanelPartyOn&&!P3DS_PanelPartyWant&&!P3DS_ConsoleOnBottom()&&P3DS_CtlZr<=0&&P3DS_CfgInt("hunt_stats",0)&&P3DS_HuntCounting())hsOpen();
+  else if(zrDown&&P3DS_InField&&!cy.open){static unsigned zn;if(zn++<6)PSPNativeMemLog("[HSTAT] ZR not opened: release %d LRXY %d menu %d startmenu %d panelapp %d/%d console %d zr_item %d hunt_stats %d counting %d",(int)cy.release,(kh&(KEY_L|KEY_R|KEY_X|KEY_Y))!=0,(int)P3DS_MenuOpen,(int)P3DS_BmBlock,(int)P3DS_PanelPartyOn,(int)P3DS_PanelPartyWant,(int)P3DS_ConsoleOnBottom(),P3DS_CtlZr>0,P3DS_CfgInt("hunt_stats",0),P3DS_HuntCounting());}
+  else if(cornerOpen||((kd&KEY_Y)&&(kh&KEY_L)&&(kh&KEY_R)&&!(kh&KEY_X)&&menuCfg())){if(appCfg()&&!P3DS_ConsoleOnBottom())runApp(stereo?eyeL:top,mode,mode&&gpuOk==1);else runMenu(stereo?eyeL:top,bot,mode,mode&&gpuOk==1,!P3DS_ConsoleOnBottom());}}
  return 0;
 }
 /* Soft-reset / clean exit: stop engine B + core-1 workers and join them before any GPU/heap free

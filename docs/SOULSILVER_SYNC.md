@@ -36,8 +36,19 @@ Platinum gameplay (cheats, visible wilds, shiny odds, HM-free, ...) keeps Platin
 * `widecomp.c` is Platinum's (wide layouts, dirty lines, split). Added from SoulSilver: `WC_StripHash`, `WC_MapColumn` (sharp game text). `WC_ComposeObjStrips` (wide HP boxes) is a stub: Platinum has its own wide battle layout.
 * `render3ds.cpp`: SoulSilver's frame pipeline (H-blank lines, 60 fps in-between present, sharp text, overlay timing, `[PERF4]`) with Platinum's settings app, wide layout engine, lower menu, bottom strip and follower overlays kept.
 
-## Phase 2: game-side features (not in this change)
+## Phase 2: game-side features
 
-Platform code for these is in place but inert until a Platinum hook feeds it: Mobile PC (`ss3ds_mobilepc.h`, SoulSilver hook 0293), virtual GBA Slot 2 migrate (`ss3ds_slot2.h`/`ss3ds_ctrdg.h`, hooks 0294-0297; Platinum's Pal Park would need its own C port), Black 2 animated battle sprites (`b2sprites.c`, hooks 0298-0300, not copied yet).
+SoulSilver's game hooks are Python scripts that edit pokeheartgold sources (`pspoke/scripts/ss3ds_hooks.d/NNNN_*.py`).
+Platinum has no hook runner: its game changes are unified diffs of the generated overlay sources
+(`work_patches/overlays/<dir>__<file>.c.patch`, pokeplatinum names). Each group below is one branch / PR, stacked in order.
+All new options default OFF; none of them writes the save.
 
-These need hooks in Platinum's decomp (`work_patches/`), not just the platform layer. Tracked in the PR description.
+| Group | SoulSilver | Platinum | Switch |
+|---|---|---|---|
+| Battle Y companion + hunt stats | 0030 catch counter, 0031 `P3DS_FoeInfo`, 0208/0211 `P3DS_DmgInfo` (`battle_controller_player.c`); render3ds `cyOpen`/`hsOpen` wiring | same snapshots in `battle__battle_controller_player.c.patch` (BattleMon fields instead of party reads: same values); render3ds input + present wiring, lower menu and bottom strip hidden while the overlay is up; Y in battle no longer opens the settings app | `catch_overlay`, `dmg_check`, `hunt_stats` (ZR; not while `zr_item` is on) |
+
+Still to come: visible wilds improvements, Pokedex finder chances, sharp game text hook (0289), Mobile PC (0293),
+Slot 2 GBA migrate (0294-0297), Black 2 sprites (0298-0300), `wide_gpu` on the new compositor.
+
+Nothing in phase 2 has been run on a 3DS or an emulator yet: each group is checked by compiling the patched overlay
+object and linking `platinum3ds_full.elf` only.
