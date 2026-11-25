@@ -24,7 +24,23 @@
      return FALSE;
  }
  
-@@ -6559,6 +6562,7 @@
+@@ -6271,6 +6274,15 @@
+ 
+     GF_ASSERT(eventID <= DISTRIBUTION_EVENT_MAX);
+     *destVar = SystemVars_CheckDistributionEvent(varsFlags, eventID);
++    { /* SoulSilver event_any_mon, Platinum version: the four Mystery Gift events count as received (read only) */
++        extern int P3DS_CfgInt(const char *, int);
++        extern void PSPNativeMemLog(const char *, ...);
++        if (!*destVar && (eventID == DISTRIBUTION_EVENT_DARKRAI || eventID == DISTRIBUTION_EVENT_SHAYMIN || eventID == DISTRIBUTION_EVENT_ARCEUS || eventID == DISTRIBUTION_EVENT_ROTOM)
++            && P3DS_CfgInt("event_any_mon", 0)) {
++            *destVar = TRUE;
++            PSPNativeMemLog("[EVENT] distribution event %d counts as received (event_any_mon)", eventID);
++        }
++    }
+     return FALSE;
+ }
+ 
+@@ -6559,6 +6571,7 @@
          *saveInfoWin = SaveInfoWindow_New(fieldSystem, HEAP_ID_FIELD1, BG_LAYER_MAIN_3);
          SaveInfoWindow_Draw(*saveInfoWin);
      }
@@ -32,7 +48,7 @@
  
      return FALSE;
  }
-@@ -6572,6 +6576,7 @@
+@@ -6572,6 +6585,7 @@
          SaveInfoWindow_Erase(*saveInfoWin);
          SaveInfoWindow_Free(*saveInfoWin);
      }
