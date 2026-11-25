@@ -83,3 +83,10 @@ north, Route 211 east and Celestic Town) from one roll per area name and three-h
 game's own weather. `seasonal_trees` tints the leaves of Platinum's tree palettes (`tree01`, `tree2_*`, `tree3_*`,
 `conttree*`, `g1_tree*`, found in the ROM's map_tex_set.narc) when an area loads (`area_data.c`). Both default ON, like
 SoulSilver. Not ported: the Johto weather radar and seasonal particles (petals, leaves).
+
+## Event Pokemon without the event (2026-11-25)
+
+SoulSilver's `event_any_mon` (Ilex shrine / Arceus scenes without event Pokemon), Platinum version: `scrcmd_item.c`
+(`ScrCmd_CheckItem`: Member Card, Oak's Letter, Azure Flute, Secret Key count as in the bag) and `scrcmd.c`
+(`ScrCmd_CheckDistributionEvent`: the Darkrai, Shaymin, Arceus and Rotom distributions count as received). Nothing is added
+to the bag; the scripts' other conditions (game cleared, National Pokedex, ...) stay. Default ON like SoulSilver.

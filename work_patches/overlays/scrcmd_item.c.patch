@@ -1,0 +1,26 @@
+--- a/scrcmd_item.c
++++ b/scrcmd_item.c
+@@ -4,6 +4,7 @@
+ #include <string.h>
+ 
+ #include "constants/heap.h"
++#include "constants/items.h"
+ 
+ #include "field/field_system.h"
+ 
+@@ -54,6 +55,15 @@
+     u16 *destVar = ScriptContext_GetVarPointer(ctx);
+ 
+     *destVar = Bag_CanRemoveItem(SaveData_GetBag(fieldSystem->saveData), item, count, HEAP_ID_FIELD2);
++    { /* SoulSilver event_any_mon, Platinum version: the event key items count as in the bag (nothing is added) */
++        extern int P3DS_CfgInt(const char *, int);
++        extern void PSPNativeMemLog(const char *, ...);
++        if (!*destVar && (item == ITEM_MEMBER_CARD || item == ITEM_OAKS_LETTER || item == ITEM_AZURE_FLUTE || item == ITEM_SECRET_KEY)
++            && P3DS_CfgInt("event_any_mon", 0)) {
++            *destVar = TRUE;
++            PSPNativeMemLog("[EVENT] item %d counts as in the bag (event_any_mon)", item);
++        }
++    }
+     return FALSE;
+ }
+ 

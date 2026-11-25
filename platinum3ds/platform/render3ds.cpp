@@ -1344,6 +1344,8 @@ static const MItem mItems[]={
  {"GTS_PICKER","gts_picker",2,{"OFF","ON"}},
  /* 133..134: SoulSilver ambient weather + seasonal trees (p3ds_follower.h, area_data.c) */
  {"AMBIENT_WEATHER","ambient_weather",2,{"OFF","ON"}},{"SEASONAL_TREES","seasonal_trees",2,{"OFF","ON"}},
+ /* 135: SoulSilver event_any_mon, Platinum events */
+ {"EVENT_ANY_MON","event_any_mon",2,{"OFF","ON"}},
 };
 #define MENU_N ((int)(sizeof mItems/sizeof mItems[0]))
 extern "C" {int P3DS_B2Cfg(void);void P3DS_B2SetCfg(int);void P3DS_Slot2SetPak(int);}
@@ -1418,7 +1420,7 @@ static int bmV=-1;static int bmCfg(){if(bmV<0){bmV=P3DS_CfgInt("bottom_menu",1)!
 static int menuBtnV=-1;static int menuBtnCfg(){if(menuBtnV<0){menuBtnV=P3DS_CfgInt("menu_button",1);if(menuBtnV<0||menuBtnV>2)menuBtnV=1;PSPNativeMemLog("[BTN] menu_button=%d",menuBtnV);}return menuBtnV;}
 static const char*const kCheatKey[6]={"cheat_money","cheat_catch","cheat_shiny","cheat_eggs","cheat_exp","cheat_candy"};static int cheatV[6]={-1,-1,-1,-1,-1,-1};
 extern "C" int P3DS_Cheat(int k){if(k<0||k>5)return 0;if(cheatV[k]<0){int v=P3DS_CfgInt(kCheatKey[k],0);cheatV[k]=v<0||v>(k==4?2:1)?0:v;if(cheatV[k])PSPNativeMemLog("[CHEAT] %s=%d",kCheatKey[k],cheatV[k]);}return cheatV[k];}
-static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
+static const int kGenDef[]={1,1,0,1,1,1,1,1,1,1,1,1,0,0,2,0,0,0,1,1024,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1,6,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1};static int genV[sizeof kGenDef/sizeof kGenDef[0]];static bool genInit;
 static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kGenDef/sizeof kGenDef[0]);k++){int v=P3DS_CfgInt(mItems[33+k].key,kGenDef[k]);if(!strcmp(mItems[33+k].key,"log_max_kb"))v=v<=0?0:v<=512?1:v<=1024?2:3;if(!strcmp(mItems[33+k].key,"fps_tweaks"))v=v<=0?0:v>=2&&v<=7?v-1:0;
    if(!strcmp(mItems[33+k].key,"audio_gain")){static const int kG[7]={4,5,6,7,8,9,10};int b=6;for(int t=0;t<7;t++)if(abs(kG[t]-v)<abs(kG[b]-v))b=t;v=b;}
    if(v<0)v=0;if(v>=mItems[33+k].n)v=mItems[33+k].n-1;genV[k]=v;}}return genV[g];}
@@ -1852,7 +1854,8 @@ static const PAppTab kPTabs[kPTotalTabs]={
      {100,"Exp. Share: party","The Exp. Share gives experience to the whole party."},
      {106,"Low battery warning","Warns when the battery is low and saves the hunt file."},
      {120,"Tracker","Roamer and breeding tracker on the hunt page."}}},
- {28,{{23,"Reusable TMs","TMs are not used up when you teach a move."},
+ {29,{{23,"Reusable TMs","TMs are not used up when you teach a move."},
+     {135,"Event Pokemon w/o event","Darkrai, Shaymin, Arceus and the Rotom room work without the Mystery Gift items. The story conditions still apply."},
      {50,"Field moves w/o HM","Field moves like Cut and Surf work without a Pokemon that knows them."},
      {25,"Repel prompt","When a Repel runs out, asks if you want to use another."},
      {26,"IV/EV on summary","Shows IVs and EVs on the summary screen."},
