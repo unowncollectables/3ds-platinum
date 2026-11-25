@@ -1,6 +1,6 @@
 --- a/battle__battle_controller_player.c
 +++ b/battle__battle_controller_player.c
-@@ -284,6 +284,26 @@
+@@ -284,6 +284,97 @@
      BattleSystem_SetCommandSelectionFlags(battleSys, 0);
      BattleSystem_LoadFightOverlay(battleSys, TRUE);
  
@@ -18,16 +18,87 @@
 +            P3DS_CatchInfo[16] = BattleSystem_HasCaughtSpecies(battleSys, bm->species);
 +            P3DS_CatchInfo[17] = battleCtx->totalTurns;
 +            P3DS_CatchInfo[18] = Pokemon_IsShiny(mon); /* run 88 shiny_suite: the game's own shiny check */
++            P3DS_CatchInfo[19] = P3DS_CatchInfo[19] + 1; /* SoulSilver 0030: snapshot counter, the port reacts once per new snapshot */
 +            P3DS_CatchInfo[0] = 1;
 +        } else {
 +            P3DS_CatchInfo[0] = 0;
++        }
++    }
++    { /* SoulSilver 0031 trainer foe info: read-only snapshot of the opposing active Pokemon and party for the battle Y screen */
++        extern volatile int P3DS_FoeInfo[40];
++        BattleMon *fm = &battleCtx->battleMons[1];
++        if ((BattleSystem_GetBattleType(battleSys) & BATTLE_TYPE_TRAINER) && fm->curHP > 0) {
++            int i, n = BattleSystem_GetPartyCount(battleSys, 1);
++            int act = battleCtx->selectedPartySlot[1];
++            if (n > 6) {
++                n = 6;
++            }
++            P3DS_FoeInfo[2] = n;
++            P3DS_FoeInfo[3] = act;
++            P3DS_FoeInfo[4] = fm->species;
++            P3DS_FoeInfo[5] = fm->level;
++            P3DS_FoeInfo[6] = fm->curHP;
++            P3DS_FoeInfo[7] = fm->maxHP;
++            P3DS_FoeInfo[8] = fm->status;
++            P3DS_FoeInfo[9] = fm->ability;
++            P3DS_FoeInfo[10] = fm->heldItem;
++            for (i = 0; i < 4; i++) {
++                P3DS_FoeInfo[11 + i] = fm->moves[i];
++                P3DS_FoeInfo[15 + i] = fm->ppCur[i];
++            }
++            P3DS_FoeInfo[19] = fm->isShiny;
++            for (i = 0; i < 6; i++) {
++                Pokemon *pm = i < n ? BattleSystem_GetPartyPokemon(battleSys, 1, i) : NULL;
++                P3DS_FoeInfo[20 + 3 * i] = pm ? (int)Pokemon_GetValue(pm, MON_DATA_SPECIES, NULL) : 0;
++                P3DS_FoeInfo[21 + 3 * i] = pm ? (i == act ? fm->curHP : (int)Pokemon_GetValue(pm, MON_DATA_HP, NULL)) : 0;
++                P3DS_FoeInfo[22 + 3 * i] = pm ? (int)Pokemon_GetValue(pm, MON_DATA_MAX_HP, NULL) : 0;
++            }
++            P3DS_FoeInfo[1] = P3DS_FoeInfo[1] + 1;
++            P3DS_FoeInfo[0] = 1;
++        } else {
++            P3DS_FoeInfo[0] = 0;
++        }
++    }
++    { /* SoulSilver 0208 damage check: read-only snapshot of my active Pokemon vs the foe (singles only); the port does the maths */
++        extern volatile int P3DS_DmgInfo[32];
++        BattleMon *dm = &battleCtx->battleMons[0];
++        BattleMon *de = &battleCtx->battleMons[1];
++        if (!(BattleSystem_GetBattleType(battleSys) & BATTLE_TYPE_DOUBLES) && dm->curHP > 0 && de->curHP > 0) {
++            int i;
++            P3DS_DmgInfo[2] = dm->level;
++            P3DS_DmgInfo[3] = dm->attack;
++            P3DS_DmgInfo[4] = dm->spAttack;
++            P3DS_DmgInfo[5] = dm->speed;
++            P3DS_DmgInfo[6] = dm->status;
++            P3DS_DmgInfo[7] = dm->type1;
++            P3DS_DmgInfo[8] = dm->type2;
++            P3DS_DmgInfo[9] = de->level;
++            P3DS_DmgInfo[10] = de->defense;
++            P3DS_DmgInfo[11] = de->spDefense;
++            P3DS_DmgInfo[12] = de->speed;
++            P3DS_DmgInfo[13] = de->curHP;
++            P3DS_DmgInfo[14] = de->type1;
++            P3DS_DmgInfo[15] = de->type2;
++            P3DS_DmgInfo[16] = de->status;
++            P3DS_DmgInfo[17] = de->species;
++            P3DS_DmgInfo[30] = de->maxHP;
++            for (i = 0; i < 4; i++) {
++                u16 dmv = dm->moves[i];
++                P3DS_DmgInfo[18 + i] = dmv;
++                P3DS_DmgInfo[22 + i] = dmv ? (int)MoveTable_LoadParam(dmv, MOVEATTRIBUTE_TYPE) : 255;
++                P3DS_DmgInfo[26 + i] = dmv ? (int)MoveTable_LoadParam(dmv, MOVEATTRIBUTE_POWER) : 0;
++            }
++            P3DS_DmgInfo[1] = P3DS_DmgInfo[1] + 1;
++            P3DS_DmgInfo[0] = 1;
++        } else {
++            P3DS_DmgInfo[0] = 0;
 +        }
 +    }
 +
      battleCtx->command = BATTLE_CONTROL_COMMAND_SELECTION_INPUT;
  }
  
-@@ -2286,6 +2306,7 @@
+@@ -2286,6 +2377,7 @@
      if (ATTACKER_TURN_FLAGS.ppDecremented == FALSE && ATTACKER_TURN_FLAGS.struggling == FALSE) {
          ATTACKER_TURN_FLAGS.ppDecremented = 1;
  

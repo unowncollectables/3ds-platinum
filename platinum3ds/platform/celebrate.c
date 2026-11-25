@@ -32,7 +32,7 @@ static const char *const kEffName[] = { "none", "birthday sparkle", "fireworks",
 
 static unsigned T; /* frame counter, advanced on the left-eye call */
 static int onV = -1;
-int P3DS_CelebOn(void) { if (onV < 0) { onV = P3DS_CfgInt("celebrations", 0) != 0; PSPNativeMemLog("[CELEB] celebrations=%d (celeb_test=%d)", onV, P3DS_CfgInt("celeb_test", 0)); } return onV; }
+int P3DS_CelebOn(void) { if (onV < 0) { onV = P3DS_CfgInt("celebrations", 0) != 0; PSPNativeMemLog("[CELEB] celebrations=%d (celeb_test=%d)", onV, 0 /* celeb_test: debug option removed */); } return onV; }
 void P3DS_CelebSetOn(int v) { onV = v != 0; P3DS_CfgWrite("celebrations", onV); PSPNativeMemLog("[CELEB] celebrations=%d from settings", onV); }
 
 /* ---- which effect is active here and now ---- */
@@ -53,7 +53,7 @@ static int achFor(int e) {
 
 static int effectNow(int *placeOnly) {
   static int cached = E_NONE, cachedMap = -2, cachedDay = -1, lastLogged = -1, testV = -1;
-  if (testV < 0) testV = P3DS_CfgInt("celeb_test", 0);
+  if (testV < 0) testV = 0 /* celeb_test: debug option removed */;
   const int test = testV;
   if (test >= 1 && test <= 7) { *placeOnly = 0; if (lastLogged != test) { lastLogged = test; PSPNativeMemLog("[CELEB] celeb_test=%d forces '%s' on every map", test, kEffName[test]); } return test; }
   if (bdayN < 0) bdayLoad();
@@ -142,6 +142,7 @@ void P3DS_CelebDraw(unsigned *img, int eye) {
   if (!P3DS_InField || !P3DS_CelebOn()) { wasField = 0; return; }
   if (eye == 0) T++;
   int po = 0; const int e = effectNow(&po); if (e == E_NONE) return;
+  { extern void P3DS_TopTouch(void); P3DS_TopTouch(); }  /* direct screen: fetch the GPU-composed picture before drawing on it */
   const int sd = P3DS_StereoShiftNow(), par = eye ? -sd / 2 : sd / 2;
   { static int lastE, lastMap = -2; if (eye == 0) { if (e != lastE || P3DS_MmMap != lastMap || !wasField) { vOn = (e == E_BDAY); vT0 = T; } lastE = e; lastMap = P3DS_MmMap; wasField = 1; } }
   if (e == E_BDAY) drawVariant(img, par);

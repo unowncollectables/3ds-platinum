@@ -1,0 +1,104 @@
+--- a/pokemon_sprite.c
++++ b/pokemon_sprite.c
+@@ -450,6 +450,74 @@
+     return monSpriteMan;
+ }
+ 
++/* SoulSilver 0298 Black 2 sprites: draw sprite i from the platform's Black 2 frame instead of the 80x80 slot */
++typedef struct P3DSB2Pic { int texOff, sizeS, sizeT, w, h, ox, oy, height, scale256, pltt; } P3DSB2Pic;
++extern int SS3DS_B2Pic(int slot, int narc, int chr, int pal, const u16 *livePltt, P3DSB2Pic *out);
++static BOOL p3dsB2Draw(PokemonSpriteManager *m, int i)
++{
++    PokemonSprite *p = &m->sprites[i];
++    PokemonSpriteTransforms *d = &p->transforms;
++    P3DSB2Pic b;
++    int sx, sy, ax, ay, x0, y0, x1, y1, u0, v0, u1, v1, gl, hf;
++    if (!SS3DS_B2Pic(i, p->template.narcID, p->template.character, p->template.palette, m->plttRawData + PALETTE_SIZE * i, &b)) {
++        return FALSE;
++    }
++    if (d->partialDraw) {
++        sx = sy = 256;
++    } else {
++        sx = d->scaleX;
++        sy = d->scaleY;
++    }
++    hf = d->flipH;
++    if (sx < 0) { /* a negative scale flips the sprite */
++        sx = -sx;
++        hf = !hf;
++    }
++    if (sy < 0) {
++        sy = -sy;
++    }
++    /* the game's ground line: an 80x80 box centred on (xCenter, yCenter), moved down by the sprite height */
++    gl = ((40 - b.height) * sy) >> 8;
++    sx = (sx * b.scale256) >> 8;
++    sy = (sy * b.scale256) >> 8;
++    if (sx <= 0 || sy <= 0) {
++        return TRUE;
++    }
++    ax = d->xCenter + d->xOffset;
++    ay = d->yCenter + d->yOffset - p->shadow.height + gl;
++    x0 = ax - ((hf ? b.w - b.ox : b.ox) * sx >> 8);
++    y0 = ay - (b.oy * sy >> 8);
++    x1 = x0 + (b.w * sx >> 8);
++    y1 = y0 + (b.h * sy >> 8);
++    u0 = hf ? b.w : 0;
++    u1 = hf ? 0 : b.w;
++    v0 = 0;
++    v1 = b.h;
++    if (d->partialDraw) { /* the game's window over its own 80x80 box: clip our quad to it */
++        int wx0 = d->xCenter - 40 + d->drawXOffset + d->xOffset, wy0 = d->yCenter - 40 + d->drawYOffset + d->yOffset - p->shadow.height;
++        int wx1 = wx0 + d->drawWidth, wy1 = wy0 + d->drawHeight;
++        if (wx0 > x0) { u0 += hf ? -(wx0 - x0) : (wx0 - x0); x0 = wx0; }
++        if (wx1 < x1) { u1 -= hf ? -(x1 - wx1) : (x1 - wx1); x1 = wx1; }
++        if (wy0 > y0) { v0 += wy0 - y0; y0 = wy0; }
++        if (wy1 < y1) { v1 -= y1 - wy1; y1 = wy1; }
++        if (x1 <= x0 || y1 <= y0) {
++            return TRUE;
++        }
++    }
++    if (d->flipV) {
++        int t = v0;
++        v0 = v1;
++        v1 = t;
++    }
++    G3_TexImageParam(GX_TEXFMT_PLTT16, GX_TEXGEN_TEXCOORD, (GXTexSizeS)b.sizeS, (GXTexSizeT)b.sizeT, GX_TEXREPEAT_NONE, GX_TEXFLIP_NONE, GX_TEXPLTTCOLOR0_TRNS, b.texOff);
++    G3_TexPlttBase(b.pltt, GX_TEXFMT_PLTT16);
++    NNS_G2dDrawSpriteFast(x0, y0, d->zCenter + d->zOffset, x1 - x0, y1 - y0, u0, v0, u1, v1);
++    /* back to the game's shared sprite texture for the shadow and the next sprites */
++    G3_TexImageParam(m->imageProxy.attr.fmt, GX_TEXGEN_TEXCOORD, m->imageProxy.attr.sizeS, m->imageProxy.attr.sizeT, GX_TEXREPEAT_NONE, GX_TEXFLIP_NONE, m->imageProxy.attr.plttUse, m->charBaseAddr);
++    G3_TexPlttBase(m->plttBaseAddr + PLTT_OFFSET_CAST(i), m->imageProxy.attr.fmt);
++    return TRUE;
++}
++
+ void PokemonSpriteManager_DrawSprites(PokemonSpriteManager *monSpriteMan)
+ {
+     int width, height;
+@@ -489,7 +557,9 @@
+             G3_MaterialColorSpecEmi(GX_RGB(16, 16, 16), GX_RGB(0, 0, 0), FALSE);
+             G3_PolygonAttr(GX_LIGHTMASK_NONE, GX_POLYGONMODE_MODULATE, GX_CULL_NONE, monSpriteMan->sprites[i].polygonID, monSpriteMan->sprites[i].transforms.alpha, 0);
+ 
+-            if (monSpriteMan->sprites[i].transforms.partialDraw) {
++            if (p3dsB2Draw(monSpriteMan, i)) {
++                /* SoulSilver 0298: drawn from the Black 2 frame */
++            } else if (monSpriteMan->sprites[i].transforms.partialDraw) {
+                 u0 = sMonSpriteTextureCoords[i][monSpriteMan->sprites[i].currSpriteFrame][0] + monSpriteMan->sprites[i].transforms.drawXOffset;
+                 u1 = sMonSpriteTextureCoords[i][monSpriteMan->sprites[i].currSpriteFrame][0] + monSpriteMan->sprites[i].transforms.drawXOffset + monSpriteMan->sprites[i].transforms.drawWidth;
+                 v0 = sMonSpriteTextureCoords[i][monSpriteMan->sprites[i].currSpriteFrame][1] + monSpriteMan->sprites[i].transforms.drawYOffset;
+@@ -1448,6 +1518,15 @@
+                 monSpriteMan->plttRawDataUnfaded[j + PALETTE_SIZE * i] = rawPlttData[j];
+             }
+ 
++            { /* SoulSilver 0298 Black 2 sprites: the Black 2 palette in this slot, so fades and flashes act on it */
++                extern int SS3DS_B2Palette(int slot, int narc, int chr, int pal, u16 *dst16);
++                if (SS3DS_B2Palette(i, monSpriteMan->sprites[i].template.narcID, monSpriteMan->sprites[i].template.character, monSpriteMan->sprites[i].template.palette, monSpriteMan->plttRawData + PALETTE_SIZE * i)) {
++                    for (j = 0; j < PALETTE_SIZE; j++) {
++                        monSpriteMan->plttRawDataUnfaded[j + PALETTE_SIZE * i] = monSpriteMan->plttRawData[j + PALETTE_SIZE * i];
++                    }
++                }
++            }
++
+             Heap_Free(nclrFile);
+ 
+             if (monSpriteMan->sprites[i].shadow.plttSlot) {

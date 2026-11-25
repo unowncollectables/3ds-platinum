@@ -362,3 +362,36 @@ void WC_SplitCommit(const WcSplit *sp, u32 *center, u32 *strip) {
     memcpy(dRH[sp->eye], sp->rh, sizeof sp->rh); dValid[sp->eye] = 1;
     memcpy(center, cCenterA[sp->eye], 256 * 192 * 4); memcpy(strip, cStripA[sp->eye], 64 * 192 * 4);
 }
+
+/* ---- SoulSilver port additions (2026-11 sync): wide_boxes sprite strips and the sharp game text column map ---- */
+unsigned WC_StripHash(const u8 *R, const WcSrc *S) {
+    unsigned h = 2166136261u; const u32 dc = *(const u32 *)R;
+#define HM(v) (h = (h ^ (unsigned)(v)) * 16777619u)
+    HM(dc); for (int i = 0; i < 4; i++) HM(*(const u16 *)(R + 8 + i * 2));
+    for (int i = 0; i < 128; i++) { const u16 *a = S->oam + i * 4; if ((a[0] & 0x300) == 0x200) continue;
+        const unsigned shape = a[0] >> 14, size = a[1] >> 14; if (shape > 2) continue;
+        const int aff = (a[0] & 0x100) != 0, dbl = (a[0] & 0x300) == 0x300, width = SPW[shape][size], height = SPH[shape][size], bw = width * (dbl ? 2 : 1);
+        int x = a[1] & 0x1FF; if (x >= 256) x -= 512; if (x >= 0 && x + bw <= 256) continue;
+        if (x + bw <= -32 || x >= 288) continue;
+        HM(i); HM(a[0]); HM(a[1]); HM(a[2]);
+        if (aff) { const int grp = (a[1] >> 9) & 31; HM(S->oam[grp * 16 + 3]); HM(S->oam[grp * 16 + 7]); HM(S->oam[grp * 16 + 11]); HM(S->oam[grp * 16 + 15]); }
+        const int bpp8 = (a[0] & 0x2000) != 0;
+        if (bpp8) { for (int k = 0; k < 256; k++) HM(S->objpal[k]); } else { for (int k = 0; k < 16; k++) HM(S->objpal[(a[2] >> 12) * 16 + k]); }
+        const u32 tile = a[2] & 0x3FF; const int rowBytes = (width >> 3) * (bpp8 ? 64 : 32);
+        for (int ty = 0; ty < height; ty += 8) { u32 addr;
+            if (dc & 0x10) addr = (tile << ((dc >> 20) & 3)) + (u32)(((ty >> 3) * (width >> 3)) << (bpp8 ? 1 : 0)); else addr = tile + (u32)((ty >> 3) * 0x20);
+            addr = (addr << 5) & 0x3FFFF; const u32 *w = (const u32 *)(S->objvram + (addr & ~3u));
+            for (int k = 0; k < rowBytes / 4 && (addr & ~3u) + (unsigned)k * 4 + 4 <= 0x40000; k++) HM(w[k]); } }
+#undef HM
+    return h; }
+int WC_MapColumn(const WcPlan *p, int L, int y, int bgcol) {
+    if (!p || !p->valid || L < 0 || L > 3 || y < 0 || y > 191) return -1;
+    const WcLayer *l = &p->L[L]; if (!l->on || !l->text) return -1;
+    const int M = l->w * 8 - 1; short tmp[320]; const short *map; const uint8_t ri = p->rowOf[L][y];
+    if (ri != 255) map = p->rows[ri]; else { buildRow(p, L, y, tmp); map = tmp; }
+    int best = -1; bgcol &= M;
+    for (int X = 0; X < 320; X++) { if (map[X] != bgcol) continue;
+        if ((X > 0 && map[X - 1] == ((bgcol - 1) & M)) || (X < 319 && map[X + 1] == ((bgcol + 1) & M))) return X;
+        if (best < 0) best = X; }
+    return best;
+}

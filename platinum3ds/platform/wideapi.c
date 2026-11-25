@@ -1,4 +1,4 @@
-/* platinum3ds run 83: the game-side API for wide-screen layouts, as GabeSud0/pokeplatinum-3ds's patches
+/* ss3ds wide_layouts (2026-11-12), from platinum3ds run 83: the game-side API for wide-screen layouts, as GabeSud0/pokeplatinum-3ds's patches
  * (patches/pokeplatinum/0012-0030, GPL-3.0) call it; the declarations are from their
  * 3ds_port/nitro/include/nitro_port_wide.h. This file only RECORDS what the game says (windows, parts, splits) so
  * the renderer can read it; it draws nothing. wide_layouts=0 (default): NitroPort_WideScreenExtra() is 0, so every
@@ -19,7 +19,7 @@ static short splits[2][MAX_SPLITS * 7]; static int nSplits[2];
 
 static int on = -1;
 void P3DS_SetWideLayouts(int v) { on = v != 0; PSPNativeMemLog("[WIDE] wide_layouts=%d (settings)", on); }
-int P3DS_WideLayoutsOn(void) { if (on < 0) { on = P3DS_CfgInt("wide_layouts", 0) != 0; PSPNativeMemLog("[WIDE] run83 wide-layout API linked, wide_layouts=%d (%s %s)", on, __DATE__, __TIME__); } return on; }
+int P3DS_WideLayoutsOn(void) { if (on < 0) { on = P3DS_CfgInt("wide_layouts", 0) != 0; PSPNativeMemLog("[WIDE] wide_layouts=%d (real wide layouts for 2D screens)", on); } return on; }
 int NitroPort_WideScreenExtra(void) { return P3DS_WideLayoutsOn() ? 32 : 0; }
 int NitroPort_WidePictures(void) { return 0; }
 int NitroPort_SunShadows(void) { return 0; }
@@ -49,7 +49,7 @@ int __wrap_FS_LoadOverlay(int t, unsigned id) { const int r = __real_FS_LoadOver
 void __wrap_FS_StartOverlay(void *o) { __real_FS_StartOverlay(o); if (o) dexSet(((P3dsOvInfo *)o)->header.id, 1); }
 int __wrap_FS_UnloadOverlay(int t, unsigned id) { dexSet(id, 0); return __real_FS_UnloadOverlay(t, id); }
 void NitroPort_WideScreenParts(int engine, const short *rows, int count) {
-    { static int nl; if (nl < 40) { nl++; PSPNativeMemLog("[WIDE] parts set: engine %d, %d rows", engine, rows ? count : 0); } } /* run 95 diag */
+    { static int nl; if (nl < 60) { nl++; PSPNativeMemLog("[WIDE] layout parts: engine %d, %d rows", engine, rows ? count : 0); } }
     if (engine < 0 || engine > 1) return;
     if (!rows || count <= 0) { nParts[engine] = 0; return; }
     if (count > MAX_PARTS) count = MAX_PARTS;

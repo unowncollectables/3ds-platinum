@@ -1,7 +1,7 @@
 /* online trading M4 (docs/WIRELESS.md Option B; GTS first): 3DS sockets for the game's own Wi-Fi Connection code.
  * pspoke already links cybervisi0n's libntrwifi (CPS TCP/IP) and libntrdwc (login, GTS); patch 0137 builds them with the
  * Linux socket backend (real BSD sockets plus a select thread). That backend needs three things from the platform:
- *   1. sockets: socInit with a 0x100000 byte aligned buffer (P3DS_NetInit, called from wm_uds.c when wireless=2),
+ *   1. sockets: socInit with a 0x100000 byte aligned buffer (P3DS_NetInit, opened at boot and on the first online call, closed while a local wireless session runs (wm_uds.c)),
  *   2. the local IP: getifaddrs() below (the 3DS's own Wi-Fi connection, so WPA2 works; the IP is read by connecting a UDP
  *      socket towards the DNS server and asking getsockname, which needs no extra libctru calls),
  *   3. the DNS server: the community Wi-Fi Connection DNS answers nas/gamestats2/gpcm with the revival servers' addresses,
@@ -14,6 +14,7 @@
  * 5. the cheat gate: online mode is refused while any cheat_* option is on (no sockets, no identity, no traffic).
  * Nothing here touches the save. Log tag [NET]; every step is flushed to the SD card at once. */
 #include <stdarg.h>
+#include <errno.h>
 #include <3ds.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,9 +32,30 @@ extern int P3DS_CfgInt(const char *, int);
 extern int P3DS_Cheat(int);        /* render3ds.cpp: cheat_money .. cheat_candy, k = 0..5 */
 extern int P3DS_CheatNoEncCfg(void);
 extern unsigned long CPSDnsIp[2]; /* libntrwifi cps; u32 there, 4 bytes on this ABI */
+/* GTS network debug logs ([SOC] [LOGIN] [CPS] [GHTTP] [DNS]) are off now that the GTS chain is proven on hardware
+   (2026-11-05, owner confirmed 2026-11-18). Off by default: arguments are still compiled (if (0)), so no behaviour or warnings change.
+   Build with -DSS3DS_NET_LOG to turn them back on. */
+#ifdef SS3DS_NET_LOG
 #define NLOG(...) do { PSPNativeMemLog(__VA_ARGS__); P3DS_LogFlushSync(); } while (0)
+#else
+#define NLOG(...) do { if (0) PSPNativeMemLog(__VA_ARGS__); } while (0)
+#endif
+/* Failure reasons stay on even with the chatter off: one short line per problem (capped), so a failed GTS visit explains itself in log.txt. */
+#define FLOG(...) do { static unsigned fl_; if (fl_++ < 12) { PSPNativeMemLog(__VA_ARGS__); P3DS_LogFlushSync(); } } while (0)
 
 #define DEFAULT_DNS "178.62.43.212"
+#define STARME_DNS "161.35.72.83"
+#include "ss3ds_gts_preview.h"
+
+int P3DS_GtsPickerEnabled(void)
+{
+    return P3DS_CfgInt("gts_picker", 0) != 0;
+}
+
+int P3DS_GtsStarMeSelected(void)
+{
+    return P3DS_GtsPickerEnabled() && P3DS_CfgInt("gts_server", 0) == 1;
+}
 #define SOC_BUF_SIZE 0x100000
 
 static int sState; /* 0 untried, 1 sockets up, -1 failed */
@@ -62,7 +84,11 @@ int P3DS_OnlineCheatBlocked(void)
 
 int P3DS_NetInit(void)
 {
-    if (sState) return sState > 0;
+    static u64 sFailedAt;
+    if (sState > 0) return 1;
+    /* Auto wireless: a failed start (Wi-Fi switched off) is tried again after 3 s, so turning Wi-Fi on mid-game works. */
+    if (sState < 0) { if (osGetTime() - sFailedAt < 3000) return 0; sState = 0; }
+    sFailedAt = osGetTime();
     if (P3DS_OnlineCheatBlocked()) return 0; /* sState stays 0: re-checked next call, so turning the cheat off works after a restart of the game */
     sState = -1;
     u32 wifi = 0;
@@ -85,7 +111,8 @@ int P3DS_NetInit(void)
         return 0;
     }
     sState = 1;
-    atexit(netExit);
+    PSPNativeMemLog("[NET] auto wireless: sockets up (online ready)");
+    { static int once; if (!once) { once = 1; atexit(netExit); } }
     return 1;
 }
 
@@ -99,11 +126,17 @@ struct ifaddrs {
 };
 
 static in_addr_t gDns; /* network order */
+static int dnsUsesStarMe;
 
 static void setDns(void)
 {
     char dns[64];
-    if (!P3DS_CfgStr("wifi_dns", dns, sizeof dns) || !dns[0]) strcpy(dns, DEFAULT_DNS);
+    dnsUsesStarMe = P3DS_GtsStarMeSelected();
+    if (dnsUsesStarMe) {
+        strcpy(dns, STARME_DNS);
+    } else if (!P3DS_CfgStr("wifi_dns", dns, sizeof dns) || !dns[0]) {
+        strcpy(dns, DEFAULT_DNS);
+    }
     in_addr_t a = inet_addr(dns);
     if (a == (in_addr_t)-1) {
         NLOG("[NET] wifi_dns=%s is not an IPv4 address, using %s", dns, DEFAULT_DNS);
@@ -160,11 +193,31 @@ struct AuthWiFiId { unsigned long long uId; unsigned long long notAttestedId; un
 static unsigned long long sAdoptedUid;
 static int sAdopted;
 
-static int onlineMode(void) { return P3DS_CfgInt("wireless", 0) == 2; }
+/* Auto wireless (2026-11-20): online whenever the game is not in a local WM session (wm_uds.c); no setting. */
+extern int P3DS_LocalWirelessActive(void);
+static int onlineMode(void) { return !P3DS_LocalWirelessActive(); }
+
+static int starMeOnline(void)
+{
+    return onlineMode() && P3DS_GtsStarMeSelected();
+}
+
+/* DWC_ACC_USERDATA_BUFSIZE in the linked NitroDWC SDK. */
+enum { STARME_DWC_BYTES = 64, STARME_GAME_CODE = 0x4144414A };
+static unsigned char sStarMeUserData[STARME_DWC_BYTES] __attribute__((aligned(32)));
+static unsigned previewTrainer, sStarMeTrainer;
+static int previewHasTrainer, sStarMeReady;
+
+static int starMeReadyForTrainer(void)
+{
+    return previewHasTrainer && sStarMeReady && sStarMeTrainer == previewTrainer;
+}
 
 int __wrap_DWC_CheckValidConsole(const void *userData)
 {
     static int told;
+    if (starMeOnline())
+        return previewHasTrainer && !P3DS_OnlineCheatBlocked() && P3DS_NetInit();
     if (userData && onlineMode() && !P3DS_OnlineCheatBlocked() && P3DS_NetInit() && __real_DWC_CheckHasProfile(userData)) {
         unsigned long long uid = DWCi_Acc_GetUserId((const char *)userData + 16);
         if (!sAdopted || sAdoptedUid != uid) {
@@ -184,6 +237,21 @@ int __wrap_DWC_CheckValidConsole(const void *userData)
 void __wrap_DWC_Auth_GetId(void *id)
 {
     __real_DWC_Auth_GetId(id);
+    if (starMeOnline()) {
+        if (starMeReadyForTrainer()) {
+            struct AuthWiFiId *a = id;
+            if (__real_DWC_CheckHasProfile(sStarMeUserData)) {
+                a->uId = DWCi_Acc_GetUserId(sStarMeUserData + 16);
+                a->flg = 1;
+            } else {
+                /* Keep the pending profile's console ID stable across restarts. */
+                unsigned long long uid = DWCi_Acc_GetUserId(sStarMeUserData + 4);
+                if (a->flg) a->uId = uid;
+                else a->notAttestedId = uid;
+            }
+        }
+        return;
+    }
     if (sAdopted && onlineMode()) {
         struct AuthWiFiId *a = id;
         a->uId = sAdoptedUid;
@@ -198,7 +266,9 @@ int __wrap_DWC_CheckHasProfile(const void *userData)
 {
     static int told;
     int real = __real_DWC_CheckHasProfile(userData);
-    if (userData) sGameUd = userData;
+    if (userData && userData != sStarMeUserData) sGameUd = userData;
+    if (starMeOnline())
+        return previewHasTrainer && !P3DS_OnlineCheatBlocked() && P3DS_NetInit();
     if (!told) {
         told = 1;
         NLOG("[NET] save has a Wi-Fi profile: %s%s", real ? "yes" : "no", (!real && onlineMode() && !P3DS_OnlineCheatBlocked()) ? " (online mode: connection task allowed anyway, the login will create one)" : "");
@@ -215,16 +285,15 @@ int __wrap_DWC_CheckHasProfile(const void *userData)
  * by asking the community DNS (wifi_dns, default as above) directly over UDP, because the system DNS knows nothing of these hosts.
  * Online mode only, never with a cheat on. Log tag [GHTTP]. Plain GET only, nothing is POSTed, nothing touches the save. */
 #include <poll.h>
-#include <errno.h>
 #include <fcntl.h>
 
 static in_addr_t ghDnsAddr(void)
 {
-    if (!gDns) setDns();
+    if (!gDns || dnsUsesStarMe != P3DS_GtsStarMeSelected()) setDns();
     return gDns;
 }
 
-static int ghResolve(const char *host, in_addr_t *out)
+static int ghResolve(const char *host, in_addr_t *out, in_addr_t *resolver)
 {
     unsigned char q[300], r[600];
     int n = 0, fd;
@@ -238,6 +307,7 @@ static int ghResolve(const char *host, in_addr_t *out)
     fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
     if (fd < 0) return -2;
     struct sockaddr_in to; memset(&to, 0, sizeof to); to.sin_family = AF_INET; to.sin_port = htons(53); to.sin_addr.s_addr = ghDnsAddr();
+    if (resolver) *resolver = to.sin_addr.s_addr;
     int got = -3;
     for (int tries = 0; tries < 3 && got < 0; tries++) {
         if (sendto(fd, q, n, 0, (struct sockaddr *)&to, sizeof to) < 0) { got = -4; break; }
@@ -260,8 +330,111 @@ static int ghResolve(const char *host, in_addr_t *out)
     return -6;
 }
 
+/* A separate cache keeps the most recent server-confirmed status across soft
+ * resets. Store only the display fields, keyed to the save's trainer ID. */
+void P3DS_GtsPreviewTrainer(unsigned trainerId)
+{
+    previewTrainer = trainerId;
+    previewHasTrainer = 1;
+}
+
+static void previewPath(char *path, size_t size, unsigned trainer, int server)
+{
+    snprintf(path, size, "sdmc:/3ds/platinum3ds/gts-preview-%08x-%d.txt", trainer, server);
+}
+
+static int previewValid(GtsPreview p)
+{
+    return p.state <= GTS_PREVIEW_PICKUP && p.species <= 493 &&
+           p.level <= 100 && p.wanted <= 493 &&
+           ((p.species == 0 && p.level == 0 && p.wanted == 0) ||
+            (p.species != 0 && p.level != 0 && p.state == GTS_PREVIEW_OFFERED));
+}
+
+static GtsPreview previewRead(unsigned trainer, int server)
+{
+    char path[80];
+    previewPath(path, sizeof path, trainer, server);
+    GtsPreview p = {0};
+    FILE *f = fopen(path, "r");
+    if (f) {
+        if (fscanf(f, "%3u %3u %3u %3u", &p.state, &p.species, &p.level, &p.wanted) != 4 ||
+            !previewValid(p)) p = (GtsPreview){0};
+        fclose(f);
+    }
+    return p;
+}
+
+GtsPreview P3DS_GtsPreviewRead(int server)
+{
+    if (!previewHasTrainer || (server != 0 && server != 1)) return (GtsPreview){0};
+    return previewRead(previewTrainer, server);
+}
+
+static void previewWrite(unsigned trainer, int server, GtsPreview p)
+{
+    GtsPreview old = previewRead(trainer, server);
+    if (old.state == p.state && old.species == p.species &&
+        old.level == p.level && old.wanted == p.wanted) return;
+
+    char path[80], temp[84];
+    previewPath(path, sizeof path, trainer, server);
+    snprintf(temp, sizeof temp, "%s.tmp", path);
+    FILE *f = fopen(temp, "w");
+    if (!f) return;
+    int written = fprintf(f, "%u %u %u %u\n", p.state, p.species, p.level, p.wanted);
+    int closed = fclose(f);
+    /* the SD card refuses a rename onto an existing file: drop the old one first */
+    if (written < 0 || closed != 0 || (remove(path), rename(temp, path)) != 0) {
+        remove(temp);
+        NLOG("[GTS] preview cache write failed");
+    }
+}
+
+static int previewEndpoint(const char *url, const char *name)
+{
+    const char prefix[] = "http://gamestats2.gs.nintendowifi.net/pokemondpds/worldexchange/";
+    if (strncmp(url, prefix, sizeof prefix - 1) != 0) return 0;
+    const char *endpoint = url + sizeof prefix - 1;
+    size_t n = strlen(name);
+    return strncmp(endpoint, name, n) == 0 && (endpoint[n] == '?' || endpoint[n] == '\0');
+}
+
+static void previewObserve(unsigned trainer, int server, const char *url,
+                           const unsigned char *body, int len)
+{
+    if (server != 0 && server != 1) return;
+    const int get = previewEndpoint(url, "get.asp");
+    const int result = previewEndpoint(url, "result.asp");
+    if ((get || result) && len == 292) {
+        /* Poké Classic GtsRecord4 metadata follows the 236-byte Pokémon data. */
+        if (body[0x121] == 1) {
+            previewWrite(trainer, server, (GtsPreview){.state = GTS_PREVIEW_PICKUP});
+        } else if (get && body[0x121] == 0) {
+            GtsPreview p = {
+                .species = body[0xec] | (unsigned)body[0xed] << 8,
+                .level = body[0xef],
+                .wanted = body[0xf0] | (unsigned)body[0xf1] << 8,
+                .state = GTS_PREVIEW_OFFERED,
+            };
+            if (p.species && previewValid(p)) previewWrite(trainer, server, p);
+        }
+    } else if (len == 2 && body[1] == 0) {
+        if (((get || result) && body[0] == 5) ||
+            (body[0] == 1 && (previewEndpoint(url, "return.asp") ||
+                              previewEndpoint(url, "delete.asp")))) {
+            previewWrite(trainer, server, (GtsPreview){0});
+        } else if ((result && body[0] == 4) ||
+                   (body[0] == 1 && previewEndpoint(url, "post_finish.asp"))) {
+            GtsPreview old = previewRead(trainer, server);
+            if (old.state != GTS_PREVIEW_OFFERED || body[0] == 1)
+                previewWrite(trainer, server, (GtsPreview){.state = GTS_PREVIEW_OFFERED});
+        }
+    }
+}
+
 #define GH_MAX 16384 /* run 100: was 1024, which cut the GTS search listing short */
-static struct { volatile int state; /* 0 idle, 1 running, 2 done */ char url[2048]; char body[GH_MAX]; int len, result; void *cb, *ud; Thread th; } gh;
+static struct { volatile int state; /* 0 idle, 1 running, 2 done */ char url[2048]; char body[GH_MAX]; int len, result; void *cb, *ud; Thread th; unsigned previewTrainer; int previewServer, previewEnabled; } gh;
 
 static void ghWork(void *arg)
 {
@@ -272,13 +445,18 @@ static void ghWork(void *arg)
     int hl = sl ? (int)(sl - u) : (int)strlen(u);
     if (hl > 0 && hl < (int)sizeof host) {
         memcpy(host, u, hl); host[hl] = 0; snprintf(path, sizeof path, "%s", sl ? sl : "/");
-        in_addr_t ip = 0; int rr = ghResolve(host, &ip);
+        in_addr_t ip = 0, resolver = 0;
+        int rr = ghResolve(host, &ip, &resolver);
+        if (gh.previewEnabled && rr == 0) {
+            if (resolver == inet_addr(DEFAULT_DNS)) gh.previewServer = 0;
+            if (resolver == inet_addr(STARME_DNS)) gh.previewServer = 1;
+        }
         NLOG("[GHTTP] %s -> %s (%s)", host, rr == 0 ? inet_ntoa(*(struct in_addr *)&ip) : "lookup failed", rr == 0 ? "ok" : "err");
         if (rr == 0) {
             int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
             struct sockaddr_in sa; memset(&sa, 0, sizeof sa); sa.sin_family = AF_INET; sa.sin_port = htons(80); sa.sin_addr.s_addr = ip;
             if (fd >= 0 && connect(fd, (struct sockaddr *)&sa, sizeof sa) == 0) {
-                char req[2300]; int rl = snprintf(req, sizeof req, "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: GameSpyHTTP/1.0\r\nConnection: close\r\n\r\n", path, host);
+                char req[2300]; int rl = snprintf(req, sizeof req, "GET %s HTTP/1.1\r\nUser-Agent: GameSpyHTTP/1.0\r\nHost: %s\r\nAccept: */*\r\nConnection: close\r\n\r\n", path, host);
                 static char resp[GH_MAX + 2048]; int tot = 0; /* run 100: static, the worker stack is 32 KiB */
                 if (send(fd, req, rl, 0) == rl) {
                     for (;;) {
@@ -292,12 +470,17 @@ static void ghWork(void *arg)
                     }
                 }
                 resp[tot] = 0;
-                NLOG("[GHTTP] got %d bytes, status line: %.40s", tot, tot > 0 ? resp : "(none)");
+                if (tot > 0 && !(strncmp(resp, "HTTP/", 5) == 0 && strstr(resp, " 200") && strstr(resp, " 200") < resp + 16)) {
+                    /* non-200 reply (2026-11-06: nginx 400 from the GTS host): show headers and body, control chars as '.' */
+                    char dump[420]; int n = tot < (int)sizeof dump - 1 ? tot : (int)sizeof dump - 1;
+                    for (int i = 0; i < n; i++) dump[i] = (resp[i] == '\r' || resp[i] == '\n') ? '|' : (resp[i] < 32 || resp[i] > 126 ? '.' : resp[i]);
+                    dump[n] = 0; NLOG("[GHTTP] non-200 reply: %s", dump);
+                    NLOG("[GHTTP] request was: GET %s HTTP/1.1 Host: %s", path, host);
+                }
                 char *body = strstr(resp, "\r\n\r\n");
                 if (tot > 12 && strncmp(resp, "HTTP/", 5) == 0 && strstr(resp, " 200") && strstr(resp, " 200") < resp + 16 && body) {
                     body += 4; len = tot - (int)(body - resp); if (len > GH_MAX - 1) len = GH_MAX - 1;
                     memcpy(gh.body, body, len); gh.body[len] = 0; result = 0;
-                    NLOG("[GHTTP] ok, body %d bytes", len);
                 }
             } else NLOG("[GHTTP] connect failed (errno %d)", errno);
             if (fd >= 0) close(fd);
@@ -312,7 +495,9 @@ int P3DS_GhttpStart(const char *url, void *cb, void *ud)
     if (!url || !onlineMode() || P3DS_OnlineCheatBlocked() || !P3DS_NetInit()) { NLOG("[GHTTP] not started (online mode off, cheat on, or sockets down): %s", url ? url : "(null)"); return -5; }
     if (gh.state != 0) { NLOG("[GHTTP] busy, refused: %s", url); return -5; }
     snprintf(gh.url, sizeof gh.url, "%s", url); gh.cb = cb; gh.ud = ud; gh.len = 0; gh.result = 5; gh.state = 1;
-    NLOG("[GHTTP] GET %s", gh.url);
+    gh.previewEnabled = P3DS_GtsPickerEnabled() && previewHasTrainer;
+    gh.previewTrainer = previewTrainer;
+    gh.previewServer = -1;
     gh.th = threadCreate(ghWork, NULL, 0x8000, 0x30, -2, false);
     if (!gh.th) { gh.state = 0; NLOG("[GHTTP] thread create failed"); return -5; }
     return 1;
@@ -326,7 +511,9 @@ int P3DS_GhttpThink(void)
         void *ud = gh.ud; int len = gh.len, res = gh.result;
         threadJoin(gh.th, 2000000000ULL); threadFree(gh.th);
         gh.th = NULL; gh.state = 0; /* idle first: the callback starts the next request */
-        NLOG("[GHTTP] callback result %d len %d", res, len);
+        if (res == 0 && gh.previewServer >= 0)
+            previewObserve(gh.previewTrainer, gh.previewServer, gh.url,
+                           (const unsigned char *)gh.body, len);
         if (cb) cb(res == 0 ? gh.body : NULL, len, res, ud);
     }
     return 1;
@@ -339,19 +526,57 @@ int P3DS_GhttpThink(void)
  * once per frame. The game's netcheck poll (ov00_021ECDC8, polled every frame right before it reads the profile id) is held at "running"
  * until the login finishes or fails (30 s), so the game's next step (state 0x10) sees the real gs_profile_id written by the library.
  * The NAS step uses plain http://nas.nintendowifi.net/ac (libntrdwc skips the cert check for a custom NAS URL). Online mode only, no cheats.
- * The login writes the profile into the save's userdata (that is how a real DS stores it); this is a test save, back it up first.
+ * Poké Classic uses the save's userdata. StarMe uses a separate profile owned by the port.
  * Log tag [LOGIN]. */
 extern void DWC_SetMemFunc(void *(*)(int, unsigned, int), void (*)(int, void *, unsigned));
-extern void DWC_Init(void *work);
+extern int DWC_Init(void *work);
 extern int DWC_CheckUserData(const void *ud);
 extern void DWC_CreateUserData(void *ud, unsigned gamecode);
-extern int DWC_InitFriendsMatch(void *ctl, void *ud, int productID, const char *gameName, const char *secretKey, int sendBufSize, int recvBufSize, void *friendList, int friendListLen);
+extern void DWC_InitFriendsMatch(void *ctl, void *ud, int productID, const char *gameName, const char *secretKey, int sendBufSize, int recvBufSize, void *friendList, int friendListLen);
 extern int DWC_LoginAsync(const unsigned short *name, const char *reserved, void (*cb)(int, int, void *), void *param);
 extern void DWC_ProcessFriendsMatch(void);
 extern int DWC_GetState(void);
 extern int DWC_GetLastError(int *code);
 extern void DWC_Auth_SetCustomNas(const char *url);
 extern int DWC_GetInetStatus(void);
+extern void DWC_ClearDirtyFlag(void *ud);
+extern void DWC_ShutdownFriendsMatch(void);
+
+static void starMeProfilePath(char *path, size_t size, const char *slot)
+{
+    snprintf(path, size, "sdmc:/3ds/platinum3ds/starme-wfc-%08x-%s.bin", sStarMeTrainer, slot);
+}
+
+/* Prefer the authenticated profile. Keep the pre-login identity in a
+ * different file so interrupted enrollment can retry the same account. */
+static int starMeReadProfile(const char *slot, int authenticated)
+{
+    char path[96];
+    starMeProfilePath(path, sizeof path, slot);
+    FILE *f = fopen(path, "rb");
+    if (!f) return errno == ENOENT ? 0 : -1;
+    size_t n = fread(sStarMeUserData, 1, sizeof sStarMeUserData, f);
+    int trailing = fgetc(f);
+    int valid = !ferror(f) && trailing == EOF && n == sizeof sStarMeUserData;
+    fclose(f);
+    return valid && DWC_CheckUserData(sStarMeUserData) &&
+        __real_DWC_CheckHasProfile(sStarMeUserData) == authenticated ? 1 : -1;
+}
+
+static int starMeWriteProfile(const char *slot)
+{
+    char path[96], temporary[100];
+    starMeProfilePath(path, sizeof path, slot);
+    snprintf(temporary, sizeof temporary, "%s.tmp", path);
+    FILE *f = fopen(temporary, "wb");
+    if (!f) return 0;
+    int ok = fwrite(sStarMeUserData, 1, sizeof sStarMeUserData, f) == sizeof sStarMeUserData;
+    if (fflush(f) != 0 || fsync(fileno(f)) != 0) ok = 0;
+    if (fclose(f) != 0) ok = 0;
+    if (ok && (remove(path), rename(temporary, path)) == 0) return 1;
+    remove(temporary);
+    return 0;
+}
 
 static unsigned char sLoginWork[16384] __attribute__((aligned(32)));
 static unsigned char sLoginCtl[65536] __attribute__((aligned(32)));
@@ -359,34 +584,127 @@ static unsigned char sLoginFriends[2048] __attribute__((aligned(32)));
 static volatile int sLoginDone; /* 0 not started, 1 running, 2 ok, 3 failed */
 static volatile int sLoginPid, sLoginErr;
 static unsigned sLoginFrames;
+static int sLoginStarMe, sLoginInitialized, sStarMeWasAuthenticated;
+static unsigned sLoginTrainer;
+
+int P3DS_PrepareStarMeIdentity(void)
+{
+    if (!starMeOnline()) return 1;
+    if (!previewHasTrainer || P3DS_OnlineCheatBlocked() || !P3DS_NetInit()) return 0;
+    if (starMeReadyForTrainer()) return 1;
+
+    sStarMeReady = 0;
+    sStarMeTrainer = previewTrainer;
+    int loaded = starMeReadProfile("profile", 1);
+    if (loaded == 0) loaded = starMeReadProfile("pending", 0);
+    if (loaded < 0) {
+        /* A damaged file would block StarMe for good. Keep it as .bad and start a fresh profile. */
+        static const char *const slots[] = { "profile", "pending" };
+        for (int i = 0; i < 2; i++) {
+            char path[96], bad[100];
+            starMeProfilePath(path, sizeof path, slots[i]);
+            snprintf(bad, sizeof bad, "%s.bad", path);
+            remove(bad);
+            rename(path, bad);
+        }
+        NLOG("[LOGIN] StarMe profile unreadable: kept as .bad, a new profile is created");
+        loaded = 0;
+    }
+    if (loaded == 0) {
+        DWC_Init(sLoginWork);
+        DWC_CreateUserData(sStarMeUserData, STARME_GAME_CODE);
+        DWC_ClearDirtyFlag(sStarMeUserData);
+        if (!starMeWriteProfile("pending")) {
+            NLOG("[LOGIN] StarMe initial profile could not be saved");
+            return 0;
+        }
+        NLOG("[LOGIN] StarMe separate profile created");
+    } else {
+        NLOG("[LOGIN] StarMe separate profile loaded (%s)",
+             __real_DWC_CheckHasProfile(sStarMeUserData) ? "authenticated" : "pending");
+    }
+    sStarMeReady = 1;
+    return 1;
+}
+
+void P3DS_LoginStart(void);
+
+/* GTS login runs on the game thread and can block for many seconds (DNS, connects). The main3ds.c watchdog reads this so it does not
+ * mistake a slow login for a dead game and take over the bottom screen (red box + its own buffer swaps = broken, jumpy picture). */
+volatile int P3DS_NetBusy;
+
+void P3DS_LoginEnd(void)
+{
+    if (sLoginInitialized) DWC_ShutdownFriendsMatch();
+    sLoginInitialized = 0;
+    sLoginDone = 0;
+    sLoginPid = 0;
+    sLoginFrames = 0;
+}
+
+void P3DS_LoginBegin(void)
+{
+    P3DS_NetBusy++;
+    const int starMe = starMeOnline();
+    if (sLoginDone > 1 && (sLoginStarMe != starMe || starMe)) P3DS_LoginEnd();
+    P3DS_LoginStart();
+    P3DS_NetBusy--;
+}
 
 static void loginCb(int err, int pid, void *param)
 {
     (void)param;
     sLoginErr = err; sLoginPid = pid;
     NLOG("[LOGIN] callback: error %d, profile id %d", err, pid);
-    if (err == 0 && pid > 0) sLoginDone = 2; else sLoginDone = 3;
+    if (err != 0 || pid <= 0) {
+        FLOG("[GTS] login failed: error %d, profile id %d (%s server, %s)", err, pid, sLoginStarMe ? "StarMe" : "Poke Classic", sLoginStarMe && !sStarMeWasAuthenticated ? "new profile" : "existing profile");
+        if (sLoginStarMe && !sStarMeWasAuthenticated) sStarMeReady = 0;
+        sLoginDone = 3;
+        return;
+    }
+    if (sLoginStarMe && !sStarMeWasAuthenticated) {
+        DWC_ClearDirtyFlag(sStarMeUserData);
+        if (!DWC_CheckUserData(sStarMeUserData) ||
+            !__real_DWC_CheckHasProfile(sStarMeUserData) ||
+            !starMeWriteProfile("profile")) {
+            NLOG("[LOGIN] StarMe profile could not be saved; GTS login stopped");
+            sStarMeReady = 0;
+            sLoginDone = 3;
+            return;
+        }
+        NLOG("[LOGIN] StarMe profile saved outside the game save");
+    }
+    sLoginDone = 2;
 }
 
 /* netcheck start (ov00_021ECD04) */
 void P3DS_LoginStart(void)
 {
     if (sLoginDone != 0) return;
-    if (!sGameUd || !onlineMode() || P3DS_OnlineCheatBlocked() || DWC_GetInetStatus() != 4) {
+    sLoginStarMe = starMeOnline();
+    sLoginTrainer = previewTrainer;
+    if ((!sLoginStarMe && !sGameUd) || !onlineMode() || P3DS_OnlineCheatBlocked() || DWC_GetInetStatus() != 4 ||
+        !P3DS_PrepareStarMeIdentity()) {
         NLOG("[LOGIN] not started (userdata %p, online %d, inet %d)", sGameUd, onlineMode(), DWC_GetInetStatus());
+        FLOG("[GTS] login not started (%s server, userdata %s, online %d, cheats %d, inet status %d, identity ready %d)", sLoginStarMe ? "StarMe" : "Poke Classic", sGameUd ? "seen" : "none", onlineMode(), P3DS_OnlineCheatBlocked(), DWC_GetInetStatus(), sStarMeReady);
         sLoginDone = 3; return;
     }
-    void *ud = (void *)sGameUd;
+    void *ud = sLoginStarMe ? (void *)sStarMeUserData : (void *)sGameUd;
+    sStarMeWasAuthenticated = sLoginStarMe && __real_DWC_CheckHasProfile(ud);
     int okud = DWC_CheckUserData(ud);
     unsigned gid = *(const unsigned *)((const unsigned char *)ud + 0x1c);
-    NLOG("[LOGIN] starting on the save's userdata %p (valid %d, gs profile id %u)", ud, okud, gid);
-    if (!okud) { DWC_CreateUserData(ud, 0x4144414Au); NLOG("[LOGIN] userdata was invalid: created a fresh one"); }
+    NLOG("[LOGIN] starting with %s userdata (valid %d, gs profile id %u)",
+         sLoginStarMe ? "separate StarMe" : "the game's save", okud, gid);
+    if (!okud && !sLoginStarMe) {
+        DWC_CreateUserData(ud, STARME_GAME_CODE);
+        NLOG("[LOGIN] save userdata was invalid: created a fresh one");
+    }
     DWC_Auth_SetCustomNas("http://nas.nintendowifi.net/ac");
     DWC_Init(sLoginWork);
-    int r = DWC_InitFriendsMatch(sLoginCtl, ud, 0x29E7, "pokemondpds", "1vTlwb", 0, 0, sLoginFriends, 0x20);
-    NLOG("[LOGIN] InitFriendsMatch -> %d", r);
+    DWC_InitFriendsMatch(sLoginCtl, ud, 0x29E7, "pokemondpds", "1vTlwb", 0, 0, sLoginFriends, 0x20);
+    sLoginInitialized = 1;
     static const unsigned short nm[] = { 'T', 'e', 's', 't', 0 };
-    r = DWC_LoginAsync(nm, NULL, loginCb, NULL);
+    int r = DWC_LoginAsync(nm, NULL, loginCb, NULL);
     NLOG("[LOGIN] LoginAsync -> %d (state %d)", r, DWC_GetState());
     sLoginDone = r ? 1 : 3;
 }
@@ -395,14 +713,17 @@ void P3DS_LoginStart(void)
 int P3DS_LoginPoll(void)
 {
     static int lastState = -99;
+    P3DS_NetBusy++;
     if (sLoginDone == 0) P3DS_LoginStart();
     if (sLoginDone == 1) {
         DWC_ProcessFriendsMatch();
         int st = DWC_GetState();
         if (st != lastState) { int code = 0; int e = DWC_GetLastError(&code); NLOG("[LOGIN] state %d (last error %d code %d)", st, e, code); lastState = st; }
-        if (++sLoginFrames > 30 * 30) { NLOG("[LOGIN] gave up after 30 s"); sLoginDone = 3; }
+        if (++sLoginFrames > 30 * 30) { NLOG("[LOGIN] gave up after 30 s"); { int c = 0, e = DWC_GetLastError(&c); FLOG("[GTS] login gave up after 30 s (%s server, DWC state %d, last error %d code %d)", sLoginStarMe ? "StarMe" : "Poke Classic", DWC_GetState(), e, c); } sLoginDone = 3; }
     }
+    P3DS_NetBusy--;
     if (sLoginDone == 1) return 1;
+    if (sLoginStarMe) return sLoginDone == 2 ? 3 : 4;
     if (sLoginDone == 2) { static int told; if (!told) { told = 1; NLOG("[LOGIN] done, profile id %d is now in the save's userdata", sLoginPid); } return 3; }
     { static int told; if (!told) { told = 1; NLOG("[LOGIN] failed or skipped: continuing without a profile id (the GTS will use -1 as before)"); } }
     return 3;
@@ -422,7 +743,7 @@ unsigned int SOCL_Resolve(const char *host)
     if (!host || !host[0]) return 0;
     a = inet_addr(host);
     if (a == (in_addr_t)-1) {
-        if (!onlineMode() || P3DS_OnlineCheatBlocked() || !P3DS_NetInit() || ghResolve(host, &a) != 0) { NLOG("[DNS] %s: not resolved", host); return 0; }
+        if (!onlineMode() || P3DS_OnlineCheatBlocked() || !P3DS_NetInit() || ghResolve(host, &a, NULL) != 0) { NLOG("[DNS] %s: not resolved", host); FLOG("[GTS] name lookup failed: %s (%s DNS)", host, P3DS_GtsStarMeSelected() ? "StarMe" : "Poke Classic"); return 0; }
         NLOG("[DNS] %s -> %s", host, inet_ntoa(*(struct in_addr *)&a));
     }
     return ntohl(a);
@@ -498,12 +819,17 @@ static void fromBsd(const struct sockaddr_in *b, P3DSSockAddrIn *a)
 static void soctr(const char *fmt, ...)
 {
     static int n; char b[160]; va_list ap;
+    extern int gSS_MG_NdSvlActive;
     if (n >= 60) return;
     n++;
     va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap);
     NLOG("[SOCT] %s", b);
     { extern void P3DS_LogRequestSync(void); P3DS_LogRequestSync(); }
-    svcSleepThread(150000000LL); /* let the log writer commit it: run 89 died without a crash report, so the last call matters */
+    /* run 113: skip the 150ms sync sleep during MG Nd/SVL. CPS/NHTTP reads the DLS
+       reply one byte at a time; the sleep made the HTTP/1.1 200 headers take many
+       seconds and the count stage never finished before NdCleanup (run 112). */
+    if (!gSS_MG_NdSvlActive)
+        svcSleepThread(150000000LL); /* let the log writer commit it: run 89 died without a crash report, so the last call matters */
 }
 
 int SOC_Socket(int pf, int type, int protocol)
@@ -511,7 +837,7 @@ int SOC_Socket(int pf, int type, int protocol)
     (void)pf; (void)protocol;
     if (!onlineMode() || P3DS_OnlineCheatBlocked() || !P3DS_NetInit()) { NLOG("[SOC] socket refused (online mode off, cheat on, or sockets down)"); return -38; }
     int fd = socket(AF_INET, type == 2 ? SOCK_DGRAM : SOCK_STREAM, 0);
-    static int n; if (n++ < 6) NLOG("[SOC] socket(%s) -> %d", type == 2 ? "udp" : "tcp", fd);
+    if (fd < 0) NLOG("[SOC] socket(%s) failed -> %d", type == 2 ? "udp" : "tcp", fd);
     return fd < 0 ? socErr() : fd;
 }
 int SOC_Bind(int s, const void *sa) { soctr("bind %d", s); struct sockaddr_in b; toBsd(sa, &b); return bind(s, (struct sockaddr *)&b, sizeof b) < 0 ? socErr() : 0; }
@@ -521,7 +847,7 @@ int SOC_Connect(int s, const void *sa)
     soctr("connect %d", s);
     int r = connect(s, (struct sockaddr *)&b, sizeof b);
     int e = r < 0 ? socErr() : 0;
-    static int n; if (n++ < 8) NLOG("[SOC] connect(%d, %s:%u) -> %d", s, inet_ntoa(b.sin_addr), (unsigned)ntohs(b.sin_port), e);
+    if (e) NLOG("[SOC] connect(%d, %s:%u) failed -> %d", s, inet_ntoa(b.sin_addr), (unsigned)ntohs(b.sin_port), e);
     return e;
 }
 int SOC_Listen(int s, int backlog) { return listen(s, backlog) < 0 ? socErr() : 0; }
@@ -533,7 +859,7 @@ int SOC_Accept(int s, void *sa)
     if (sa) fromBsd(&b, sa);
     return fd;
 }
-static void cpsDump(const char *tag, const unsigned char *b, unsigned n);
+__attribute__((unused)) static void cpsDump(const char *tag, const unsigned char *b, unsigned n);
 static void tcpPeek(const char *tag, const void *b, int r, unsigned maxn) { static int n; if (r > 0 && n < 14) { n++; cpsDump(tag, b, (unsigned)r < maxn ? (unsigned)r : maxn); } }
 int SOC_Read(int s, void *buf, int len) { soctr("read %d len %d", s, len); int r = read(s, buf, len); return r < 0 ? socErr() : r; }
 int SOC_Recv(int s, void *buf, int len, int flags) { soctr("recv %d len %d", s, len); (void)flags; int r = recv(s, buf, len, 0); tcpPeek("GP recv", buf, r, 600); return r < 0 ? socErr() : r; }
@@ -598,6 +924,22 @@ int SOC_Poll(P3DSPollFD fds[], unsigned nfds, long long timeout)
     return r;
 }
 
+/* ---- run 113: SOC_Cleanup / SOCL_Cleanup must not touch the DS-addressed SOCL BSS ----
+ * Run 112: after NdCleanup, AC CloseSocket called SOC_Cleanup -> SOCL_Cleanup ->
+ * SOCLi_CleanupCommandPacketQueue which loads SOCLiConfigPtr from literal 0x02238428
+ * (untranslated DS BSS) and then config->free at +28: crash pc=0x63d958 lr=0x63d4d4
+ * far=0 r0=0 r4=0x02238410. The 3DS path never SOCL_Startup (SOC_* are BSD shims),
+ * so a successful no-op is correct. Strong symbols override libntrwifi. MG cleanup
+ * path; GTS never started SOCL either so this only turns a latent crash into success. */
+int SOCL_Cleanup(void)
+{
+    return 0;
+}
+int SOC_Cleanup(void)
+{
+    return 0;
+}
+
 /* ---- run 91: the library's CPS socket layer (used by the NAS/auth HTTP client dwc_http.c) on 3DS sockets --------------------------
  * Run 90 fault: DWCi_Http_Thread -> CPS_SocBind -> SDL_LockMutex(NULL). CPS is the DS TCP/IP stack; its mutexes only exist after
  * CPS_Startup, which never runs here. DWCi_Http_Thread calls exactly these functions, in this order: SocRegister, Resolve, SocUse,
@@ -610,14 +952,24 @@ static struct { int fd; unsigned short rport; unsigned int rip; unsigned char rx
 
 static void cpsClose(void) { if (sCps.fd >= 0) { close(sCps.fd); sCps.fd = -1; } sCps.rxn = sCps.rxPos = 0; sCps.eof = 0; sCps.idle = 0; }
 
-void CPS_SocRegister(void *soc) { (void)soc; NLOG("[CPS] SocRegister"); cpsClose(); }
+/* Auto wireless: wm_uds.c closes the 3DS sockets when the game starts a local (UDS) session, so the radio is exactly as in the
+ * tested LOCAL mode; P3DS_NetInit opens them again on the next online call. The game itself has ended its Wi-Fi Connection
+ * session by then (a DS must, WM and Wi-Fi share one radio); the CPS slot is dropped first so no stale fd is closed later. */
+void P3DS_NetRelease(void)
+{
+    if (sState == 1) PSPNativeMemLog("[NET] auto wireless: sockets closed for a local session (re-opened on the next online call)");
+    if (sState == 1) cpsClose();
+    netExit();
+}
+
+void CPS_SocRegister(void *soc) { (void)soc; cpsClose(); }
 void CPS_SocUnRegister(void) { cpsClose(); }
 void CPS_SocUse(void) { cpsClose(); }
 void CPS_SocRelease(void) { cpsClose(); }
 unsigned int CPS_Resolve(const char *host) { return SOCL_Resolve(host); }
 void CPS_SetRootCa(const void *a, int n) { (void)a; (void)n; }
 void CPS_SetSsl(int on) { if (on) NLOG("[CPS] ssl requested: not supported on 3DS, request will fail"); }
-void CPS_SocBind(unsigned short lport, unsigned short rport, unsigned int rip) { (void)lport; sCps.rport = rport; sCps.rip = rip; NLOG("[CPS] bind -> %s:%u", inet_ntoa((struct in_addr){ htonl(rip) }), (unsigned)rport); }
+void CPS_SocBind(unsigned short lport, unsigned short rport, unsigned int rip) { (void)lport; sCps.rport = rport; sCps.rip = rip; }
 
 unsigned int CPS_TcpConnect(void)
 {
@@ -632,7 +984,6 @@ unsigned int CPS_TcpConnect(void)
     if (r == 0) { fl = fcntl(sCps.fd, F_GETFL, 0); fcntl(sCps.fd, F_SETFL, fl | O_NONBLOCK); }
     if (r < 0) { NLOG("[CPS] connect failed errno %d (r %d)", e, r); cpsClose(); return 1; }
     CPSMyIp = ntohl((unsigned)gethostid()); if (!CPSMyIp) CPSMyIp = 0x0a000002;
-    NLOG("[CPS] connected");
     return 0;
 }
 
@@ -659,7 +1010,6 @@ unsigned int CPS_SocWrite(const unsigned char *buf, unsigned len)
         if (r < 0 && errno == EAGAIN && ++tries < 2000) { svcSleepThread(5000000LL); continue; }
         NLOG("[CPS] send failed errno %d", errno); return off;
     }
-    NLOG("[CPS] sent %u bytes", off); { static int d; if (d++ < 2) cpsDump("request", buf, len); }
     return off;
 }
 void CPS_SocFlush(void) {}
@@ -670,7 +1020,7 @@ int CPS_SocGetLength(void)
     if (sCps.rxn - sCps.rxPos == 0) { sCps.rxn = sCps.rxPos = 0; }
     if (!sCps.eof && sCps.rxn < sizeof sCps.rx) {
         int r = recv(sCps.fd, sCps.rx + sCps.rxn, sizeof sCps.rx - sCps.rxn, 0);
-        if (r > 0) { sCps.rxn += r; sCps.idle = 0; static int told; if (told++ < 4) { NLOG("[CPS] received %d bytes", r); if (told <= 2) cpsDump("reply", sCps.rx + sCps.rxn - r, (unsigned)r); } }
+        if (r > 0) { sCps.rxn += r; sCps.idle = 0; }
         else if (r == 0) { sCps.eof = 1; NLOG("[CPS] server closed the connection"); }
         else if (errno != EAGAIN) { NLOG("[CPS] recv failed errno %d", errno); sCps.eof = 1; }
     }
@@ -695,6 +1045,7 @@ unsigned int CPS_TcpClose(void) { cpsClose(); return 0; }
  * port, so Wiimmfi refused the login (error #23934, "Invalid login parameter", empty gamecd=/makercd=). Fill them from the ROM file's header
  * (read only) right before the request is built. cal layout (DWCCalInfo): gamecd[5] at +0x15, makercd[3] at +0x1a. */
 extern void __real_DWC_Auth_SetCalInfoToHttp(void *aHttp, char *cal, int withSsid);
+extern int gSS_MG_NdSvlActive;
 void __wrap_DWC_Auth_SetCalInfoToHttp(void *aHttp, char *cal, int withSsid)
 {
     if (cal && cal[0x15] == 0) {
@@ -706,6 +1057,10 @@ void __wrap_DWC_Auth_SetCalInfoToHttp(void *aHttp, char *cal, int withSsid)
         } else NLOG("[LOGIN] NAS request: could not read the ROM header for the game code");
         if (f) fclose(f);
     }
+    /* run 114: do not force IPKE. ROM header gamecd (IPGE for US SoulSilver) matches
+       DLS dlc/IPGE; forcing IPKE made count return 0. GTS path unchanged (flag off). */
+    if (cal && gSS_MG_NdSvlActive)
+        NLOG("[SS-MG] NAS cal gamecd=%.4s for Nd/SVL (ROM header, no rewrite)", cal + 0x15);
     __real_DWC_Auth_SetCalInfoToHttp(aHttp, cal, withSsid);
 }
 
@@ -780,7 +1135,7 @@ void MD5Digest(unsigned char *input, unsigned int len, char output[33])
         char t[33]; tested = 1;
         MD5Init(&c); MD5Update(&c, (const unsigned char *)"abc", 3); MD5Final(d, &c);
         for (i = 0; i < 16; i++) sprintf(t + i * 2, "%02x", d[i]);
-        NLOG("[LOGIN] MD5 self-test: %s", !strcmp(t, "900150983cd24fb0d6963f7d28e17f72") ? "ok" : "FAILED");
+        if (strcmp(t, "900150983cd24fb0d6963f7d28e17f72")) NLOG("[LOGIN] MD5 self-test FAILED");
     }
 }
 
@@ -793,8 +1148,10 @@ extern int __real_SystemData_GetDWCProfileId(void *sysInfo);
 extern void __real_SystemData_SetDWCProfileId(void *sysInfo, int profileId);
 int __wrap_SystemData_GetDWCProfileId(void *sysInfo)
 {
+    if (starMeOnline())
+        return sLoginStarMe && sLoginDone == 2 && sLoginTrainer == previewTrainer ? sLoginPid : 0;
     int v = __real_SystemData_GetDWCProfileId(sysInfo);
-    if ((v == -1 || v == 0) && sLoginDone == 2 && sLoginPid > 0) {
+    if ((v == -1 || v == 0) && !sLoginStarMe && sLoginDone == 2 && sLoginPid > 0) {
         static int told; if (!told) { told = 1; NLOG("[LOGIN] GTS profile id: save held %d, using the login's %d", v, sLoginPid); }
         return sLoginPid;
     }
@@ -802,7 +1159,8 @@ int __wrap_SystemData_GetDWCProfileId(void *sysInfo)
 }
 void __wrap_SystemData_SetDWCProfileId(void *sysInfo, int profileId)
 {
-    if (profileId == -1 && sLoginDone == 2 && sLoginPid > 0) { NLOG("[LOGIN] storing the login's profile id %d instead of -1", sLoginPid); profileId = sLoginPid; }
+    if (starMeOnline()) return;
+    if (profileId == -1 && !sLoginStarMe && sLoginDone == 2 && sLoginPid > 0) { NLOG("[LOGIN] storing the login's profile id %d instead of -1", sLoginPid); profileId = sLoginPid; }
     __real_SystemData_SetDWCProfileId(sysInfo, profileId);
 }
 

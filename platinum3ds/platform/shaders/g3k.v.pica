@@ -1,0 +1,18 @@
+; ss3ds fps60: the G3 passthrough with one 4x4 matrix in front of the position (in-between pictures: last tick's
+; clip coordinates carried halfway to this tick's, per draw call; g3gpu.c sets kmtx)
+.fvec kmtx[4]
+.out outpos position
+.out outtc0 texcoord0
+.out outclr color
+.alias inpos v0
+.alias intc v1
+.alias inclr v2
+.proc main
+	dp4 outpos.x, kmtx[0], inpos
+	dp4 outpos.y, kmtx[1], inpos
+	dp4 outpos.z, kmtx[2], inpos
+	dp4 outpos.w, kmtx[3], inpos
+	mov outtc0, intc
+	mov outclr, inclr
+	end
+.end

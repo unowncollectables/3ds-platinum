@@ -273,6 +273,34 @@ cheat_speed=0        (1 = holding B runs at bike speed; runtime only)
 cheat_walk_walls=0   (1 = hold R while walking to pass through walls/objects; warps and ledges still work)
 cheat_time=0         (0 off, 1 morning, 2 day, 3 evening, 4 night: overrides time-of-day only; the save clock is untouched)
 catch_overlay=0      (1 = in a wild battle, press Y at the command menu for the Ball tab: species, nature, ability, IVs, Pokerus, HP/status, catch odds)
+  SoulSilver sync: Y now opens the SoulSilver battle screen as an overlay (the battle keeps running): wild info, catch odds,
+  hunt page; in a trainer battle the foe's moves/PP/ability/item and its team's HP.
+dmg_check=0          (1 = adds a rough damage / speed page to the battle Y screen, singles only)
+hunt_stats=0         (1 = ZR in the field opens the hunt stats overlay; needs hunt_counter; ZR stays the item button while zr_item=1)
+sharp_game_text=0    (1 = every game text window, both screens, drawn at the 3DS resolution instead of the stretched DS picture;
+                      needs a scale mode (1.25X or FILL). SoulSilver's sharp text hook (0289) ported to bg_window.c. Off by default
+                      on Platinum until it has been checked on hardware; toggling applies to text already on screen)
+mobile_pc=0          (1 = SoulSilver's Mobile PC: the settings Quick menu gets a "Boxes" tile that opens the game's own PC box
+                      app (Move Pokemon, like a Pokemon Center PC) from the field once you are in the Hall of Fame. Not in the
+                      Mystery Zone, Great Marsh, Pal Park or Distortion World. Reads the Hall of Fame flag only; writes nothing)
+mobile_pc_dev=0      (Debug: 1 = Mobile PC before the Hall of Fame, runtime only; never sets any flag)
+wild_vis_alive=0     (1 = visible wild Pokemon behave (SoulSilver): each has a pace, they look around, curious ones come over when
+                      you stand still and stop next to you, lively ones step away when you come close, and they go home when the
+                      time of day changes. Always on with wild_vis now: they never walk onto people, step aside when someone
+                      walks onto them, and spawns differ after a Continue)
+wild_vis_cries=0     (1 = visible wild Pokemon within 7 tiles call now and then, panned and quieter further away)
+slot2=0              (1 = a virtual GBA game pak in the DS GBA slot, as on a DS Lite: put your own GBA ROM dump and its save
+                      in sdmc:/3ds/platinum3ds/slot2/ as <name>.gba + <name>.sav. The first time, the save is copied to
+                      slot2-work/<name>.sav and the game only ever reads and writes that copy (Migrate from / Pal Park takes the
+                      six Pokemon out of the copy; your original .sav is never written). Gives the "Migrate from" row on the main
+                      menu (after the National Pokedex, same language) and Platinum's GBA-slot wild Pokemon. Applies at the next
+                      start / soft reset)
+slot2_pak=0          (which .gba in slot2/ is in the slot: 0 = first by name, 1 = second, ...)
+b2_sprites=0         (1 = SoulSilver's Black 2 / White 2 animated Pokemon sprites, in battle (full size, slower at yellow/red HP,
+                      still while asleep or frozen) and in every other Pokemon picture (fitted into the game's 80x80 box).
+                      Needs sdmc:/3ds/platinum3ds/b2sprites.bin, made from your own Black 2 / White 2 ROM by SoulSilver's
+                      tools/b2sprites/build_pack.sh (the builder's Black 2 step); SoulSilver's sdmc:/3ds/soulsilver3ds/b2sprites.bin
+                      is used when Platinum's folder has none. Read once per battle; no pack = the game's own sprites)
 battle_anim_speed=0  (1 = skip plain move animations; Fly/Dig/Dive/Bounce/Shadow Force/Transform/Substitute/Minimize still play)
 Run 76
   battle_anim_speed=2  (also makes the HP bar drain 3x faster; damage and end values unchanged)

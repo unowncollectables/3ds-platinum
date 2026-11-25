@@ -39,3 +39,22 @@ void P3DS_TrkPublish(const int *r, const int *d) {
   memcpy(P3DS_TrkRoam, nr, sizeof nr); P3DS_TrkDc = nd;
   if (changed) { P3DS_TrkReady = 1; P3DS_TrkTick++; }
 }
+
+/* Bug-Catching Contest helper (hook 0229, field_control.c FieldSystem_UpdateBugContest): the game's own contest state, read-only. The hook calls this
+ * every field frame while the toggle is on; it logs and bumps the tick (repaint of the Bottom menu panel) only when a value changed.
+ * Log: [CONTEST] lines (setting, start, every ball / catch / minute change, end). */
+volatile unsigned P3DS_ContestTick;
+P3DS_ContestInfo P3DS_Ct;
+static int ctV = -1;
+int P3DS_ContestOn(void) { if (ctV < 0) { ctV = P3DS_CfgInt("contest_helper", 0) != 0; PSPNativeMemLog("[CONTEST] contest_helper=%d (Bug-Catching Contest card on the bottom panel, hook 0229; read-only)", ctV); } return ctV; }
+void P3DS_ContestSetOn(int v) { ctV = v != 0; P3DS_CfgWrite("contest_helper", ctV); P3DS_ContestTick++; PSPNativeMemLog("[CONTEST] contest_helper=%d from settings", ctV); }
+void P3DS_ContestPublish(int active, int elapsed, int balls, int species, int level) {
+  P3DS_ContestInfo n; n.active = active != 0; n.elapsed = elapsed < 0 ? 0 : elapsed > 99 ? 99 : elapsed; n.balls = balls < 0 ? 0 : balls > 99 ? 99 : balls;
+  n.species = species < 0 || species > 493 ? 0 : species; n.level = level < 0 || level > 100 ? 0 : level;
+  if (!n.active) { n.elapsed = n.balls = n.species = n.level = 0; }
+  if (!memcmp(&n, &P3DS_Ct, sizeof n)) return;
+  if (n.active && !P3DS_Ct.active) PSPNativeMemLog("[CONTEST] contest started: %d min used of 20, %d Sport Balls", n.elapsed, n.balls);
+  else if (!n.active && P3DS_Ct.active) PSPNativeMemLog("[CONTEST] contest ended (last seen: %d min used, %d balls left, species %d Lv%d)", P3DS_Ct.elapsed, P3DS_Ct.balls, P3DS_Ct.species, P3DS_Ct.level);
+  else if (n.active) PSPNativeMemLog("[CONTEST] %d min used (%d left), %d balls, holding species %d Lv%d", n.elapsed, 20 - n.elapsed, n.balls, n.species, n.level);
+  P3DS_Ct = n; P3DS_ContestTick++;
+}

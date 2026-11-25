@@ -1,9 +1,11 @@
 /* run 88 shiny_suite=0 (default off; settings app Extra tab "Shiny hunt suite"): shiny hunt counters that survive
- * soft resets and power-offs. Port file only: sdmc:/3ds/platinum3ds/hunt.txt, never platinum.sav.
+ * soft resets and power-offs. Port file only: sdmc:/3ds/platinum3ds/hunt.txt, never the save.
  *
  * hunt.txt, one line per species (the run 76 hunt_counter format "species=encounters" is the first field, so old
  * builds still read the count):
  *   target=<species>                       the current hunt = the last species met (soft resets are tagged to it)
+ *   pinned=<species>                       2026-11-19: a hunt chosen on the ZR HUNT STATS screen; while set it stays the
+ *                                          target whatever else is met (older builds skip this line)
  *   <species>=enc,streak,resets,shinies,secs,start,lastShinyAt
  *     enc         wild battles against it (all time)       streak   encounters since the last shiny
  *     resets      soft resets while it was the target       shinies  shinies met
@@ -55,7 +57,7 @@ static LightLock huntLk; static int huntLkInit;
 #endif
 
 static P3DS_HuntRec rec[P3DS_HUNT_SPECIES];
-static int target, loaded, dirty, onV = -1;
+static int target, pinned, loaded, dirty, onV = -1;
 static u64 lastTick, msAcc, lastWrite;
 
 int P3DS_HuntOn(void) { if (onV < 0) { onV = P3DS_CfgInt("shiny_suite", 0) != 0; PSPNativeMemLog("[HUNT] shiny_suite=%d", onV); } return onV; }
@@ -68,6 +70,7 @@ static int parse(FILE *f) {
     while (fgets(l, sizeof l, f)) {
         int sp, v[7] = {0}, t;
         if (sscanf(l, "target=%d", &t) == 1) { if (t > 0 && t < P3DS_HUNT_SPECIES) target = t; continue; }
+        if (sscanf(l, "pinned=%d", &t) == 1) { if (t > 0 && t < P3DS_HUNT_SPECIES) pinned = t; continue; }
         int k = sscanf(l, "%d=%d,%d,%d,%d,%d,%d,%d", &sp, &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6]);
         if (k < 2 || sp <= 0 || sp >= P3DS_HUNT_SPECIES) continue;
         P3DS_HuntRec *r = &rec[sp]; r->enc = v[0]; r->streak = k >= 3 ? v[1] : v[0]; /* old line: no shiny seen yet */
@@ -81,7 +84,7 @@ static void load(void) {
     FILE *f = fopen(HUNT_DIR "hunt.txt", "r"); const char *src = "hunt.txt";
     if (!f) { f = fopen(HUNT_DIR "hunt.tmp", "r"); src = "hunt.tmp"; } /* power cut between remove and rename */
     if (!f) return;
-    int n = parse(f); fclose(f); PSPNativeMemLog("[HUNT] %s: %d species, target %d", src, n, target);
+    int n = parse(f); fclose(f); if (pinned) target = pinned; PSPNativeMemLog("[HUNT] %s: %d species, target %d, pinned %d", src, n, target, pinned);
 }
 /* run 104 hunt_async_save (default 1): the hunt file is formatted in memory (fast) and written by a low-priority
    thread. The synchronous fopen/write/remove/rename took ~70 ms on the game thread at every wild battle start (and
@@ -92,20 +95,35 @@ static void writeFile(const char *t, int n) {
     fwrite(t, 1, n, f); fclose(f); remove(HUNT_DIR "hunt.txt"); rename(HUNT_DIR "hunt.tmp", HUNT_DIR "hunt.txt");
 }
 #ifndef P3DS_HUNT_HOST
-static char hpend[sizeof hbuf], hwr[sizeof hbuf]; static volatile int hpendN = -1; static LightLock hpLk; static LightEvent hpEv; static Thread hThr;
-static void writer(void *u) { (void)u; for (;;) { LightEvent_Wait(&hpEv); LightLock_Lock(&hpLk); int n = hpendN; if (n >= 0) memcpy(hwr, hpend, n); hpendN = -1; LightLock_Unlock(&hpLk); if (n >= 0) writeFile(hwr, n); } }
+static char hpend[sizeof hbuf], hwr[sizeof hbuf]; static volatile int hpendN = -1, hwriting; static LightLock hpLk; static LightEvent hpEv; static Thread hThr;
+/* 2026-11-22: joinable and stoppable (P3DS_HuntStopWriter, from hardExit); it used to block in LightEvent_Wait forever and was
+   still alive when the process exited on every soft reset. */
+static volatile int hStop;
+static void writer(void *u) { (void)u; for (;;) { LightEvent_Wait(&hpEv); if (hStop) break; LightLock_Lock(&hpLk); int n = hpendN; if (n >= 0) { memcpy(hwr, hpend, n); hwriting = 1; } hpendN = -1; LightLock_Unlock(&hpLk); if (n >= 0) { writeFile(hwr, n); hwriting = 0; } } }
+/* hardExit: wait (bounded, 3 s) for a queued or in-flight async hunt write, so the last counters reach the SD card */
+void P3DS_HuntWait(void) { for (int i = 0; i < 300 && (hpendN >= 0 || hwriting); i++) svcSleepThread(10000000); }
+/* hardExit, after P3DS_HuntWait: end the writer thread and join it (up to 1 s). Any later save() writes synchronously. */
+int P3DS_HuntStopWriter(void) {
+    Thread t = hThr; if (!t) return 1;
+    hStop = 1; LightEvent_Signal(&hpEv); int ok = threadJoin(t, 1000000000ULL) == 0; if (ok) threadFree(t); hThr = NULL; return ok;
+}
+#else
+void P3DS_HuntWait(void) {}
+int P3DS_HuntStopWriter(void) { return 1; }
 #endif
 static void save(void) {
     int n = 0;
-    if (target) n += snprintf(hbuf + n, sizeof hbuf - n, "target=%d\n", target);
+    if (target) { int w = snprintf(hbuf + n, sizeof hbuf - n, "target=%d\n", target); if (w > 0 && n + w < (int)sizeof hbuf) n += w; }
+    if (pinned) { int w = snprintf(hbuf + n, sizeof hbuf - n, "pinned=%d\n", pinned); if (w > 0 && n + w < (int)sizeof hbuf) n += w; }
     for (int k = 1; k < P3DS_HUNT_SPECIES && n < (int)sizeof hbuf - 64; k++) { const P3DS_HuntRec *r = &rec[k];
-        if (r->enc || r->resets || r->shinies) n += snprintf(hbuf + n, sizeof hbuf - n, "%d=%d,%d,%d,%d,%d,%d,%d\n", k, r->enc, r->streak, r->resets, r->shinies, r->secs, r->start, r->lastShinyAt); }
+        if (r->enc || r->resets || r->shinies) { int w = snprintf(hbuf + n, sizeof hbuf - n, "%d=%d,%d,%d,%d,%d,%d,%d\n", k, r->enc, r->streak, r->resets, r->shinies, r->secs, r->start, r->lastShinyAt);
+            if (w < 0 || n + w >= (int)sizeof hbuf) break; n += w; } }
     dirty = 0; lastWrite = svcGetSystemTick();
 #ifndef P3DS_HUNT_HOST
     static int as = -1; if (as < 0) { as = P3DS_CfgInt("hunt_async_save", 1) != 0;
-        if (as) { LightLock_Init(&hpLk); LightEvent_Init(&hpEv, RESET_ONESHOT); hThr = threadCreate(writer, 0, 16 * 1024, 0x3F, 0, true); if (!hThr) as = 0; }
+        if (as) { LightLock_Init(&hpLk); LightEvent_Init(&hpEv, RESET_ONESHOT); hThr = threadCreate(writer, 0, 16 * 1024, 0x3F, 0, false); if (!hThr) as = 0; }
         PSPNativeMemLog("[HUNT] hunt_async_save=%d", as); }
-    if (as) { LightLock_Lock(&hpLk); memcpy(hpend, hbuf, n); hpendN = n; LightLock_Unlock(&hpLk); LightEvent_Signal(&hpEv); return; }
+    if (as && hThr) { LightLock_Lock(&hpLk); memcpy(hpend, hbuf, n); hpendN = n; LightLock_Unlock(&hpLk); LightEvent_Signal(&hpEv); return; }
 #endif
     writeFile(hbuf, n);
 }
@@ -124,12 +142,47 @@ void P3DS_HuntEncounter(int sp, int shiny) {
     if (sp <= 0 || sp >= P3DS_HUNT_SPECIES) return;
     HUNT_LOCK(); load(); P3DS_HuntRec *r = &rec[sp];
     if (!r->start) r->start = today();
-    if (target != sp) msAcc = 0;
-    target = sp; r->enc++; r->streak++;
+    if (!pinned) { if (target != sp) msAcc = 0; target = sp; } /* a pinned hunt keeps the time and soft resets whatever else is met */
+    r->enc++; r->streak++;
     if (shiny) { r->shinies++; r->lastShinyAt = r->streak; r->streak = 0; }
     save(); HUNT_UNLOCK();
     if (shiny) PSPNativeMemLog("[HUNT] SHINY species %d after %d encounters (%d soft resets, total met %d)", sp, r->lastShinyAt, r->resets, r->enc);
     else PSPNativeMemLog("[HUNT] species %d met %d times (streak %d)", sp, r->enc, r->streak);
+}
+#ifndef P3DS_HUNT_HOST
+extern volatile int P3DS_CatchInfo[20];
+extern void P3DS_Toast(const char *);
+#endif
+/* Same CatchInfo layout as the wild foe snapshot (0030): [0] valid, [1] species, [2] level, [18] shiny, [19] counter. */
+static void huntGiftSnap(int sp, int shiny, int level) {
+#ifndef P3DS_HUNT_HOST
+    if (sp <= 0 || sp >= P3DS_HUNT_SPECIES) return;
+    P3DS_CatchInfo[1] = sp;
+    P3DS_CatchInfo[2] = level > 0 ? level : 5;
+    P3DS_CatchInfo[18] = shiny ? 1 : 0;
+    P3DS_CatchInfo[19] = P3DS_CatchInfo[19] + 1;
+    P3DS_CatchInfo[0] = 1;
+#else
+    (void)sp; (void)shiny; (void)level;
+#endif
+}
+void P3DS_HuntGiftFocus(int sp, int shiny, int level) {
+    huntGiftSnap(sp, shiny, level);
+    PSPNativeMemLog("[HUNT] gift focus species %d shiny %d", sp, shiny ? 1 : 0);
+}
+void P3DS_HuntGift(int sp, int shiny, int level) {
+    huntGiftSnap(sp, shiny, level);
+    if (!P3DS_HuntCounting()) { PSPNativeMemLog("[HUNT] gift species %d shiny %d (counters off)", sp, shiny ? 1 : 0); return; }
+    P3DS_HuntEncounter(sp, shiny);
+#ifndef P3DS_HUNT_HOST
+    if (shiny && P3DS_HuntOn()) {
+        extern void P3DS_HuntChime(void);
+        P3DS_HuntChime();
+        if (!P3DS_CfgInt("catch_overlay", 0)) P3DS_Toast("SHINY POKEMON!");
+    }
+#else
+    (void)level;
+#endif
 }
 void P3DS_HuntSoftReset(void) {
     if (!P3DS_HuntOn()) return;
@@ -145,6 +198,12 @@ void P3DS_HuntFrame(int paused) {
     HUNT_UNLOCK();
 }
 void P3DS_HuntFlush(void) { HUNT_LOCK(); if (loaded && dirty) save(); HUNT_UNLOCK(); }
+int P3DS_HuntPinned(void) { HUNT_LOCK(); load(); int p = pinned; HUNT_UNLOCK(); return p; }
+void P3DS_HuntPin(int sp) {
+    if (sp < 0 || sp >= P3DS_HUNT_SPECIES) return;
+    HUNT_LOCK(); load(); pinned = sp; if (sp && target != sp) { target = sp; msAcc = 0; } save(); HUNT_UNLOCK();
+    if (sp) PSPNativeMemLog("[HUNT] hunt pinned to species %d", sp); else PSPNativeMemLog("[HUNT] hunt unpinned: the last species met is the hunt again");
+}
 void P3DS_HuntClear(int sp) {
     if (sp <= 0 || sp >= P3DS_HUNT_SPECIES) return;
     HUNT_LOCK(); load(); memset(&rec[sp], 0, sizeof rec[sp]); save(); HUNT_UNLOCK(); PSPNativeMemLog("[HUNT] counter cleared for species %d", sp);
@@ -170,6 +229,7 @@ int P3DS_HuntRateOdds(void) {
     if (rateV < 0) { rateV = P3DS_CfgInt("shiny_rate", 0); if (rateV < 0 || rateV > 3) rateV = 0; PSPNativeMemLog("[HUNT] shiny_rate=%d (1 in %d)", rateV, kRateOdds[rateV]); }
     return kRateOdds[rateV];
 }
+int P3DS_HuntRateIdx(void) { P3DS_HuntRateOdds(); return rateV; }
 void P3DS_HuntSetRate(int idx) { rateV = idx < 0 || idx > 3 ? 0 : idx; }
 static unsigned prng;
 static unsigned portRand(void) { if (!prng) prng = (unsigned)svcGetSystemTick() | 1u; prng ^= prng << 13; prng ^= prng >> 17; prng ^= prng << 5; return prng; }
@@ -179,7 +239,9 @@ int P3DS_ShinyRoll(void) {
     const int odds = P3DS_HuntRateOdds(); if (odds >= P3DS_HUNT_ODDS) return 0;
     /* p + (1 - p) / 8192 = 1 / odds: the game's own roll still happens when this one says no */
     const double p = (1.0 / odds - 1.0 / P3DS_HUNT_ODDS) / (1.0 - 1.0 / P3DS_HUNT_ODDS);
-    return portRand() < (unsigned)(p * 4294967296.0);
+    const int y = portRand() < (unsigned)(p * 4294967296.0);
+    if (y) PSPNativeMemLog("[HUNT] shiny_rate roll: SHINY (1 in %d)", odds);
+    return y;
 }
 int P3DS_WildShinyRoll(int always) {
     if (!P3DS_CfgInt("wild_vis_shiny", 0)) return 0;
@@ -195,7 +257,6 @@ unsigned P3DS_RngInitial(int *seeds) { if (seeds) *seeds = rngSeeds; return rngF
 extern void __real_LCRNG_SetSeed(u32 seed);
 void __wrap_LCRNG_SetSeed(u32 seed) { if (!rngSeeds++) rngFirst = seed; __real_LCRNG_SetSeed(seed); }
 #endif
-
 #ifdef P3DS_HUNT_HOST
 void P3DS_HuntChime(void) {}
 #else

@@ -39,6 +39,10 @@ typedef struct { uint8_t mask[2][192]; int n[2], eye; uint32_t rh[192]; volatile
 int WC_SplitPrepare(const WcPlan *p, const uint8_t *regs, const WcSrc *src, WcSplit *sp, int minRows, int eye); /* eye 0 = left, 1 = right (run 106: the right eye in stereo) */
 void WC_SplitRun(const WcPlan *p, const uint8_t *regs, const WcSrc *src, const WcSplit *sp, int part);
 void WC_SplitCommit(const WcSplit *sp, uint32_t *center, uint32_t *strip);
+/* SoulSilver sync: sprites reaching into the side strips only (wide HP boxes), its input hash, sharp game text column map */
+int WC_ComposeObjStrips(const WcPlan *p, const uint8_t *regs, const WcSrc *src, uint32_t *strip);
+unsigned WC_StripHash(const uint8_t *regs, const WcSrc *src);
+int WC_MapColumn(const WcPlan *p, int L, int y, int bgcol);
 #ifdef __cplusplus
 }
 #endif

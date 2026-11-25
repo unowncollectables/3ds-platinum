@@ -32,8 +32,26 @@ static const struct { const char *key; P3DS_AchInfo i; } kAch[ACH_COUNT] = {
   { "bday", { "Happy Birthday!", "See the birthday sparkle at Sprout Tower.", 25, 3 } }, { "newyear", { "New Year's", "Watch the New Year fireworks.", 25, 3 } },
   { "valentine", { "Valentine's", "See the Valentine's hearts.", 25, 3 } }, { "stpat", { "St. Patrick's", "See the St. Patrick's sparkles.", 25, 3 } },
   { "canada", { "Canada Day", "See the Canada Day sparkles.", 25, 3 } }, { "halloween", { "Halloween", "See the Halloween wisps.", 25, 3 } },
-  { "xmas", { "Christmas", "See the Christmas snow.", 25, 3 } } };
-static const char *const kCat[ACH_CATS] = { "Gyms", "Milestones", "Shiny", "Special Dates" };
+  { "xmas", { "Christmas", "See the Christmas snow.", 25, 3 } },
+  { "all16", { "Master of Two Regions", "Collect all 16 badges.", 100, 1 } },
+  { "wifitrade", { "Global Trader", "Complete a Wi-Fi or GTS trade.", 25, 1 } },
+  { "catch1", { "Gotcha!", "Catch your first Pokemon.", 10, 4 } }, { "catch50", { "Rising Trainer", "Catch 50 Pokemon.", 25, 4 } },
+  { "catch200", { "Pokemon Hoarder", "Catch 200 Pokemon.", 50, 4 } },
+  { "hatch1", { "Egg-cellent", "Hatch your first egg.", 15, 4 } }, { "hatch25", { "Day Care Hero", "Hatch 25 eggs.", 40, 4 } },
+  { "steps10k", { "Out for a Stroll", "Walk 10,000 steps.", 15, 4 } }, { "steps100k", { "Marathon Runner", "Walk 100,000 steps.", 50, 4 } },
+  { "bike10k", { "Cycle Champ", "Ride 10,000 steps on the Bicycle.", 20, 4 } },
+  { "battle50", { "Battle Ready", "Win 50 trainer battles.", 20, 4 } }, { "battle250", { "Battle Hardened", "Win 250 trainer battles.", 50, 4 } },
+  { "wild500", { "Tall Grass Regular", "Meet 500 wild Pokemon.", 25, 4 } },
+  { "fish25", { "Gone Fishin'", "Reel in 25 fish.", 20, 4 } }, { "berry10", { "Green Thumb", "Plant 10 berries.", 15, 4 } },
+  { "fossil", { "Back from the Dead", "Revive a fossil.", 20, 4 } }, { "nick5", { "Best Buddies", "Give 5 Pokemon a nickname.", 15, 4 } },
+  { "mail", { "Pen Pal", "Write a Pokemon mail.", 10, 4 } }, { "splash", { "Splashing Around", "Use Splash in battle.", 15, 4 } },
+  { "boom", { "Going Out with a Bang", "Use Explosion or Self-Destruct.", 15, 4 } },
+  { "contest", { "Contest Star", "Win a Pokemon Contest.", 40, 4 } }, { "tower", { "Tower Victor", "Win a Battle Frontier battle.", 40, 4 } },
+  { "ribbon", { "Ribbon Collector", "Earn a ribbon.", 25, 4 } }, { "signed", { "Autograph Hound", "Have your Trainer Card signed.", 15, 4 } },
+  { "skylegend", { "Legend in the Sky", "See a legendary Pokemon fly overhead.", 100, 4 } },
+  { "skyshiny", { "Shiny on the Wing", "Spot a shiny Pokemon flying past.", 50, 2 } },
+  { "hugewild", { "Something Big", "Meet a rare huge wild Pokemon.", 50, 4 } } };
+static const char *const kCat[ACH_CATS] = { "Gyms", "Milestones", "Shiny", "Special Dates", "Adventure" };
 
 #ifdef ACH_HOST_TEST
 #define LOCK()
@@ -48,7 +66,16 @@ static unsigned long long nowTick(void) { return svcGetSystemTick(); }
 #define TICKS_MS CPU_TICKS_PER_MSEC
 #endif
 
-static int date[ACH_COUNT], carried, loaded, unviewed, onV = -1, bootScan = 1;
+/* counter-based achievements: GAME_STAT_* index (read from the save by hook 0213) and the goal; trade ones accept several counters (sum) */
+static const struct { unsigned short stat; unsigned goal; short id; } kStat[] = {
+  { 20, 1, ACH_TRADE }, { 25, 1, ACH_TRADE }, { 25, 1, ACH_WIFITRADE }, { 10, 1, ACH_CATCH1 }, { 10, 50, ACH_CATCH50 }, { 10, 200, ACH_CATCH200 },
+  { 12, 1, ACH_HATCH1 }, { 12, 25, ACH_HATCH25 }, { 0, 10000, ACH_STEPS10K }, { 0, 100000, ACH_STEPS100K }, { 1, 10000, ACH_BIKE10K },
+  { 9, 50, ACH_BATTLE50 }, { 9, 250, ACH_BATTLE250 }, { 8, 500, ACH_WILD500 }, { 11, 25, ACH_FISH25 }, { 5, 10, ACH_BERRY10 },
+  { 116, 1, ACH_FOSSIL }, { 50, 5, ACH_NICK5 }, { 46, 1, ACH_MAIL }, { 77, 1, ACH_SPLASH }, { 79, 1, ACH_BOOM }, { 80, 1, ACH_BOOM },
+  { 93, 1, ACH_CONTEST }, { 94, 1, ACH_CONTEST }, { 30, 1, ACH_TOWER }, { 95, 1, ACH_RIBBON }, { 115, 1, ACH_SIGNED }, { 114, 1, ACH_WIFITRADE } };
+enum { NSTAT = (int)(sizeof kStat / sizeof kStat[0]) };
+static unsigned statNow[NSTAT]; static unsigned char statKnown;
+static int date[ACH_COUNT], carried, loaded, unviewed, onV = -1, bootScan = 1, bootStats = 1;
 enum { QN = 12 };
 static int q[QN], qn;                  /* queued toasts: achievement id, or -(n) for "n carried over" */
 static int cur = -1000; static unsigned long long curAt;
@@ -90,18 +117,34 @@ static int unlockLocked(int id, int silent) {
   if (!silent && P3DS_AchToastsOn()) push(id);
   return 1; }
 void P3DS_AchUnlock(int id) { LOCK(); load(); if (unlockLocked(id, 0)) save(); UNLOCK(); }
+void P3DS_AchSky(int what) { P3DS_AchUnlock(what == 2 ? ACH_HUGEWILD : what ? ACH_SKYLEGEND : ACH_SKYSHINY); }
 
 void P3DS_AchPublish(int badges, int clear, int red) {
   LOCK(); load(); const int first = bootScan; bootScan = 0; int n = 0, ch = 0;
   for (int i = 0; i < 16; i++) if ((badges >> i) & 1) ch += unlockLocked(i, first);
   if (clear) ch += unlockLocked(ACH_CHAMPION, first);
+  if ((badges & 0xFFFF) == 0xFFFF) ch += unlockLocked(ACH_ALL16, first);
   if (red) ch += unlockLocked(ACH_RED, first);
   n = ch;
   if (first) { if (n > 0 && P3DS_AchToastsOn()) push(-n); carried = 1; PSPNativeMemLog("[ACH] save scan: badges %04x, hall of fame %d, red %d -> %d carried over", badges & 0xFFFF, clear, red, n); save(); }
   else if (ch) save();
   UNLOCK(); }
 
-/* once per eye per frame; eye 0 advances the queue. Slides up from the bottom edge for 0.4 s, holds until 4.4 s, then goes */
+void P3DS_AchStats(const unsigned short *idx, const unsigned *val, int n) {
+  LOCK(); load(); const int first = bootStats; bootStats = 0; int ch = 0, carry = 0;
+  for (int k = 0; k < NSTAT; k++) { statNow[k] = 0;
+    for (int j = 0; j < n; j++) if (idx[j] == kStat[k].stat) { statNow[k] = val[j]; break; }
+    if (statNow[k] >= kStat[k].goal) { const int u = unlockLocked(kStat[k].id, first); ch += u; carry += u; } }
+  statKnown = 1;
+  if (first) { if (carry > 0 && P3DS_AchToastsOn()) push(-carry); PSPNativeMemLog("[ACH] stats scan: %d counters read, %d carried over", n, carry); }
+  if (ch) save();
+  UNLOCK(); }
+int P3DS_AchProgress(int id, unsigned *cur, unsigned *goal) {
+  LOCK(); int ok = 0; unsigned best = 0, g = 0;
+  if (statKnown) for (int k = 0; k < NSTAT; k++) if (kStat[k].id == id) { ok = 1; g = kStat[k].goal; if (statNow[k] > best) best = statNow[k]; }
+  UNLOCK(); if (ok) { if (cur) *cur = best; if (goal) *goal = g; } return ok; }
+
+/* once per eye per frame; eye 0 advances the queue. Slides up from the bottom edge for 0.4 s, holds, slides back down 4.0-4.4 s */
 int P3DS_AchToastNow(char *l1, int n1, char *l2, int n2, int *slide, int eye) {
   LOCK();
   const unsigned long long now = nowTick(), tot = 4400ull * TICKS_MS;
@@ -110,7 +153,7 @@ int P3DS_AchToastNow(char *l1, int n1, char *l2, int n2, int *slide, int eye) {
     if (cur == -1000 && qn > 0) { cur = q[0]; memmove(q, q + 1, (size_t)(qn - 1) * sizeof q[0]); qn--; curAt = now; if (cur >= 0) P3DS_HuntChime(); } }
   if (cur == -1000) { UNLOCK(); return 0; }
   const int ms = (int)((now - curAt) / TICKS_MS);
-  *slide = ms < 400 ? ms * 16 / 400 : 16;
-  if (cur >= 0) { snprintf(l1, (size_t)n1, "Achievement Unlocked  %dG", kAch[cur].i.pts); snprintf(l2, (size_t)n2, "%s", kAch[cur].i.name); }
-  else { snprintf(l1, (size_t)n1, "Achievements"); snprintf(l2, (size_t)n2, "%d carried over from your save", -cur); }
+  *slide = ms < 400 ? ms * 16 / 400 : ms > 4000 ? (ms < 4400 ? (4400 - ms) * 16 / 400 : 0) : 16;
+  if (cur >= 0) { snprintf(l1, (size_t)n1, "Achievement unlocked\t%dG", kAch[cur].i.pts); snprintf(l2, (size_t)n2, "%s", kAch[cur].i.name); }
+  else { snprintf(l1, (size_t)n1, "Achievements"); snprintf(l2, (size_t)n2, "%d found in your save", -cur); }
   UNLOCK(); return 1; }

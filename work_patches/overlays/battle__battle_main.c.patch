@@ -1,0 +1,33 @@
+--- a/battle__battle_main.c
++++ b/battle__battle_main.c
+@@ -183,6 +183,8 @@
+ {
+     FieldBattleDTO *dto = ApplicationManager_Args(appMan);
+ 
++    { extern int P3DS_InBattle; P3DS_InBattle = 1; } /* SoulSilver 0298: the battle app is running (the field coming back clears it) */
++
+     switch (*state) {
+     case BATTLE_STATE_CREATE_HEAP:
+         Heap_Create(HEAP_ID_APPLICATION, HEAP_ID_BATTLE, 0xB0000);
+@@ -248,6 +250,21 @@
+         *state = BATTLE_STATE_MAIN;
+         break;
+     case BATTLE_STATE_MAIN:
++        { /* SoulSilver 0300 Black 2 sprite feel: each battler's picture, HP and status for the platform (read only) */
++            extern void SS3DS_B2BattleMon(int battler, int narc, int chr, int pal, int hp, int maxHp, unsigned status);
++            BattleSystem *p3dsBs = ApplicationManager_Data(appMan);
++            if (p3dsBs != NULL && p3dsBs->battleCtx != NULL) {
++                int p3dsI, p3dsN = p3dsBs->maxBattlers;
++                for (p3dsI = 0; p3dsI < p3dsN && p3dsI < 4; p3dsI++) {
++                    BattlerData *p3dsBd = p3dsBs->battlers[p3dsI];
++                    PokemonSprite *p3dsP = p3dsBd != NULL ? p3dsBd->monSprite : NULL;
++                    BattleMon *p3dsM = &p3dsBs->battleCtx->battleMons[p3dsI];
++                    if (p3dsP != NULL && p3dsP->active) {
++                        SS3DS_B2BattleMon(p3dsI, p3dsP->template.narcID, p3dsP->template.character, p3dsP->template.palette, p3dsM->curHP, (int)p3dsM->maxHP, p3dsM->status);
++                    }
++                }
++            }
++        }
+         if (BattleMain_ExecuteBattlerCommands(appMan) == TRUE) {
+             BattleMain_CopyBattleSysToDTOAndFree(appMan);
+             *state = BATTLE_STATE_HANDLE_BATTLE_RESULT;

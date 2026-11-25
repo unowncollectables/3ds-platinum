@@ -1,15 +1,116 @@
 --- a/overlay005__field_control.c
 +++ b/overlay005__field_control.c
-@@ -70,6 +70,8 @@
+@@ -69,6 +69,13 @@
+ #include "unk_0205B33C.h"
  #include "vars_flags.h"
  #include "wireless_manager.h"
- 
-+extern int P3DS_HMFreeSlot(Party *, u16);
++#include "applications/pc_boxes/pokemon_storage_session.h" /* SoulSilver 0293 */
++#include "field_task.h" /* SoulSilver 0293 */
++#include "field_transition.h" /* SoulSilver 0293 */
++#include "heap.h" /* SoulSilver 0293 */
++#include "unk_0203D1B8.h" /* SoulSilver 0293 */
 +
++extern int P3DS_HMFreeSlot(Party *, u16);
+ 
  static BOOL Field_CheckMapTransition(FieldSystem *fieldSystem, const FieldInput *input);
  static u16 Field_TileBehaviorToScript(FieldSystem *fieldSystem, u8 behavior);
- static BOOL Field_CheckWildEncounter(FieldSystem *fieldSystem);
-@@ -211,7 +213,7 @@
+@@ -171,6 +178,95 @@
+     input->playerDir = PlayerAvatar_CalcFaceDirection(fieldSystem->playerAvatar, pressedKeys, heldKeys);
+ }
+ 
++/* SoulSilver 0293 Mobile PC: the settings Quick menu "Boxes" tile -> the game's own box app (Move Pokemon), like a Center PC. */
++extern int P3DS_MobilePcCfg(void);
++extern int P3DS_MobilePcDevCfg(void);
++extern volatile int P3DS_MobilePcReq, P3DS_MobilePcPreviewReq, P3DS_GameClear;
++extern void PSPNativeMemLog(const char *fmt, ...);
++
++typedef struct P3DS_MobilePcEnv {
++    int state;
++    PokemonStorageSession *session;
++} P3DS_MobilePcEnv;
++
++static BOOL Task_P3DS_MobilePc(FieldTask *task)
++{
++    FieldSystem *fieldSystem = FieldTask_GetFieldSystem(task);
++    P3DS_MobilePcEnv *env = FieldTask_GetEnv(task);
++
++    switch (env->state) {
++    case 0:
++        FieldTransition_FadeOutAndFinishMap(task);
++        env->state++;
++        break;
++    case 1:
++        env->session = Heap_Alloc(HEAP_ID_FIELD2, sizeof(PokemonStorageSession));
++        env->session->saveData = fieldSystem->saveData;
++        env->session->boxMode = PC_MODE_MOVE_MONS;
++        env->session->recordBoxUseInJournal = FALSE;
++        FieldSystem_OpenPokemonStorage(fieldSystem, env->session);
++        PSPNativeMemLog("[MPC] launched box app (Move Pokemon)");
++        env->state++;
++        break;
++    case 2:
++        if (FieldSystem_IsRunningApplication(fieldSystem)) {
++            break;
++        }
++        Heap_Free(env->session);
++        env->session = NULL;
++        FieldTransition_StartMapAndFadeIn(task);
++        env->state++;
++        break;
++    case 3:
++        Heap_Free(env);
++        PSPNativeMemLog("[MPC] returned to the field (no auto-save)");
++        return TRUE;
++    }
++    return FALSE;
++}
++
++static BOOL P3DS_MobilePcStep(FieldSystem *fieldSystem, const FieldInput *input)
++{
++    VarsFlags *vf;
++    int clear;
++
++    if (fieldSystem == NULL || fieldSystem->saveData == NULL) {
++        return FALSE;
++    }
++    vf = SaveData_GetVarsFlags(fieldSystem->saveData);
++    clear = SystemFlag_CheckGameCompleted(vf) ? 1 : 0;
++    P3DS_GameClear = clear;
++    P3DS_MobilePcPreviewReq = 0; /* no unlock ceremony on Platinum */
++    if (!P3DS_MobilePcReq) {
++        return FALSE;
++    }
++    if (!P3DS_MobilePcCfg()) {
++        P3DS_MobilePcReq = 0;
++        return FALSE;
++    }
++    if (input->movement || PlayerAvatar_GetMoveState(fieldSystem->playerAvatar) == PLAYER_MOVE_STATE_MOVING) {
++        return FALSE; /* wait until the player stands still */
++    }
++    P3DS_MobilePcReq = 0;
++    if (!clear && !P3DS_MobilePcDevCfg()) {
++        PSPNativeMemLog("[MPC] open ignored: no Hall of Fame yet and mobile_pc_dev is off");
++        return FALSE;
++    }
++    if (FieldSystem_IsInValidLocation(fieldSystem) != TRUE
++        || SystemFlag_CheckSafariGameActive(vf) == TRUE || SystemFlag_CheckInPalPark(vf) == TRUE
++        || PersistedMapFeatures_IsCurrentDynamicMap(fieldSystem, DYNAMIC_MAP_FEATURES_DISTORTION_WORLD) == TRUE) {
++        PSPNativeMemLog("[MPC] open ignored: not here (Mystery Zone, Great Marsh, Pal Park or Distortion World)");
++        return FALSE;
++    }
++    {
++        P3DS_MobilePcEnv *env = Heap_Alloc(HEAP_ID_FIELD2, sizeof(P3DS_MobilePcEnv));
++        env->state = 0;
++        env->session = NULL;
++        FieldSystem_CreateTask(fieldSystem, Task_P3DS_MobilePc, env);
++    }
++    return TRUE;
++}
++
+ BOOL FieldInput_Process(const FieldInput *input, FieldSystem *fieldSystem)
+ {
+     if (input->dummy5 == FALSE && FieldSystem_RunInitScript(fieldSystem, INIT_SCRIPT_ON_FRAME_TABLE) == TRUE) {
+@@ -211,7 +307,7 @@
              playerEvent |= PLAYER_EVENT_USED_STRENGTH;
          }
  
@@ -18,7 +119,18 @@
              playerEvent |= PLAYER_EVENT_USED_WATERFALL;
          }
  
-@@ -688,7 +690,7 @@
+@@ -334,6 +430,10 @@
+         return TRUE;
+     }
+ 
++    if (P3DS_MobilePcStep(fieldSystem, input) == TRUE) { /* SoulSilver 0293 */
++        return TRUE;
++    }
++
+     return FALSE;
+ }
+ 
+@@ -688,7 +788,7 @@
          u32 distortionBehavior = PlayerAvatar_GetDistortionCurrTileBehaviour(fieldSystem->playerAvatar);
  
          if (PlayerAvatar_CanUseSurf(fieldSystem->playerAvatar, distortionBehavior, behavior) && TrainerInfo_HasBadge(info, 3)) {

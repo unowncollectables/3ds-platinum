@@ -1,6 +1,49 @@
 --- a/native-stack-render/frontend.cpp
 +++ b/native-stack-render/frontend.cpp
-@@ -509,6 +509,7 @@
+@@ -373,23 +373,25 @@
+ /* signature of a list's first words: an 'uncacheable' mark is dropped when the bytes at that address change */
+ static inline unsigned ListSig(const void*p,unsigned size){const unsigned*w=(const unsigned*)p;unsigned n=size/4;if(n>8)n=8;unsigned s=size;for(unsigned i=0;i<n;i++)s=s*31u+w[i];return s;}
+ enum{kListSlots=512,kListMaxEntries=384,kListMaxBytes=1536*1024,kListMaxOne=64*1024};
+-static ListEntry listTable[kListSlots];static unsigned listEntries,listBytes,listFrame,listHighBytes;
++static ListEntry listTable[kListSlots];static const void*listKey[kListSlots];   /* listTable[i].ptr, packed: probes read 4 bytes, not a 500-byte entry */static unsigned listEntries,listBytes,listFrame,listHighBytes;
+ static unsigned listHits,listRecords,listHitVerts,listVolatile,listBroken,listMissBytes,listMissState,listMissNoSrc;
+ /* Content-keyed cache (experiment): NNS scratch buffers send many different vertex lists through one address in a
+    frame, so the address cache marks them volatile. Pure lists seen at a volatile address are stored and found by
+    (size, hash of words) instead; a hit is still verified byte-for-byte and against the same entry-state deps. */
+ enum{kContentSlots=1024,kContentProbe=32,kContentMaxBytes=1024*1024};
+-static ListEntry contentTable[kContentSlots];static unsigned contentBytes,contentHits,contentStores;
++static ListEntry contentTable[kContentSlots];static unsigned contentKey[kContentSlots];   /* hash of a stored entry, 0 = empty slot */static unsigned contentBytes,contentHits,contentStores;
+ static inline unsigned ContentHash(const void*p,unsigned size){const unsigned*w=(const unsigned*)p;unsigned h=2166136261u^size;for(unsigned i=0,n=size>>2;i<n;i++)h=(h^w[i])*16777619u;return h?h:1;}
+ extern "C" void PSPNativeG3ListCacheStats(unsigned*hits,unsigned*records,unsigned*entries,unsigned*bytes,unsigned*hitVerts,unsigned*highBytes,unsigned*vol){
+  if(hits)*hits=listHits;if(records)*records=listRecords;if(entries)*entries=listEntries;if(bytes)*bytes=listBytes;if(hitVerts)*hitVerts=listHitVerts;if(highBytes)*highBytes=listHighBytes;if(vol)*vol=listVolatile|(listBroken<<16);
+  listHits=listRecords=listHitVerts=0;}
+ static inline unsigned ListHash(const void*p){uintptr_t v=(uintptr_t)p;return (unsigned)((v>>2)*2654435761u)>>23;}   /* 9 bits */
+ enum{kListProbe=64};
+-static ListEntry*ListFind(const void*p){unsigned i=ListHash(p);for(unsigned n=0;n<kListProbe;n++){ListEntry*e=&listTable[(i+n)&(kListSlots-1)];if(e->ptr==p)return e;if(!e->ptr)return nullptr;}return nullptr;}
++/* 2026-11-17 cloud profile: this probe walked up to 64 whole entries (one cache miss each) for every display list,
++   ~10% of busy CPU time. It now scans the packed key array; same answers. */
++static ListEntry*ListFind(const void*p){unsigned i=ListHash(p);for(unsigned n=0;n<kListProbe;n++){const unsigned j=(i+n)&(kListSlots-1);const void*k=listKey[j];if(k==p)return &listTable[j];if(!k)return nullptr;}return nullptr;}
+ static void ListRelease(ListEntry*e){if(e->src){listBytes-=e->size+e->nverts*sizeof(GuVertex);listEntries--;}free(e->src);G3ListDeferFree(e->verts);e->src=nullptr;e->verts=nullptr;e->nverts=0;}
+-static void ContentRelease(ListEntry*e){if(e->src)contentBytes-=e->size+e->nverts*sizeof(GuVertex);free(e->src);G3ListDeferFree(e->verts);e->src=nullptr;e->verts=nullptr;e->nverts=0;}
+-static ListEntry*ContentFind(unsigned size,unsigned h){unsigned i=h&(kContentSlots-1);for(unsigned n=0;n<kContentProbe;n++){ListEntry*e=&contentTable[(i+n)&(kContentSlots-1)];if(e->src&&e->size==size&&e->impureSig==h)return e;}return nullptr;}
++static void ContentRelease(ListEntry*e){contentKey[e-contentTable]=0;if(e->src)contentBytes-=e->size+e->nverts*sizeof(GuVertex);free(e->src);G3ListDeferFree(e->verts);e->src=nullptr;e->verts=nullptr;e->nverts=0;}
++static ListEntry*ContentFind(unsigned size,unsigned h){unsigned i=h&(kContentSlots-1);for(unsigned n=0;n<kContentProbe;n++){const unsigned j=(i+n)&(kContentSlots-1);if(contentKey[j]!=h)continue;ListEntry*e=&contentTable[j];if(e->src&&e->size==size&&e->impureSig==h)return e;}return nullptr;}
+ static ListEntry*ContentSlotFor(unsigned h){unsigned i=h&(kContentSlots-1);ListEntry*best=nullptr;for(unsigned n=0;n<kContentProbe;n++){ListEntry*e=&contentTable[(i+n)&(kContentSlots-1)];if(!e->src)return e;if(!best||e->lastUse<best->lastUse)best=e;}ContentRelease(best);return best;}
+ static void ContentMakeRoom(unsigned need){while(contentBytes+need>kContentMaxBytes){ListEntry*old=nullptr;for(unsigned i=0;i<kContentSlots;i++)if(contentTable[i].src&&(!old||contentTable[i].lastUse<old->lastUse))old=&contentTable[i];if(!old)break;ContentRelease(old);}}
+ /* Linear probing, bounded. Dead keys (released entries, uncacheable marks) idle for 120 frames
+@@ -397,9 +399,9 @@
+ static ListEntry*ListSlotFor(const void*p){unsigned i=ListHash(p);ListEntry*tomb=nullptr;
+  for(unsigned n=0;n<kListProbe;n++){ListEntry*e=&listTable[(i+n)&(kListSlots-1)];
+   if(e->ptr==p)return e;
+-  if(!e->ptr){if(tomb)break;memset(e,0,sizeof*e);e->ptr=p;return e;}
++  if(!e->ptr){if(tomb)break;memset(e,0,sizeof*e);e->ptr=p;listKey[e-listTable]=p;return e;}
+   if(!tomb&&!e->src&&e->lastUse+120<listFrame)tomb=e;}
+- if(tomb){memset(tomb,0,sizeof*tomb);tomb->ptr=p;return tomb;}return nullptr;}
++ if(tomb){memset(tomb,0,sizeof*tomb);tomb->ptr=p;listKey[tomb-listTable]=p;return tomb;}return nullptr;}
+ static void ListEvictOne(){ListEntry*victim=nullptr;for(unsigned i=0;i<kListSlots;i++){ListEntry*e=&listTable[i];if(e->src&&(!victim||e->lastUse<victim->lastUse))victim=e;}if(victim)ListRelease(victim);}
+ static void ListMakeRoom(unsigned need){while(listEntries&&(listEntries>=kListMaxEntries||listBytes+need>kListMaxBytes))ListEvictOne();}
+ extern "C" void G3SIM_VtxAssemble(s16,s16,s16);
+@@ -509,6 +511,7 @@
  static inline void G3StatsSwap(){}
  #endif
  static void SIM_HandleG3CommandImpl(draw_msg_t *msg);
@@ -8,7 +51,7 @@
  static void ProcessCommandList(draw_msg_t *msg);
  static unsigned profileDepth;
  static unsigned profOuterN;
-@@ -744,6 +745,7 @@
+@@ -744,6 +747,7 @@
      bool rec=false,pure=true,prePure=true;(void)prePure;ListEntry*le=nullptr;G3GeomEntryState entryState;unsigned contentH=0;bool contentTry=false;xyz_s_t prevIn=prevXYZ;unsigned polys0=s_numG3DrawsThisFrame,nonRaw0=g3NonRawSubmits;
  #if PSP_NATIVE_LIST_CACHE
      le=ListFind(listPtr);
@@ -16,3 +59,12 @@
      if(le&&le->impure&&(le->impureSize!=listSize||le->impureSig!=ListSig(listPtr,listSize)))le->impure=0;
  #ifdef PSP_NATIVE_G3_STATS
      if(le&&!le->src&&!le->impure)listMissNoSrc++;
+@@ -1002,7 +1006,7 @@
+        entryState=m;}
+       e->size=listSize;e->nverts=n;e->polys=s_numG3DrawsThisFrame-polys0;e->entry=entryState;e->deps=deps;e->prevIn=prevIn;e->prevOut=prevXYZ;G3SIM_CaptureSlots(&e->exit);
+       e->lastUse=listFrame;e->impure=0;listRecords++;
+-      if(toContent){e->ptr=nullptr;e->impureSig=contentH;contentBytes+=listSize+n*sizeof(GuVertex);contentStores++;}
++      if(toContent){e->ptr=nullptr;e->impureSig=contentH;contentKey[e-contentTable]=contentH;contentBytes+=listSize+n*sizeof(GuVertex);contentStores++;}
+       else{listEntries++;listBytes+=listSize+n*sizeof(GuVertex);if(listBytes>listHighBytes)listHighBytes=listBytes;}
+     }
+ #endif
