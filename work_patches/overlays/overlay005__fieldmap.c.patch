@@ -1,6 +1,35 @@
 --- a/overlay005__fieldmap.c
 +++ b/overlay005__fieldmap.c
-@@ -672,6 +672,9 @@
+@@ -217,6 +217,7 @@
+ 
+         if (fieldSystem->unk_04->unk_0C != NULL) {
+             u16 weather = FieldOverworldState_GetWeather(SaveData_GetFieldOverworldState(fieldSystem->saveData));
++            { extern int P3DS_AmbientRenderWeather(FieldSystem *, int); weather = (u16)P3DS_AmbientRenderWeather(fieldSystem, weather); } /* SoulSilver 0280 */
+             ov5_021D5F24(fieldSystem->unk_04->unk_0C, weather);
+         }
+ 
+@@ -426,8 +427,9 @@
+     sub_0203A418(fieldSystem);
+ 
+     if (fieldSystem->unk_04->unk_0C != NULL) {
++        extern int P3DS_AmbientRenderWeather(FieldSystem *, int); /* SoulSilver 0280 */
+         ov5_021D5F7C(
+-            fieldSystem->unk_04->unk_0C, FieldOverworldState_GetWeather(fieldState));
++            fieldSystem->unk_04->unk_0C, P3DS_AmbientRenderWeather(fieldSystem, FieldOverworldState_GetWeather(fieldState)));
+     }
+ 
+     int oldMapLabelTextID = MapHeader_GetMapLabelTextID(oldMapHeaderID);
+@@ -464,7 +466,8 @@
+     sub_0203A418(fieldSystem);
+ 
+     if (fieldSystem->unk_04->unk_0C != NULL) {
+-        ov5_021D5F7C(fieldSystem->unk_04->unk_0C, FieldOverworldState_GetWeather(fieldState));
++        extern int P3DS_AmbientRenderWeather(FieldSystem *, int); /* SoulSilver 0280 */
++        ov5_021D5F7C(fieldSystem->unk_04->unk_0C, P3DS_AmbientRenderWeather(fieldSystem, FieldOverworldState_GetWeather(fieldState)));
+     }
+ }
+ 
+@@ -672,6 +675,9 @@
      PlttTransfer_Free();
  }
  
@@ -10,7 +39,7 @@
  static void ov5_021D15F4(FieldSystem *fieldSystem)
  {
      MtxFx44 v0, v1;
-@@ -711,6 +714,10 @@
+@@ -711,6 +717,10 @@
  
      FieldEffectManager_Render(fieldSystem->fieldEffMan);
      BillboardLists_Draw();
