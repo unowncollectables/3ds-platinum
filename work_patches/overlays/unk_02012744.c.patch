@@ -1,0 +1,10 @@
+--- a/unk_02012744.c
++++ b/unk_02012744.c
+@@ -421,6 +421,7 @@
+     int dstOffset;
+     int srcOffset;
+ 
++    { extern void P3DS_GtToSprite(const void *buf); P3DS_GtToSprite(window->pixels); } /* SoulSilver 0289 */
+     GF_ASSERT(window->width >= (width + x));
+     GF_ASSERT(window->height >= (height + y));
+ 

@@ -1,6 +1,6 @@
 --- a/bg_window.c
 +++ b/bg_window.c
-@@ -5,6 +5,15 @@
+@@ -5,7 +5,35 @@
  
  #include "constants/graphics.h"
  
@@ -14,9 +14,29 @@
 +#endif
 +
  #include "gx_layers.h"
++
++/* SoulSilver 0289: sharp game text hooks (platinum3ds/platform/ss3ds_gametext.c). Setting off: every call returns at once. */
++typedef struct { const void *buf; int bg, left, top, wT, hT, pal, base, is4bpp, is8bpp; } P3DS_GtDesc;
++extern int P3DS_GtWant(const P3DS_GtDesc *d);
++extern void P3DS_GtPre(const P3DS_GtDesc *d, int x, int y);
++extern void P3DS_GtPost(const P3DS_GtDesc *d, int x, int y);
++extern void P3DS_GtLoaded(const P3DS_GtDesc *d, const void *vram, unsigned size);
++extern void P3DS_GtFill(const P3DS_GtDesc *d, int fillValue);
++extern void P3DS_GtRect(const P3DS_GtDesc *d, int x, int y, int w, int h);
++extern void P3DS_GtScroll(const P3DS_GtDesc *d, int dir, int amount, int fillValue);
++extern void P3DS_GtRemove(const void *buf);
++extern const void *P3DS_GtUpload(const P3DS_GtDesc *d, unsigned size);
++static void P3DS_GtD(const Window *w, P3DS_GtDesc *d)
++{
++    d->buf = w->pixels; d->bg = w->bgLayer; d->left = w->tilemapLeft; d->top = w->tilemapTop; d->wT = w->width; d->hT = w->height;
++    d->pal = w->palette; d->base = w->baseTile;
++    d->is4bpp = (w->bgConfig != NULL && w->colorMode == BG_COLOR_MODE_4BPP) ? 1 : 0;
++    d->is8bpp = (w->bgConfig != NULL && w->colorMode == BG_COLOR_MODE_8BPP) ? 1 : 0;
++}
  #include "heap.h"
  #include "math_util.h"
-@@ -1653,6 +1662,9 @@
+ 
+@@ -1653,6 +1681,9 @@
      window->baseTile = baseTile;
      window->pixels = pixels;
      window->colorMode = (bgConfig->bgs[bgLayer].colorMode == GX_BG_COLORMODE_16) ? BG_COLOR_MODE_4BPP : BG_COLOR_MODE_8BPP;
@@ -26,17 +46,18 @@
  }
  
  void Window_AddToTopLeftCorner(BgConfig *bgConfig, Window *window, u8 width, u8 height, u16 baseTile, u8 fillVal)
-@@ -1690,6 +1702,9 @@
+@@ -1690,6 +1721,10 @@
  
  void Window_Remove(Window *window)
  {
 +#ifdef SDK_PORT_3DS
 +    NitroPort_WindowRemoved(window);
 +#endif
++    P3DS_GtRemove(window->pixels); /* SoulSilver 0289 */
      Heap_Free(window->pixels);
  
      window->bgConfig = NULL;
-@@ -1706,6 +1721,9 @@
+@@ -1706,7 +1741,11 @@
  void Windows_Delete(Window *window, u8 winCount)
  {
      for (u16 i = 0; i < winCount; i++) {
@@ -44,5 +65,113 @@
 +        NitroPort_WindowRemoved(&window[i]);
 +#endif
          if (window[i].pixels != NULL) {
++            P3DS_GtRemove(window[i].pixels); /* SoulSilver 0289 */
              Heap_Free(window[i].pixels);
          }
+     }
+@@ -1916,11 +1955,13 @@
+         window->bgConfig->bgs[window->bgLayer].tilemapBuffer,
+         window->bgConfig->bgs[window->bgLayer].bufferSize,
+         window->bgConfig->bgs[window->bgLayer].baseTile);
+-    Bg_LoadTiles(window->bgConfig,
+-        window->bgLayer,
+-        window->pixels,
+-        window->width * window->height * 0x40,
+-        window->baseTile);
++    { P3DS_GtDesc gtd; P3DS_GtD(window, &gtd); /* SoulSilver 0289 */
++      Bg_LoadTiles(window->bgConfig,
++          window->bgLayer,
++          (void *)P3DS_GtUpload(&gtd, window->width * window->height * 0x40),
++          window->width * window->height * 0x40,
++          window->baseTile);
++      P3DS_GtLoaded(&gtd, (const u8 *)Bg_GetCharPtr(window->bgLayer) + window->baseTile * 0x40, window->width * window->height * 0x40); }
+ }
+ 
+ static void ScheduleCopyWindowToVramAffine(Window *window)
+@@ -1928,17 +1969,23 @@
+     PutWindowToTilemapAffine(window);
+ 
+     Bg_ScheduleTilemapTransfer(window->bgConfig, window->bgLayer);
+-    Bg_LoadTiles(window->bgConfig,
+-        window->bgLayer,
+-        window->pixels,
+-        window->width * window->height * 0x40,
+-        window->baseTile);
++    { P3DS_GtDesc gtd; P3DS_GtD(window, &gtd); /* SoulSilver 0289 */
++      Bg_LoadTiles(window->bgConfig,
++          window->bgLayer,
++          (void *)P3DS_GtUpload(&gtd, window->width * window->height * 0x40),
++          window->width * window->height * 0x40,
++          window->baseTile);
++      P3DS_GtLoaded(&gtd, (const u8 *)Bg_GetCharPtr(window->bgLayer) + window->baseTile * 0x40, window->width * window->height * 0x40); }
+ }
+ 
+ void Window_LoadTiles(Window *window)
+ {
+     u32 size = window->width * window->height * window->bgConfig->bgs[window->bgLayer].tileSize;
+-    Bg_LoadTiles(window->bgConfig, window->bgLayer, window->pixels, size, window->baseTile);
++    /* SoulSilver 0289: the platform may return a copy without the glyphs it draws natively */
++    P3DS_GtDesc gtd;
++    P3DS_GtD(window, &gtd);
++    Bg_LoadTiles(window->bgConfig, window->bgLayer, (void *)P3DS_GtUpload(&gtd, size), size, window->baseTile);
++    P3DS_GtLoaded(&gtd, (const u8 *)Bg_GetCharPtr(window->bgLayer) + window->baseTile * window->bgConfig->bgs[window->bgLayer].tileSize, size);
+ }
+ 
+ void Window_ClearAndCopyToVRAM(Window *window)
+@@ -1985,6 +2032,7 @@
+ 
+ void Window_FillTilemap(Window *window, u8 val)
+ {
++    { P3DS_GtDesc gtd; P3DS_GtD(window, &gtd); P3DS_GtFill(&gtd, val); } /* SoulSilver 0289 */
+     if (window->bgConfig->bgs[window->bgLayer].tileSize == TILE_SIZE_4BPP) {
+         val = (val << 4) | val;
+     }
+@@ -2003,6 +2051,7 @@
+ void Window_BlitBitmapRectWithTransparency(Window *window, void *src, u16 srcX, u16 srcY, u16 srcWidth, u16 srcHeight, u16 destX, u16 destY, u16 destWidth, u16 destHeight, u16 transparent)
+ {
+     Bitmap bmpSrc, bmpDest;
++    { P3DS_GtDesc gtd; P3DS_GtD(window, &gtd); P3DS_GtRect(&gtd, destX, destY, destWidth, destHeight); } /* SoulSilver 0289 */
+ 
+     bmpSrc.pixels = src;
+     bmpSrc.width = srcWidth;
+@@ -2022,6 +2071,7 @@
+ void Window_FillRectWithColor(Window *window, u8 color, u16 x, u16 y, u16 width, u16 height)
+ {
+     Bitmap bmp;
++    { P3DS_GtDesc gtd; P3DS_GtD(window, &gtd); P3DS_GtRect(&gtd, x, y, width, height); } /* SoulSilver 0289 */
+ 
+     bmp.pixels = window->pixels;
+     bmp.width = window->width * 8;
+@@ -2128,8 +2178,24 @@
+         }                                                                                                         \
+     }
+ 
++static void Window_CopyGlyph_p3dsOrig(Window *window, const u8 *glyphPixels, u16 srcWidth, u16 srcHeight, u16 destX, u16 destY, u16 table);
+ void Window_CopyGlyph(Window *window, const u8 *glyphPixels, u16 srcWidth, u16 srcHeight, u16 destX, u16 destY, u16 table)
+ {
++    /* SoulSilver 0289 */
++    P3DS_GtDesc gtd;
++    int gtWant;
++    P3DS_GtD(window, &gtd);
++    gtWant = P3DS_GtWant(&gtd);
++    if (gtWant) {
++        P3DS_GtPre(&gtd, destX, destY);
++    }
++    Window_CopyGlyph_p3dsOrig(window, glyphPixels, srcWidth, srcHeight, destX, destY, table);
++    if (gtWant) {
++        P3DS_GtPost(&gtd, destX, destY);
++    }
++}
++static void Window_CopyGlyph_p3dsOrig(Window *window, const u8 *glyphPixels, u16 srcWidth, u16 srcHeight, u16 destX, u16 destY, u16 table)
++{
+     u8 *windowPixels = window->pixels;
+     u16 destWidth = window->width * 8, destHeight = window->height * 8;
+     int srcRight, srcBottom;
+@@ -2207,6 +2273,7 @@
+ 
+ void Window_Scroll(Window *window, u8 direction, u8 distance, u8 fillVal)
+ {
++    { P3DS_GtDesc gtd; P3DS_GtD(window, &gtd); P3DS_GtScroll(&gtd, direction, distance, fillVal); } /* SoulSilver 0289 */
+     if (window->bgConfig->bgs[window->bgLayer].colorMode == GX_BG_COLORMODE_16) {
+         ScrollWindow4bpp(window, direction, distance, fillVal);
+     } else {

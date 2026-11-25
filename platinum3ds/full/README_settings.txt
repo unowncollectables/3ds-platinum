@@ -277,6 +277,9 @@ catch_overlay=0      (1 = in a wild battle, press Y at the command menu for the 
   hunt page; in a trainer battle the foe's moves/PP/ability/item and its team's HP.
 dmg_check=0          (1 = adds a rough damage / speed page to the battle Y screen, singles only)
 hunt_stats=0         (1 = ZR in the field opens the hunt stats overlay; needs hunt_counter; ZR stays the item button while zr_item=1)
+sharp_game_text=0    (1 = every game text window, both screens, drawn at the 3DS resolution instead of the stretched DS picture;
+                      needs a scale mode (1.25X or FILL). SoulSilver's sharp text hook (0289) ported to bg_window.c. Off by default
+                      on Platinum until it has been checked on hardware; toggling applies to text already on screen)
 battle_anim_speed=0  (1 = skip plain move animations; Fly/Dig/Dive/Bounce/Shadow Force/Transform/Substitute/Minimize still play)
 Run 76
   battle_anim_speed=2  (also makes the HP bar drain 3x faster; damage and end values unchanged)

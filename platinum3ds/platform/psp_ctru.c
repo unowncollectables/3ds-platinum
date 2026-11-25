@@ -402,7 +402,7 @@ static const struct { const char *key; int def; } kCfgDefaults[] = {
     { "fps60", 1 }, { "g3_thread", 1 }, { "fps60_pipe", 1 }, { "fps60_hold", 1 }, { "fps60_strips", 1 }, { "fps60_vram", 1 }, { "g3_xfcache", 1 },
     { "g3_wake", 1 }, { "g3_fastxform", 1 }, { "g3_thr_texfence", 2 }, { "g3_thr_texsafe", 1 }, { "g3_stereo_share", 1 }, { "present_pace", 1 },
     { "g3_front_ov", 1 }, { "g3_stereo_gpu", 1 }, { "g3_front_bg", 1 },
-    { "sharp_text", 1 }, { "sharp_game_text", 1 }, { "wide_layouts", 1 },
+    { "sharp_text", 1 }, { "sharp_game_text", 0 }, { "wide_layouts", 1 },
     /* SoulSilver features that must stay OFF when the key is absent (mobile PC, Slot 2, Black 2 battle sprites) */
     { "mobile_pc", 0 }, { "mobile_pc_dev", 0 }, { "slot2", 0 }, { "b2_sprites", 0 },
 };
