@@ -120,19 +120,25 @@ extern unsigned PSPNativeRenderFrameCount(void);
 #define P3_SAVE_DIR "sdmc:/3ds/platinum3ds/"
 #define P3_SAVE_BYTES 524288u
 static u16 p3Crc16(const u8 *p, u32 n) { u32 c = 0xFFFF; while (n--) { c ^= (u32)*p++ << 8; for (int i = 0; i < 8; i++) c = (c & 0x8000) ? ((c << 1) ^ 0x1021) & 0xFFFF : (c << 1) & 0xFFFF; } return (u16)c; }
+/* Platinum save layout (pokeplatinum savedata.h): two 0x40000 halves (primary / backup), each holding the NORMAL block (id 0) and the
+   BOXES block (id 1). Every block ends in a 20-byte SaveBlockFooter { u32 saveCounter, u32 blockCounter, u32 size, u32 signature
+   0x20060623, u8 id, (pad), u16 checksum } and the checksum is CRC16-CCITT (init 0xFFFF, poly 0x1021) over the block body = the
+   `size` bytes before the footer end, excluding the footer. A half counts only when BOTH blocks check out; the value returned is the
+   half's saveCounter (0 = no valid half). The first version of this check used the 16-byte HGSS-style footer and called every real
+   Platinum save "blank or damaged", so no backup was ever made (found 2026-11-26 from Nathan's log). */
 static u32 p3SaveValid(const u8 *d) {
     u32 best = 0;
     for (u32 base = 0; base < P3_SAVE_BYTES; base += 0x40000) {
-        u32 cnt = 0, n = 0; int bad = 0;
-        for (u32 off = base; off + 16 <= base + 0x40000; off += 4) {
-            u32 f[3]; u16 h[2]; memcpy(f, d + off, 12); memcpy(h, d + off + 12, 4);
-            if (f[2] != 0x20060623u) continue;
-            u32 start = off + 16 - f[1];
-            if (f[1] < 16 || f[1] > off + 16 - base || p3Crc16(d + start, off - start) != h[1]) { bad = 1; break; }
-            if (n && f[0] != cnt) { bad = 1; break; }
-            cnt = f[0]; n++;
+        int got[2] = { 0, 0 }; u32 cnt[2] = { 0, 0 };
+        for (u32 p = base + 12; p + 8 <= base + 0x40000; p += 4) {
+            u32 sig; memcpy(&sig, d + p, 4); if (sig != 0x20060623u) continue;
+            const u32 fs = p - 12; u32 sc, size; memcpy(&sc, d + fs, 4); memcpy(&size, d + fs + 8, 4);
+            if (size < 20 || size > fs + 20 - base) continue;
+            const u8 id = d[p + 4]; u16 crc; memcpy(&crc, d + p + 6, 2);
+            if (id > 1 || p3Crc16(d + fs + 20 - size, size - 20) != crc) continue;
+            got[id] = 1; cnt[id] = sc;
         }
-        if (!bad && n >= 2 && cnt > best) best = cnt;
+        if (got[0] && got[1] && cnt[0] > best) best = cnt[0];
     }
     return best;
 }
