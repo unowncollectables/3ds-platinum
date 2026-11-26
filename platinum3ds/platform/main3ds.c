@@ -36,7 +36,7 @@ static void uiStepDraw(const char *name, int ok) { if (isQuiet()) return; __real
 static void uiShowChecklist(void) { consoleInit(GFX_BOTTOM, &con); conOnBottom = 1; uiInit(); uiRow = 4; for (int i = 0; i < nSteps; i++) uiStepDraw(stepNames[i], stepOk[i]); }
 static void uiError(const char *why) {
     /* run 64: quiet boot -> plain error screen (title + red box), no checklist; verbose_boot=1 keeps the old one */
-    if (isQuiet()) { consoleInit(GFX_BOTTOM, &con); conOnBottom = 1; consoleSelect(&con); consoleClear(); __real_printf("\x1b[2;3H\x1b[37;1mSoulSilver 3DS\x1b[0m"); uiRow = 4; }
+    if (isQuiet()) { consoleInit(GFX_BOTTOM, &con); conOnBottom = 1; consoleSelect(&con); consoleClear(); __real_printf("\x1b[2;3H\x1b[37;1mPlatinum 3DS\x1b[0m"); uiRow = 4; }
     else if (!conOnBottom) uiShowChecklist();
     int r = uiRow + 2 > 20 ? 20 : uiRow + 2; char line[37];
     __real_printf("\x1b[%d;2H\x1b[41;37;1m%-38s", r++, " ERROR");
@@ -120,19 +120,25 @@ extern unsigned PSPNativeRenderFrameCount(void);
 #define P3_SAVE_DIR "sdmc:/3ds/platinum3ds/"
 #define P3_SAVE_BYTES 524288u
 static u16 p3Crc16(const u8 *p, u32 n) { u32 c = 0xFFFF; while (n--) { c ^= (u32)*p++ << 8; for (int i = 0; i < 8; i++) c = (c & 0x8000) ? ((c << 1) ^ 0x1021) & 0xFFFF : (c << 1) & 0xFFFF; } return (u16)c; }
+/* Platinum save layout (pokeplatinum savedata.h): two 0x40000 halves (primary / backup), each holding the NORMAL block (id 0) and the
+   BOXES block (id 1). Every block ends in a 20-byte SaveBlockFooter { u32 saveCounter, u32 blockCounter, u32 size, u32 signature
+   0x20060623, u8 id, (pad), u16 checksum } and the checksum is CRC16-CCITT (init 0xFFFF, poly 0x1021) over the block body = the
+   `size` bytes before the footer end, excluding the footer. A half counts only when BOTH blocks check out; the value returned is the
+   half's saveCounter (0 = no valid half). The first version of this check used the 16-byte HGSS-style footer and called every real
+   Platinum save "blank or damaged", so no backup was ever made (found 2026-11-26 from Nathan's log). */
 static u32 p3SaveValid(const u8 *d) {
     u32 best = 0;
     for (u32 base = 0; base < P3_SAVE_BYTES; base += 0x40000) {
-        u32 cnt = 0, n = 0; int bad = 0;
-        for (u32 off = base; off + 16 <= base + 0x40000; off += 4) {
-            u32 f[3]; u16 h[2]; memcpy(f, d + off, 12); memcpy(h, d + off + 12, 4);
-            if (f[2] != 0x20060623u) continue;
-            u32 start = off + 16 - f[1];
-            if (f[1] < 16 || f[1] > off + 16 - base || p3Crc16(d + start, off - start) != h[1]) { bad = 1; break; }
-            if (n && f[0] != cnt) { bad = 1; break; }
-            cnt = f[0]; n++;
+        int got[2] = { 0, 0 }; u32 cnt[2] = { 0, 0 };
+        for (u32 p = base + 12; p + 8 <= base + 0x40000; p += 4) {
+            u32 sig; memcpy(&sig, d + p, 4); if (sig != 0x20060623u) continue;
+            const u32 fs = p - 12; u32 sc, size; memcpy(&sc, d + fs, 4); memcpy(&size, d + fs + 8, 4);
+            if (size < 20 || size > fs + 20 - base) continue;
+            const u8 id = d[p + 4]; u16 crc; memcpy(&crc, d + p + 6, 2);
+            if (id > 1 || p3Crc16(d + fs + 20 - size, size - 20) != crc) continue;
+            got[id] = 1; cnt[id] = sc;
         }
-        if (!bad && n >= 2 && cnt > best) best = cnt;
+        if (got[0] && got[1] && cnt[0] > best) best = cnt[0];
     }
     return best;
 }
@@ -452,13 +458,13 @@ static u64 bootMs;
 static void onCrash(ERRF_ExceptionInfo *e, CpuRegisters *r) {
     PSPNativeMemLog("[CRASH] type=%d pc=%08lx lr=%08lx sp=%08lx far=%08lx fsr=%08lx r0=%08lx r4=%08lx", e->type, r->pc, r->lr, r->sp, e->far, e->fsr, r->r[0], r->r[4]);
     { extern int P3DS_InField, P3DS_InBattle; extern int P3DS_CfgInt(const char *, int); extern void P3DS_UseSummary(const char *);
-      PSPNativeMemLog("[CRASH] SoulSilver 3DS %s | up %lu s | field %d battle %d | linear free %lu app free %lu | g3_wmode=%d | last msg: %s",
+      PSPNativeMemLog("[CRASH] Platinum 3DS %s | up %lu s | field %d battle %d | linear free %lu app free %lu | g3_wmode=%d | last msg: %s",
                       SS3DS_VERSION, (unsigned long)((osGetTime() - bootMs) / 1000), P3DS_InField, P3DS_InBattle, (unsigned long)linearSpaceFree(),
                       (unsigned long)osGetMemRegionFree(MEMREGION_APPLICATION), P3DS_CfgInt("g3_wmode", 1), lastMsg);
       P3DS_UseSummary("crash"); }
     P3DS_CrumbDump(); P3DS_LogFlushSync();
     { extern unsigned P3DS_LogTailCount(void); extern const char *P3DS_LogTailLine(unsigned); extern int P3DS_InField, P3DS_InBattle;
-      int n = snprintf(crashScreen, sizeof crashScreen, "SoulSilver 3DS\n%s\nGAME CRASHED (type %d)\npc=%08lx lr=%08lx\nsp=%08lx far=%08lx\nup %lu s  field %d  battle %d\nLast log lines:\n",
+      int n = snprintf(crashScreen, sizeof crashScreen, "Platinum 3DS\n%s\nGAME CRASHED (type %d)\npc=%08lx lr=%08lx\nsp=%08lx far=%08lx\nup %lu s  field %d  battle %d\nLast log lines:\n",
                        SS3DS_VERSION, e->type, r->pc, r->lr, r->sp, e->far, (unsigned long)((osGetTime() - bootMs) / 1000), P3DS_InField, P3DS_InBattle);
       const unsigned tc = P3DS_LogTailCount();
       for (unsigned i = tc > 3 ? tc - 3 : 0; i < tc && n > 0 && n < (int)sizeof crashScreen - 100; i++) n += snprintf(crashScreen + n, sizeof crashScreen - n, "%.68s\n", P3DS_LogTailLine(i));
@@ -520,8 +526,8 @@ int main(void) {
     uiStep("System", 1);
     STEP("Overlays", PSPNativeOverlay_Init(), "overlay init failed");
     { FILE *rf = fopen("sdmc:/3ds/platinum3ds/platinum.nds", "rb"); char hd[16] = {0}; int ok = rf && fread(hd, 1, 12, rf) == 12; if (rf) fclose(rf); /* run 64: plain error when the ROM is missing */
-      if (!ok) { uiStep("ROM (platinum.nds)", 0); PSPNativeMemLog("[3DS] step ROM: FAIL (missing)"); hold("ROM not found. Put your Pokemon SoulSilver (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds"); } }
-    STEP("ROM (platinum.nds)", PSPNativeRomFS_SetPath("sdmc:/3ds/platinum3ds/platinum.nds"), "ROM not found. Put your Pokemon SoulSilver (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds");
+      if (!ok) { uiStep("ROM (platinum.nds)", 0); PSPNativeMemLog("[3DS] step ROM: FAIL (missing)"); hold("ROM not found. Put your Pokemon Platinum (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds"); } }
+    STEP("ROM (platinum.nds)", PSPNativeRomFS_SetPath("sdmc:/3ds/platinum3ds/platinum.nds"), "ROM not found. Put your Pokemon Platinum (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds");
     { /* create a blank save only if none exists; never touch an existing one */
       FILE *f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "rb");
       if (f) fclose(f); else if ((f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "wb"))) { static u8 blk[4096]; memset(blk, 0xFF, sizeof blk); for (int i = 0; i < 128; i++) fwrite(blk, 1, sizeof blk, f); fclose(f); PSPNativeMemLog("[3DS] created blank platinum.sav"); } }

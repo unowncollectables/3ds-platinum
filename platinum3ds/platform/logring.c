@@ -251,19 +251,24 @@ static const CfgEnt cfgTab[] = {
     { "g3_thr_check", NODEF, "DEAD: no reader" }, { "g3_slim_strips", NODEF, "DEAD: always on since #520" }, { "g3_slim_centre", NODEF, "DEAD: always on since #520" }, { "g3_statecache", NODEF, "DEAD: always on since #522" },
     { "g3_scissor", NODEF, "DEAD: always on (ignored)" }, { "g3_rowtrim", NODEF, "DEAD: always on since #523" }, { "fps60_noskip", NODEF, "DEAD: SKIP kept (#529)" }, { "present_defer", NODEF, "DEAD: always on (ignored)" },
     { "g3_overlap", NODEF, "DEAD: removed (#540)" }, { "g3_smooth", NODEF, "DEAD: renamed g3_smooth_dbg 2026-11-18 (title Lugia stays 1x for 30 fps)" }, { "scale_sharp", NODEF, "DEAD: no reader" },
-    { "wild_vis_max", NODEF, "DEAD: Platinum key, use wild_vis_count" }, { "wild_vis_test", NODEF, "DEAD: Platinum only" }, { "wild_vis_species", NODEF, "DEAD: Platinum only" },
-    { "dw_debris", NODEF, "DEAD: Platinum Distortion World only" }, { "dw_unease", NODEF, "DEAD: Platinum Distortion World only" },
-    { "dw_cry", NODEF, "DEAD: Platinum Distortion World only" }, { "dw_roll", NODEF, "DEAD: Platinum Distortion World only" },
-    { "item_ping", NODEF, "DEAD: Platinum Poketch only" }, { "touch_menu", NODEF, "DEAD: Platinum game hook missing" }, { "bottom_strip", NODEF, "DEAD: Platinum only" },
-    { "cheat_pp", NODEF, "DEAD: Platinum game hook missing" }, { "cheat_speed", NODEF, "DEAD: Platinum game hook missing" },
-    { "cheat_walk_walls", NODEF, "DEAD: Platinum game hook missing" },
-    { "follower_area_talk", NODEF, "DEAD: no reader" }, { "follower_cry", NODEF, "DEAD: no reader" }, { "follower_items", NODEF, "DEAD: no reader" },
-    { "follower_ballpop", NODEF, "DEAD: no reader" }, { "follower_friend_talk", NODEF, "DEAD: no reader" }, { "follower_idle", NODEF, "DEAD: no reader" },
-    { "follower_gap", NODEF, "DEAD: no reader" }, { "follower_behind", NODEF, "DEAD: no reader" },
+    { "wild_vis_max", NODEF, 0 }, { "wild_vis_test", NODEF, 0 }, { "wild_vis_species", NODEF, "DEAD: Platinum only" },
+    { "dw_debris", NODEF, 0 }, { "dw_unease", NODEF, 0 },
+    { "dw_cry", NODEF, 0 }, { "dw_roll", NODEF, 0 },
+    { "item_ping", NODEF, 0 }, { "touch_menu", NODEF, 0 }, { "bottom_strip", NODEF, 0 },
+    { "cheat_pp", NODEF, 0 }, { "cheat_speed", NODEF, 0 },
+    { "cheat_walk_walls", NODEF, 0 },
+    { "follower_area_talk", NODEF, 0 }, { "follower_cry", NODEF, 0 }, { "follower_items", NODEF, 0 },
+    { "follower_ballpop", NODEF, 0 }, { "follower_friend_talk", NODEF, 0 }, { "follower_idle", NODEF, 0 },
+    { "follower_gap", NODEF, 0 }, { "follower_behind", NODEF, 0 },
+    /* Platinum keys that have readers here but were never listed (they showed as UNLISTED in the log) */
+    { "lower_menu", NODEF, 0 }, { "frame_pacing", NODEF, 0 }, { "gc_atlas16", NODEF, 0 }, { "rng_info", NODEF, 0 }, { "wide_gpu", NODEF, 0 }, { "wide_early", NODEF, 0 },
+    { "wide_stereo", NODEF, 0 }, { "wide_split", NODEF, 0 }, { "battle_log", NODEF, 0 }, { "text_hold_b", NODEF, 0 }, { "text_auto", NODEF, 0 }, { "exp_share_all", NODEF, 0 },
+    { "catch_swap", NODEF, 0 }, { "ach_toasts", NODEF, 0 }, { "stereo_depth", NODEF, 0 }, { "save_export", NODEF, 0 }, { "slot2", NODEF, 0 }, { "slot2_pak", NODEF, 0 },
+    { "mobile_pc", NODEF, 0 }, { "mobile_pc_dev", NODEF, 0 }, { "b2_sprites", NODEF, 0 }, { "event_any_mon", NODEF, 0 }, { "gts_picker", NODEF, 0 },
 };
 #define NCFG ((int)(sizeof cfgTab / sizeof cfgTab[0]))
 void P3DS_LogConfigHeader(const char *version) {
-    PSPNativeMemLog("[CFG] ==== SoulSilver 3DS %s | built %s %s ====", version, __DATE__, __TIME__);
+    PSPNativeMemLog("[CFG] ==== Platinum 3DS %s | built %s %s ====", version, __DATE__, __TIME__);
     FILE *f = fopen("sdmc:/3ds/platinum3ds/config.txt", "r"); int nkeys = 0, ndead = 0, nunl = 0;
     if (!f) PSPNativeMemLog("[CFG] config.txt: none (all defaults)");
     else {
