@@ -1279,7 +1279,7 @@ static int reuseTmV=-1;extern "C" int P3DS_ReusableTMsCfg(void){if(reuseTmV<0){r
 extern "C" void P3DS_Use(const char*);static int noEncV=-1;extern "C" int P3DS_CheatNoEncCfg(void){if(noEncV<0){noEncV=P3DS_CfgInt("cheat_no_encounters",0)!=0;PSPNativeMemLog("[CHEAT] cheat_no_encounters=%d",noEncV);}return noEncV;}
 static int repPV=-1;static int repelPrompt(void){if(repPV<0){repPV=P3DS_CfgInt("repel_prompt",0)!=0;PSPNativeMemLog("[REPEL] repel_prompt=%d",repPV);}return repPV;}
 /* called by the game (patch 0040) each time the "use another Repel?" question would be asked: one [REPEL] line per event */
-extern "C" int P3DS_RepelPromptCfg(void){const int v=repelPrompt();PSPNativeMemLog("[REPEL] repel check: prompt %s",v?"asked":"skipped (repel_prompt=0)");return v;}
+extern "C" int P3DS_RepelPromptCfg(void){const int v=repelPrompt();static int last=-1;if(v!=last){last=v;PSPNativeMemLog("[REPEL] repel check: prompt %s",v?"asked":"skipped (repel_prompt=0)");}return v;} /* logged on change only: it was 1600+ identical lines per session */
 /* ss3ds gameplay toggles read by the game source (pspoke patch 0040, patches/soulsilver/gameplay.patch). hm_free is a generic
    row (hm_free, index 50) so it follows the Settings app live; cheat_no_encounters skips the land / surf / fishing / Rock Smash
    checks, logging the first skipped check and every 25th after it. */
