@@ -1298,7 +1298,7 @@ extern "C" int P3DS_TextCharsPerFrame(void){int n=P3DS_FastTextCfg();return n<1?
 struct MItem{const char*name;const char*key;int n;const char*lab[7];};
 static const MItem mItems[]={
  {"FPS COUNTER","fps_counter",2,{"OFF","ON"}},{"WIDE VIEW","wideview",2,{"OFF","ON"}},{"SCALE","gpuscale",3,{"1:1","1.25X","FILL"}},
- {"C-STICK","cstick_mode",2,{"OFF","ON"}},{"ZL RUN TOGGLE","zl_run",2,{"OFF","ON"}},{"ZR = ITEM (Y)","zr_item",2,{"OFF","ON"}},
+ {"C-STICK","cstick_mode",3,{"OFF","POKETCH","D-PAD"}},{"ZL RUN TOGGLE","zl_run",2,{"OFF","ON"}},{"ZR = ITEM (Y)","zr_item",2,{"OFF","ON"}},
  {"CIRCLE PAD DPAD","cpad_dpad",2,{"OFF","ON"}},{"WIDE FX (SLOW)","wide_fx",2,{"OFF","ON"}},{"LOG DETAIL","log_level",2,{"SHORT","FULL"}},
  {"CAMERA ZOOM","cam_zoom",5,{"-2","-1","0","+1","+2"}},
  {"3D STRENGTH","stereo_strength",3,{"1X","1.5X","2X"}},
@@ -1427,7 +1427,7 @@ static int genGet(int g){if(!genInit){genInit=true;for(int k=0;k<(int)(sizeof kG
 static int menuGet(int i){if(i>=33)return genGet(i-33);if(i>=27)return P3DS_Cheat(i-27);switch(i){case 0:return fpsOn?1:0;case 1:return wideCfg>0?1:0;case 2:return P3DS_ScaleMode();case 3:return P3DS_CstickMode();
  case 4:return P3DS_CtlZl>0?1:0;case 5:return P3DS_CtlZr>0?1:0;case 6:return P3DS_CtlCp>0?1:0;case 7:return P3DS_WideFxCfg()?1:0;case 8:return P3DS_LogLevel()>=2?1:0;
  case 9:return P3DS_CamZoom()+2;case 10:return stereoStr<0?0:stereoStr;case 11:return P3DS_GpuSwizzle()?1:0;case 12:return G3G_FastConv()?1:0;case 13:return splitCfg>0?1:0;case 14:return P3DS_FollowerCfg()?1:0;case 15:return P3DS_GpuComposeCfg();
- case 16:return P3DS_FollowerSlotCfg();case 17:return P3DS_FollowerTalkCfg();case 18:return menuAudioCfg();case 19:return gcStereoCfg();case 20:return stereo2dCfg();case 21:return P3DS_WideHazeCfg();case 22:{int v=P3DS_FastTextCfg();return v<=1?0:v-1;}case 23:return P3DS_ReusableTMsCfg();case 24:return P3DS_CheatNoEncCfg();case 25:return P3DS_RepelPromptCfg();case 26:return sumIvCfg();}return 0;}
+ case 16:return P3DS_FollowerSlotCfg();case 17:return P3DS_FollowerTalkCfg();case 18:return menuAudioCfg();case 19:return gcStereoCfg();case 20:return stereo2dCfg();case 21:return P3DS_WideHazeCfg();case 22:return fastTextIdx(P3DS_FastTextCfg());case 23:return P3DS_ReusableTMsCfg();case 24:return P3DS_CheatNoEncCfg();case 25:return P3DS_RepelPromptCfg();case 26:return sumIvCfg();}return 0;}
 static void menuSet(int i,int v){if(i>=33){genGet(0);genV[i-33]=v;static const int kLog[4]={0,512,1024,2048};P3DS_CfgWrite(mItems[i].key,!strcmp(mItems[i].key,"log_max_kb")?kLog[v&3]:v);if(!strcmp(mItems[i].key,"wide_layouts"))P3DS_SetWideLayouts(v);if(!strcmp(mItems[i].key,"shiny_suite"))P3DS_HuntSetOn(v);if(!strcmp(mItems[i].key,"shiny_rate"))P3DS_HuntSetRate(v);if(!strcmp(mItems[i].key,"frame_pacing"))P3DS_SetFramePacing(v);
   if(!strcmp(mItems[i].key,"fps_tweaks")){P3DS_SetFpsTweaks(v==0?0:v+1);P3DS_CfgWrite("fps_tweaks",v==0?0:v+1);return;}
   if(!strcmp(mItems[i].key,"slot2")){P3DS_Slot2SetCfg(v);return;}
@@ -1552,6 +1552,7 @@ static const ATab kTabs[]={
 };
 enum{T_BAR=6,T_DEBUG=6,T_PAGES=7};
 static void prettyLab(char*d,const char*s,int n){/* run 64: "WIDE VIEW FX" -> "Wide view FX" (acronyms kept) */
+ if(!s)s="?";/* a label index past the table must never crash the menu */
  static const char*const acr[]={"FPS","GPU","ZL","ZR","FX","3D","1X","2X","25X","5X","ROM","IV","EV","TM","HM","LED","UI","OK","KB","MB","Y","X","A","B","L","R"};
  int o=0,first=1;for(int i=0;s[i]&&o<n-1;){if(!((s[i]>='A'&&s[i]<='Z')||(s[i]>='a'&&s[i]<='z')||(s[i]>='0'&&s[i]<='9'))){d[o++]=s[i++];continue;}
   int j=i;while((s[j]>='A'&&s[j]<='Z')||(s[j]>='a'&&s[j]<='z')||(s[j]>='0'&&s[j]<='9'))j++;char w[16];int L=j-i<15?j-i:15;memcpy(w,s+i,L);w[L]=0;
@@ -1642,7 +1643,7 @@ static int tabBarOf(int t){if(t<T_PAGES)return t;if(kTabs[t].n==-1)return 2;retu
 static int tabFind(int n){for(int t=0;t<(int)(sizeof kTabs/sizeof kTabs[0]);t++)if(kTabs[t].n==n)return t;return 0;}
 static void runAppPages(const u32*top,int mode,bool gpu){ /* the pre-2026-11-25 settings app: now only its pages (hunt stats, wild Pokemon here, quick menu) */
  const size_t PX=256*192;u32*base=(u32*)malloc(PX*4*3);if(!base){PSPNativeMemLog("[APP] no memory");return;}u32*img=base+PX,*bimg=img+PX;memcpy(base,top,PX*4);
- enum{N=MENU_N};int val[N];for(int i=0;i<N;i++)val[i]=menuGet(i);int old[N];memcpy(old,val,sizeof old);
+ enum{N=MENU_N};int val[N];for(int i=0;i<N;i++){int v=menuGet(i);if(v<0)v=0;if(v>=mItems[i].n)v=mItems[i].n-1;val[i]=v;}int old[N];memcpy(old,val,sizeof old);
  for(int i=0;i<256*192;i++){u32 c=base[i];base[i]=((c>>1)&0x007F7F7Fu)|(c&0xFF000000u);}
  P3DS_MenuOpen=1;P3DS_LowerMenuDraw=0;huntSel=huntConfirm=0;huntMsg[0]=0;PSPNativeMemLog("[APP] settings open");P3DS_Toast("");toastAt=0;
  /* run 67: SELECT inside the app shows/hides the Debug tab */
@@ -1924,7 +1925,7 @@ static const PAppTab kPTabs[kPTotalTabs]={
      {39,"Idle look-around","Your follower looks around when you stand still."},
      {40,"Follower gap","Your follower keeps a step's distance."},
      {41,"Behind player","Your follower always walks behind you."}}},
- {16,{{3,"C-stick","What the C-stick does."},
+ {16,{{3,"C-stick","What the C-stick does: OFF, flick up/down to switch Poketch apps, or act as a second D-pad."},
      {4,"ZL run toggle","ZL switches running on and off."},
      {5,"ZR = item (Y)","ZR uses your registered item (then ZR hunt stats is off)."},
      {6,"Circle pad D-pad","The circle pad acts as the D-pad."},
@@ -1951,7 +1952,7 @@ static const PAppTab kPTabs[kPTotalTabs]={
 };
 static void runApp(const u32*top,int mode,bool gpu){
  const size_t PX=256*192;u32*base=(u32*)malloc(PX*4*3);if(!base){PSPNativeMemLog("[APP] no memory");return;}u32*img=base+PX,*bimg=img+PX;memcpy(base,top,PX*4);
- enum{N=MENU_N};int val[N];for(int i=0;i<N;i++)val[i]=menuGet(i);int old[N];memcpy(old,val,sizeof old);
+ enum{N=MENU_N};int val[N];for(int i=0;i<N;i++){int v=menuGet(i);if(v<0)v=0;if(v>=mItems[i].n)v=mItems[i].n-1;val[i]=v;}int old[N];memcpy(old,val,sizeof old);
  for(int i=0;i<256*192;i++){u32 c=base[i];base[i]=((c>>1)&0x007F7F7Fu)|(c&0xFF000000u);}
  P3DS_MenuOpen=1;P3DS_LowerMenuDraw=0;P3DS_Toast("");toastAt=0;
  static int tab=0;static bool dbgOn=false;int NT=dbgOn?kPTotalTabs:kPPlayerTabs;if(tab>=NT)tab=0;int sel=0,ltop=0,openPage=-1;
@@ -2827,15 +2828,21 @@ static int PresentFrame(bool){
    secStart=tEnd;secFrames=secG3=secComp=secGpu=secGame=secTris=0;secG3G=0;}}
  /* run 66 settings_touch=1 (default): touch and hold the top-left corner of the touch screen (DS 0..15 x 0..15, or the
     border left of / above the picture in 1:1 mode) for 0.3 s in the field = settings app (same as L+R+Y). The hold must
-    start in the corner and stay there; anything else is a normal touch for the game. ss3ds: Platinum's other corners
-    (Pokemon / Bag through its Start-menu hook) and the catch-info Y shortcut need Platinum game hooks and are gone. */
+    start in the corner and stay there; anything else is a normal touch for the game. Platinum keeps all four corners (the SoulSilver sync
+    had dropped three of them and the bottom strip taps by mistake, 2026-11-26): top-left = settings, top-right = Pokemon,
+    bottom-right = Bag (both through the real Start menu hook, P3DS_StartReq), bottom-left = quick menu page when touch_menu is on. */
  static int stCfg=-1;if(stCfg<0){stCfg=P3DS_CfgInt("settings_touch",1)!=0;PSPNativeMemLog("[APP] settings_touch=%d",stCfg);}
- bool cornerOpen=false;
+ bool cornerOpen=false;int pageReq=0;/* -1 = quick menu page, -3 = hunt page (runAppPages), 0 = the settings app */
+ if(stripReq==1||stripReq==3||stripReq==4){pageReq=stripReq==1?-1:stripReq==3?-3:0;cornerOpen=true;stripReq=0;} /* bottom_strip taps (the strip is drawn above) */
  if(stCfg&&P3DS_InField&&menuCfg()&&!P3DS_ConsoleOnBottom()&&!cy.open&&!cy.release){static u64 cT;static int cZone;static bool cPrev;u32 kh=hidKeysHeld();const bool tNow=(kh&KEY_TOUCH)!=0,tDown=tNow&&!cPrev;cPrev=tNow;
   if(tNow){touchPosition tp;hidTouchRead(&tp);int x,y,z=0;
-   if(touchToDS(tp.px,tp.py,&x,&y)){if(x<16&&y<16)z=1;}else if(tp.px<160&&tp.py<120)z=1; /* 1:1 mode: the black border around the DS screen */
+   if(touchToDS(tp.px,tp.py,&x,&y)){if(x<16&&y<16)z=1;else if(x>=224&&y<32)z=2;else if(x>=224&&y>=161)z=3;else if(x<16&&y>=161&&P3DS_CfgInt("touch_menu",0))z=4;}
+   else{if(tp.px<160&&tp.py<120)z=1;else if(tp.px>=160&&tp.py<120)z=2;else if(tp.px>=160)z=3;else if(P3DS_CfgInt("touch_menu",0))z=4;} /* 1:1 mode: the black border around the DS screen */
    if(tDown){cZone=z;cT=svcGetSystemTick();}else if(z!=cZone)cZone=0;
-   if(cZone&&svcGetSystemTick()-cT>CPU_TICKS_PER_MSEC*300){cZone=0;cornerOpen=true;PSPNativeMemLog("[APP] opened by corner touch");}}
+   if(cZone&&svcGetSystemTick()-cT>CPU_TICKS_PER_MSEC*300){const int zz=cZone;cZone=0;
+    if(zz==1){cornerOpen=true;PSPNativeMemLog("[APP] opened by corner touch");}
+    else if(zz==4){cornerOpen=true;pageReq=-1;PSPNativeMemLog("[APP] touch_menu: quick menu opened");}
+    else{extern volatile int P3DS_StartReq;P3DS_StartReq=zz==2?1:2;PSPNativeMemLog("[APP] corner touch: open %s",zz==2?"Pokemon":"Bag");}}}
   else cZone=0;}
  if(__atomic_exchange_n(&onlineSettingsRequested,false,__ATOMIC_ACQ_REL)){if(P3DS_GtsPickerEnabled()&&!P3DS_ConsoleOnBottom())runOnlineSettings(stereo?eyeL:top,mode,mode&&gpuOk==1);return 0;} /* SoulSilver 0269 */
  /* SoulSilver battle Y companion + ZR hunt stats: both are overlays on the bottom picture (cyFrame in the present above), the game keeps
@@ -2848,7 +2855,7 @@ static int PresentFrame(bool){
   else if((kd&KEY_Y)&&!cy.release&&!(kh&(KEY_L|KEY_R|KEY_X))&&(P3DS_CatchInfo[0]||P3DS_FoeInfo[0])&&!P3DS_InField&&!P3DS_SumOpen&&!P3DS_ConsoleOnBottom()&&(P3DS_CfgInt("catch_overlay",0)||P3DS_HuntOn()))cyOpen();
   else if(zrDown&&!cy.release&&!(kh&(KEY_L|KEY_R|KEY_X|KEY_Y))&&P3DS_InField&&!P3DS_MenuOpen&&!P3DS_BmBlock&&!P3DS_PanelPartyOn&&!P3DS_PanelPartyWant&&!P3DS_ConsoleOnBottom()&&P3DS_CtlZr<=0&&P3DS_CfgInt("hunt_stats",0)&&P3DS_HuntCounting())hsOpen();
   else if(zrDown&&P3DS_InField&&!cy.open){static unsigned zn;if(zn++<6)PSPNativeMemLog("[HSTAT] ZR not opened: release %d LRXY %d menu %d startmenu %d panelapp %d/%d console %d zr_item %d hunt_stats %d counting %d",(int)cy.release,(kh&(KEY_L|KEY_R|KEY_X|KEY_Y))!=0,(int)P3DS_MenuOpen,(int)P3DS_BmBlock,(int)P3DS_PanelPartyOn,(int)P3DS_PanelPartyWant,(int)P3DS_ConsoleOnBottom(),P3DS_CtlZr>0,P3DS_CfgInt("hunt_stats",0),P3DS_HuntCounting());}
-  else if(cornerOpen||((kd&KEY_Y)&&(kh&KEY_L)&&(kh&KEY_R)&&!(kh&KEY_X)&&menuCfg())){if(appCfg()&&!P3DS_ConsoleOnBottom())runApp(stereo?eyeL:top,mode,mode&&gpuOk==1);else runMenu(stereo?eyeL:top,bot,mode,mode&&gpuOk==1,!P3DS_ConsoleOnBottom());}}
+  else if(cornerOpen||((kd&KEY_Y)&&(kh&KEY_L)&&(kh&KEY_R)&&!(kh&KEY_X)&&menuCfg())){if(pageReq&&appCfg()&&!P3DS_ConsoleOnBottom()){appStartTab=tabFind(pageReq);runAppPages(stereo?eyeL:top,mode,mode&&gpuOk==1);}else if(appCfg()&&!P3DS_ConsoleOnBottom())runApp(stereo?eyeL:top,mode,mode&&gpuOk==1);else runMenu(stereo?eyeL:top,bot,mode,mode&&gpuOk==1,!P3DS_ConsoleOnBottom());}}
  return 0;
 }
 /* Soft-reset / clean exit: stop engine B + core-1 workers and join them before any GPU/heap free

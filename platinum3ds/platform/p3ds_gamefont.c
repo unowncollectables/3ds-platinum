@@ -1,7 +1,8 @@
 /* run 64: the game's own message font for port UI (splash, follower_talk, settings app ...).
    Read at runtime from the user's ROM (sdmc:/3ds/platinum3ds/platinum.nds). ss3ds: SoulSilver keeps the fonts in
    /a/0/1/6 (NARC_graphic_font: member 1 = message font, member 0 = system font) and the message-box frames in /a/0/3/8;
-   Platinum's /graphic/pl_font.narc and pl_winframe.narc are not in this ROM. Nothing ROM-derived is stored in the repo. ~33 KB per font, loaded once.
+   Platinum US has them as graphic/pl_font.narc and graphic/pl_winframe.narc (the HGSS paths do not exist in this ROM, which is why the
+   game font and message box never loaded on Platinum before 2026-11-26). Nothing ROM-derived is stored in the repo. ~33 KB per font, loaded once.
    Glyphs: 16x16, 2bpp, 4 tiles of 16 bytes (u16 rows, high byte = left 4 px, MSB first); value 1 = text,
    2 = shadow, 3 = background (drawn transparent here). Width table at header.widthTableOffset. */
 #include <stdio.h>
@@ -44,8 +45,11 @@ static uint8_t *narcMember(FILE *f, uint32_t fnt, uint32_t fat, const char *path
 /* message-box frame (a/0/3/8: tiles member 2+N, palette 26+N, as LoadUserFrameGfx2): 18 4bpp tiles + 16 colours */
 static uint8_t boxTiles[18 * 32]; static uint32_t boxPal[16]; static int boxOk, boxFrame = -1;
 extern int P3DS_CfgInt(const char *, int);
+/* Platinum US: graphic/pl_winframe.narc, members 2..21 = message_box_00..19 tiles, 25..44 = message_box_00..19 palettes
+   (24 = standard_system palette). HGSS: a/0/3/8 with the palettes at 26. Both tried, Platinum first. */
 static void loadBox(FILE *f, uint32_t fnt, uint32_t fat, int fr) {
-  uint32_t lg = 0, lp = 0; uint8_t *g = narcMember(f, fnt, fat, "a/0/3/8", 2 + fr, &lg), *p = narcMember(f, fnt, fat, "a/0/3/8", 26 + fr, &lp);
+  uint32_t lg = 0, lp = 0; uint8_t *g = narcMember(f, fnt, fat, "graphic/pl_winframe.narc", 2 + fr, &lg), *p = narcMember(f, fnt, fat, "graphic/pl_winframe.narc", 25 + fr, &lp);
+  if (!g || !p) { free(g); free(p); g = narcMember(f, fnt, fat, "a/0/3/8", 2 + fr, &lg); p = narcMember(f, fnt, fat, "a/0/3/8", 26 + fr, &lp); }
   if (g && p && lg >= 0x30 + sizeof boxTiles && !memcmp(g + 0x10, "RAHC", 4) && !memcmp(p + 0x10, "TTLP", 4)) {
     uint32_t to = 0x18 + rd32(g + 0x2C), po = 0x18 + rd32(p + 0x24);
     if (to + sizeof boxTiles <= lg && po + 32 <= lp) { memcpy(boxTiles, g + to, sizeof boxTiles);
@@ -57,7 +61,8 @@ int P3DS_GameFontLoad(void) {
   FILE *f = fopen(P3DS_ROMPATH, "rb"); if (!f) { PSPNativeMemLog("[FONT] no ROM"); return 0; }
   uint8_t h[0x50]; int ok = 0;
   if (rdAt(f, 0, h, sizeof h)) { uint32_t fnt = rd32(h + 0x40), fat = rd32(h + 0x48);
-    for (int m = 0; m < 2; m++) if ((gf[m] = narcMember(f, fnt, fat, "a/0/1/6", m, &gfLen[m]))) ok++;
+    for (int m = 0; m < 2; m++) { /* Platinum US keeps them in graphic/pl_font.narc (0 = system, 1 = message); HGSS in a/0/1/6 */
+      if ((gf[m] = narcMember(f, fnt, fat, "graphic/pl_font.narc", m, &gfLen[m])) || (gf[m] = narcMember(f, fnt, fat, "a/0/1/6", m, &gfLen[m]))) ok++; }
     int fr = P3DS_CfgInt("ui_frame", 0); if (fr < 0 || fr > 19) fr = 0; loadBox(f, fnt, fat, fr); }
   fclose(f); PSPNativeMemLog("[FONT] game font from ROM: %d font(s) (%lu / %lu bytes), message box frame %d: %s", ok, (unsigned long)gfLen[0], (unsigned long)gfLen[1], boxFrame, boxOk ? "ok" : "missing");
   return ok > 0; }

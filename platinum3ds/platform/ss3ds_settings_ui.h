@@ -177,7 +177,7 @@ static void suiAppTop(uint32_t *b, const SUiText &T, const char *ver, const char
   { const int cx = X0 + 11, cy = Y0 + 9; for (int y = -6; y <= 6; y++) for (int x = -6; x <= 6; x++) { const int d = x * x + y * y; if (d <= 36) suiPx(b, cx + x, cy + y, d <= 6 ? kSaGreenD : kSaWhite); } }
   T.draw(b, X0 + 21, Y0 + 1, "SETTINGS", kSaWhite, kSaGreenO);
   suiSDraw(T, b, X1 - 6 - suiSWidth(T, "GAME PAUSED"), Y0 + 3, "GAME PAUSED", kSaGold, kSaBandB);
-  T.draw(b, X0 + 8, Y0 + 20, "Pok\xe9mon SoulSilver for New 3DS", kSaText, kSaPaper);
+  T.draw(b, X0 + 8, Y0 + 20, "Pok\xe9mon Platinum for New 3DS", kSaText, kSaPaper);
   int run = 0; char hash[16] = "", c1[24], c2[24]; sscanf(ver ? ver : "", "run %d (%15[^)])", &run, hash);
   char mon[4] = "", yr[8] = ""; int day = 0; sscanf(date ? date : "", "%3s %d %7s", mon, &day, yr);
   snprintf(c1, sizeof c1, "Build %d", run); snprintf(c2, sizeof c2, "%s %d, %s", mon, day, yr);

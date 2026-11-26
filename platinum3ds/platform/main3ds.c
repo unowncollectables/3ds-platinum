@@ -36,7 +36,7 @@ static void uiStepDraw(const char *name, int ok) { if (isQuiet()) return; __real
 static void uiShowChecklist(void) { consoleInit(GFX_BOTTOM, &con); conOnBottom = 1; uiInit(); uiRow = 4; for (int i = 0; i < nSteps; i++) uiStepDraw(stepNames[i], stepOk[i]); }
 static void uiError(const char *why) {
     /* run 64: quiet boot -> plain error screen (title + red box), no checklist; verbose_boot=1 keeps the old one */
-    if (isQuiet()) { consoleInit(GFX_BOTTOM, &con); conOnBottom = 1; consoleSelect(&con); consoleClear(); __real_printf("\x1b[2;3H\x1b[37;1mSoulSilver 3DS\x1b[0m"); uiRow = 4; }
+    if (isQuiet()) { consoleInit(GFX_BOTTOM, &con); conOnBottom = 1; consoleSelect(&con); consoleClear(); __real_printf("\x1b[2;3H\x1b[37;1mPlatinum 3DS\x1b[0m"); uiRow = 4; }
     else if (!conOnBottom) uiShowChecklist();
     int r = uiRow + 2 > 20 ? 20 : uiRow + 2; char line[37];
     __real_printf("\x1b[%d;2H\x1b[41;37;1m%-38s", r++, " ERROR");
@@ -452,13 +452,13 @@ static u64 bootMs;
 static void onCrash(ERRF_ExceptionInfo *e, CpuRegisters *r) {
     PSPNativeMemLog("[CRASH] type=%d pc=%08lx lr=%08lx sp=%08lx far=%08lx fsr=%08lx r0=%08lx r4=%08lx", e->type, r->pc, r->lr, r->sp, e->far, e->fsr, r->r[0], r->r[4]);
     { extern int P3DS_InField, P3DS_InBattle; extern int P3DS_CfgInt(const char *, int); extern void P3DS_UseSummary(const char *);
-      PSPNativeMemLog("[CRASH] SoulSilver 3DS %s | up %lu s | field %d battle %d | linear free %lu app free %lu | g3_wmode=%d | last msg: %s",
+      PSPNativeMemLog("[CRASH] Platinum 3DS %s | up %lu s | field %d battle %d | linear free %lu app free %lu | g3_wmode=%d | last msg: %s",
                       SS3DS_VERSION, (unsigned long)((osGetTime() - bootMs) / 1000), P3DS_InField, P3DS_InBattle, (unsigned long)linearSpaceFree(),
                       (unsigned long)osGetMemRegionFree(MEMREGION_APPLICATION), P3DS_CfgInt("g3_wmode", 1), lastMsg);
       P3DS_UseSummary("crash"); }
     P3DS_CrumbDump(); P3DS_LogFlushSync();
     { extern unsigned P3DS_LogTailCount(void); extern const char *P3DS_LogTailLine(unsigned); extern int P3DS_InField, P3DS_InBattle;
-      int n = snprintf(crashScreen, sizeof crashScreen, "SoulSilver 3DS\n%s\nGAME CRASHED (type %d)\npc=%08lx lr=%08lx\nsp=%08lx far=%08lx\nup %lu s  field %d  battle %d\nLast log lines:\n",
+      int n = snprintf(crashScreen, sizeof crashScreen, "Platinum 3DS\n%s\nGAME CRASHED (type %d)\npc=%08lx lr=%08lx\nsp=%08lx far=%08lx\nup %lu s  field %d  battle %d\nLast log lines:\n",
                        SS3DS_VERSION, e->type, r->pc, r->lr, r->sp, e->far, (unsigned long)((osGetTime() - bootMs) / 1000), P3DS_InField, P3DS_InBattle);
       const unsigned tc = P3DS_LogTailCount();
       for (unsigned i = tc > 3 ? tc - 3 : 0; i < tc && n > 0 && n < (int)sizeof crashScreen - 100; i++) n += snprintf(crashScreen + n, sizeof crashScreen - n, "%.68s\n", P3DS_LogTailLine(i));
@@ -520,8 +520,8 @@ int main(void) {
     uiStep("System", 1);
     STEP("Overlays", PSPNativeOverlay_Init(), "overlay init failed");
     { FILE *rf = fopen("sdmc:/3ds/platinum3ds/platinum.nds", "rb"); char hd[16] = {0}; int ok = rf && fread(hd, 1, 12, rf) == 12; if (rf) fclose(rf); /* run 64: plain error when the ROM is missing */
-      if (!ok) { uiStep("ROM (platinum.nds)", 0); PSPNativeMemLog("[3DS] step ROM: FAIL (missing)"); hold("ROM not found. Put your Pokemon SoulSilver (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds"); } }
-    STEP("ROM (platinum.nds)", PSPNativeRomFS_SetPath("sdmc:/3ds/platinum3ds/platinum.nds"), "ROM not found. Put your Pokemon SoulSilver (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds");
+      if (!ok) { uiStep("ROM (platinum.nds)", 0); PSPNativeMemLog("[3DS] step ROM: FAIL (missing)"); hold("ROM not found. Put your Pokemon Platinum (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds"); } }
+    STEP("ROM (platinum.nds)", PSPNativeRomFS_SetPath("sdmc:/3ds/platinum3ds/platinum.nds"), "ROM not found. Put your Pokemon Platinum (US) ROM at sdmc:/3ds/platinum3ds/platinum.nds");
     { /* create a blank save only if none exists; never touch an existing one */
       FILE *f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "rb");
       if (f) fclose(f); else if ((f = fopen("sdmc:/3ds/platinum3ds/platinum.sav", "wb"))) { static u8 blk[4096]; memset(blk, 0xFF, sizeof blk); for (int i = 0; i < 128; i++) fwrite(blk, 1, sizeof blk, f); fclose(f); PSPNativeMemLog("[3DS] created blank platinum.sav"); } }
